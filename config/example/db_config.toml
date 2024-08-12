@@ -1,0 +1,12 @@
+distance = "L2"
+
+[algorithm.HNSW]
+num_elements = 1000000
+max_elements = 1000000
+ef_construction = 200
+M = 16
+
+[vec_data]
+dim = 960
+data_type = "float32"
+data_path = "data/example/vec_set.bin"
