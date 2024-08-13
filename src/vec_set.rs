@@ -2,6 +2,7 @@ use std::{
     io::Read,
     mem,
     ops::{Index, Range},
+    path::Path,
 };
 
 use anyhow::Result;
@@ -13,7 +14,7 @@ pub type Vector<ScalarType> = [ScalarType];
 /// Trait for loading data from a binary file.
 /// Occupies constant space, apart from the data itself.
 pub trait BinaryScalar: Sized {
-    fn file_size_limit(file_path: &str, limit: Option<usize>) -> Result<usize> {
+    fn file_size_limit(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<usize> {
         let file_size = std::fs::metadata(file_path)?.len() as usize;
         let file_limit = file_size / mem::size_of::<Self>();
         Ok(limit.unwrap_or(usize::MAX).min(file_limit))
@@ -21,9 +22,9 @@ pub trait BinaryScalar: Sized {
     /// Load data from a binary file.
     /// The layout of the binary file is assumed to be a sequence of scalar values.
     /// The number of scalar values to be loaded is limited by `limit`.
-    fn from_binary_file(file_path: &str, limit: Option<usize>) -> Result<Box<[Self]>>;
+    fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Box<[Self]>>;
 
-    fn to_binary_file(data: &[Self], file_path: &str) -> Result<()> {
+    fn to_binary_file(data: &[Self], file_path: impl AsRef<Path>) -> Result<()> {
         let mut file = std::fs::File::create(file_path)?;
         std::io::Write::write_all(&mut file, unsafe {
             std::slice::from_raw_parts(
@@ -36,8 +37,8 @@ pub trait BinaryScalar: Sized {
 }
 
 impl BinaryScalar for u8 {
-    fn from_binary_file(file_path: &str, limit: Option<usize>) -> Result<Box<[Self]>> {
-        let limit = Self::file_size_limit(file_path, limit)?;
+    fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Box<[Self]>> {
+        let limit = Self::file_size_limit(&file_path, limit)?;
         let mut buffer = vec![0; limit].into_boxed_slice();
         let mut file = std::fs::File::open(file_path)?;
         file.read_exact(&mut buffer)?;
@@ -46,8 +47,8 @@ impl BinaryScalar for u8 {
 }
 
 impl BinaryScalar for f32 {
-    fn from_binary_file(file_path: &str, limit: Option<usize>) -> Result<Box<[Self]>> {
-        let limit = Self::file_size_limit(file_path, limit)?;
+    fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Box<[Self]>> {
+        let limit = Self::file_size_limit(&file_path, limit)?;
         let mut buffer = vec![0.0; limit].into_boxed_slice();
         let mut file = std::fs::File::open(file_path)?;
         file.read_exact(unsafe {
@@ -135,7 +136,7 @@ impl<T: BinaryScalar> VecSet<T> {
     }
 
     /// Serialize the `VecSet` to a binary file.
-    pub fn into_bin_file(&self, file_path: &str) -> Result<()> {
+    pub fn into_bin_file(&self, file_path: impl AsRef<Path>) -> Result<()> {
         T::to_binary_file(&self.data, file_path)
     }
 }
@@ -177,10 +178,11 @@ impl TypedVecSet {
         Ok(vec_set)
     }
 
-    pub fn into_bin_file(self, file_path: &str) -> Result<()> {
+    pub fn into_bin_file(self, file_path: impl AsRef<Path>) -> Result<()> {
+        let path = file_path.as_ref();
         match self {
-            Self::Float32(vec_set) => vec_set.into_bin_file(file_path),
-            Self::UInt8(vec_set) => vec_set.into_bin_file(file_path),
+            Self::Float32(vec_set) => vec_set.into_bin_file(path),
+            Self::UInt8(vec_set) => vec_set.into_bin_file(path),
         }
     }
 
@@ -209,7 +211,9 @@ impl From<VecSet<u8>> for TypedVecSet {
 
 #[cfg(test)]
 mod test {
-    use anyhow::bail;
+    use std::{fs::create_dir_all, path::PathBuf};
+
+    use anyhow::{anyhow, bail};
 
     use super::*;
 
@@ -224,17 +228,21 @@ mod test {
     #[test]
     fn save_and_load_vec_set() -> Result<()> {
         use TypedVecSet::*;
-        let path = "data/example/test_vec_set.bin";
+        let config = VecDataConfig {
+            dim: 2,
+            data_type: DataType::Float32,
+            data_path: "data/example/test_vec_set.bin".to_string(),
+            size: None,
+        };
+        let path = PathBuf::from(&config.data_path);
+        let dir = path.parent().ok_or_else(|| anyhow!("Invalid path."))?;
+        create_dir_all(dir)?;
+
         let vec_set = VecSet::new(2, vec![0.0, 1.0, 2.0, 3.0].into_boxed_slice());
         let vec_set = Float32(vec_set);
         let cloned_vec_set = vec_set.clone();
-        vec_set.into_bin_file(path)?;
-        let loaded_vec_set = TypedVecSet::load_with(VecDataConfig {
-            dim: 2,
-            data_type: DataType::Float32,
-            data_path: path.to_string(),
-            size: None,
-        })?;
+        vec_set.into_bin_file(&path)?;
+        let loaded_vec_set = TypedVecSet::load_with(config)?;
         let loaded_vec_set = if let Float32(v) = loaded_vec_set {
             v
         } else {
