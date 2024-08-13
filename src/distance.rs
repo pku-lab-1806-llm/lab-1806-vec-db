@@ -4,10 +4,14 @@ use crate::vec_set::{TypedVecRef, Vector};
 pub trait Distance {
     /// The *square* of the L2 distance.
     ///
-    /// `l2_distance = sum((self - other) ** 2)`
+    /// Range: `[0.0, +inf]`
+    fn l2_sqr_distance(&self, other: &Self) -> f32;
+    /// L2 distance.
     ///
     /// Range: `[0.0, +inf]`
-    fn l2_distance(&self, other: &Self) -> f32;
+    fn l2_distance(&self, other: &Self) -> f32 {
+        self.l2_sqr_distance(other).sqrt()
+    }
     /// Cosine distance.
     /// `cosine_distance = 1 - dot_product / (norm_self * norm_other)`
     ///
@@ -16,13 +20,14 @@ pub trait Distance {
     fn distance(&self, other: &Self, algorithm: DistanceAlgorithm) -> f32 {
         use DistanceAlgorithm::*;
         match algorithm {
+            L2Sqr => self.l2_sqr_distance(other),
             L2 => self.l2_distance(other),
             Cosine => self.cosine_distance(other),
         }
     }
 }
 impl Distance for Vector<f32> {
-    fn l2_distance(&self, other: &Self) -> f32 {
+    fn l2_sqr_distance(&self, other: &Self) -> f32 {
         self.iter()
             .zip(other.iter())
             .map(|(a, b)| (a - b).powi(2))
@@ -40,7 +45,7 @@ impl Distance for Vector<f32> {
     }
 }
 impl Distance for Vector<u8> {
-    fn l2_distance(&self, other: &Self) -> f32 {
+    fn l2_sqr_distance(&self, other: &Self) -> f32 {
         self.iter()
             .zip(other.iter())
             .map(|(a, b)| (*a as i32 - *b as i32).pow(2))
@@ -59,10 +64,10 @@ impl Distance for Vector<u8> {
 }
 
 impl Distance for TypedVecRef<'_> {
-    fn l2_distance(&self, other: &Self) -> f32 {
+    fn l2_sqr_distance(&self, other: &Self) -> f32 {
         match (self, other) {
-            (Self::Float32(a), Self::Float32(b)) => a.l2_distance(b),
-            (Self::UInt8(a), Self::UInt8(b)) => a.l2_distance(b),
+            (Self::Float32(a), Self::Float32(b)) => a.l2_sqr_distance(b),
+            (Self::UInt8(a), Self::UInt8(b)) => a.l2_sqr_distance(b),
             _ => panic!("Cannot calculate distance between different types of vectors."),
         }
     }
@@ -82,10 +87,10 @@ mod test {
     const EPSILON: f32 = 1e-6;
 
     #[test]
-    fn test_l2_distance() {
+    fn test_l2_sqr_distance() {
         let a = vec![1.0, 2.0, 3.0];
         let b = vec![4.0, 5.0, 6.0];
-        assert!((a.l2_distance(&b) - 27.0_f32).abs() < EPSILON);
+        assert!((a.l2_sqr_distance(&b) - 27.0_f32).abs() < EPSILON);
     }
 
     #[test]

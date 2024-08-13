@@ -1,4 +1,4 @@
-distance = "L2"
+distance = "L2Sqr"
 
 [algorithm.HNSW]
 num_elements = 1000000

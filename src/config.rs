@@ -24,9 +24,11 @@ pub enum VecDBAlgorithm {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum DistanceAlgorithm {
-    /// The *square* of the L2 distance.
+    /// L2 squared distance, AKA squared Euclidean distance.
     ///
-    /// `l2_distance = sum((self - other) ** 2)`
+    /// Range: `[0.0, +inf]`
+    L2Sqr,
+    /// L2 distance, AKA Euclidean distance.
     ///
     /// Range: `[0.0, +inf]`
     L2,
