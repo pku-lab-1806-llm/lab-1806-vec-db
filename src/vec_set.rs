@@ -1,9 +1,9 @@
 use std::{
-    io::Read,
-    mem,
     ops::{Index, Range},
     path::Path,
 };
+
+use crate::binary_scalar::BinaryScalar;
 
 use anyhow::Result;
 
@@ -11,66 +11,14 @@ use crate::config::{DataType, DistanceAlgorithm, VecDataConfig};
 
 pub type Vector<ScalarType> = [ScalarType];
 
-/// Trait for loading data from a binary file.
-/// Occupies constant space, apart from the data itself.
-pub trait BinaryScalar: Sized {
-    fn file_size_limit(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<usize> {
-        let file_size = std::fs::metadata(file_path)?.len() as usize;
-        let file_limit = file_size / mem::size_of::<Self>();
-        Ok(limit.unwrap_or(usize::MAX).min(file_limit))
-    }
-    /// Load data from a binary file.
-    /// The layout of the binary file is assumed to be a sequence of scalar values.
-    /// The number of scalar values to be loaded is limited by `limit`.
-    fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Box<[Self]>>;
-
-    fn to_binary_file(data: &[Self], file_path: impl AsRef<Path>) -> Result<()> {
-        let mut file = std::fs::File::create(file_path)?;
-        std::io::Write::write_all(&mut file, unsafe {
-            std::slice::from_raw_parts(
-                data.as_ptr() as *const u8,
-                mem::size_of::<Self>() * data.len(),
-            )
-        })?;
-        Ok(())
-    }
-}
-
-impl BinaryScalar for u8 {
-    fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Box<[Self]>> {
-        let limit = Self::file_size_limit(&file_path, limit)?;
-        let mut buffer = vec![0; limit].into_boxed_slice();
-        let mut file = std::fs::File::open(file_path)?;
-        file.read_exact(&mut buffer)?;
-        Ok(buffer)
-    }
-}
-
-impl BinaryScalar for f32 {
-    fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Box<[Self]>> {
-        let limit = Self::file_size_limit(&file_path, limit)?;
-        let mut buffer = vec![0.0; limit].into_boxed_slice();
-        let mut file = std::fs::File::open(file_path)?;
-        file.read_exact(unsafe {
-            std::slice::from_raw_parts_mut(
-                buffer.as_mut_ptr() as *mut u8,
-                mem::size_of::<Self>() * buffer.len(),
-            )
-        })?;
-        Ok(buffer)
-    }
-}
-
 pub trait Distance {
     fn l2_distance(&self, other: &Self) -> f32;
-    fn euclidean_distance(&self, other: &Self) -> f32 {
-        self.l2_distance(other).sqrt()
-    }
+    fn cosine_distance(&self, other: &Self) -> f32;
     fn distance(&self, other: &Self, algorithm: DistanceAlgorithm) -> f32 {
         use DistanceAlgorithm::*;
         match algorithm {
             L2 => self.l2_distance(other),
-            Euclidean => self.euclidean_distance(other),
+            Cosine => self.cosine_distance(other),
         }
     }
 }
@@ -81,6 +29,16 @@ impl Distance for Vector<f32> {
             .map(|(a, b)| (a - b).powi(2))
             .sum::<f32>()
     }
+    fn cosine_distance(&self, other: &Self) -> f32 {
+        let dot_product = self
+            .iter()
+            .zip(other.iter())
+            .map(|(a, b)| a * b)
+            .sum::<f32>();
+        let norm_self = self.iter().map(|v| v.powi(2)).sum::<f32>().sqrt();
+        let norm_other = other.iter().map(|v| v.powi(2)).sum::<f32>().sqrt();
+        1.0 - dot_product / (norm_self * norm_other)
+    }
 }
 impl Distance for Vector<u8> {
     fn l2_distance(&self, other: &Self) -> f32 {
@@ -88,6 +46,16 @@ impl Distance for Vector<u8> {
             .zip(other.iter())
             .map(|(a, b)| (*a as i32 - *b as i32).pow(2))
             .sum::<i32>() as f32
+    }
+    fn cosine_distance(&self, other: &Self) -> f32 {
+        let dot_product = self
+            .iter()
+            .zip(other.iter())
+            .map(|(a, b)| (*a as i32 * *b as i32))
+            .sum::<i32>() as f32;
+        let norm_self = self.iter().map(|v| (*v as i32).pow(2)).sum::<i32>() as f32;
+        let norm_other = other.iter().map(|v| (*v as i32).pow(2)).sum::<i32>() as f32;
+        1.0 - dot_product / (norm_self.sqrt() * norm_other.sqrt())
     }
 }
 #[derive(Debug, Clone)]
@@ -150,6 +118,13 @@ impl Distance for TypedVecRef<'_> {
         match (self, other) {
             (Self::Float32(a), Self::Float32(b)) => a.l2_distance(b),
             (Self::UInt8(a), Self::UInt8(b)) => a.l2_distance(b),
+            _ => panic!("Cannot calculate distance between different types of vectors."),
+        }
+    }
+    fn cosine_distance(&self, other: &Self) -> f32 {
+        match (self, other) {
+            (Self::Float32(a), Self::Float32(b)) => a.cosine_distance(b),
+            (Self::UInt8(a), Self::UInt8(b)) => a.cosine_distance(b),
             _ => panic!("Cannot calculate distance between different types of vectors."),
         }
     }

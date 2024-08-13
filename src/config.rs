@@ -15,7 +15,6 @@ pub struct HNSWConfig {
 pub struct IVFConfig {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[non_exhaustive]
 pub enum VecDBAlgorithm {
     Linear,
     /// HNSW (Hierarchical Navigable Small World)
@@ -24,14 +23,12 @@ pub enum VecDBAlgorithm {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[non_exhaustive]
 pub enum DistanceAlgorithm {
     L2,
-    Euclidean,
+    Cosine,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[non_exhaustive]
 pub enum DataType {
     // 32-bit floating point number `f32`
     #[serde(rename = "float32")]
