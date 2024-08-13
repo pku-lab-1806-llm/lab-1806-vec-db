@@ -81,8 +81,8 @@ mod test {
 
     #[test]
     fn test_cosine_distance() {
-        let a = vec![1.0, 2.0, 3.0];
-        let b = vec![2.0, 4.0, 6.0];
+        let a = [1, 2, 3];
+        let b = [2, 4, 6];
         assert!((a.cosine_distance(&b)).abs() < EPSILON);
     }
 }
