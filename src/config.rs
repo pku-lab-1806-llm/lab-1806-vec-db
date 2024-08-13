@@ -24,7 +24,16 @@ pub enum VecDBAlgorithm {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum DistanceAlgorithm {
+    /// The *square* of the L2 distance.
+    ///
+    /// `l2_distance = sum((self - other) ** 2)`
+    ///
+    /// Range: `[0.0, +inf]`
     L2,
+    /// Cosine distance.
+    /// `cosine_distance = 1 - dot_product / (norm_self * norm_other)`
+    ///
+    /// Range: `[0.0, 2.0]`
     Cosine,
 }
 

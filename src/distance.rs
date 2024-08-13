@@ -2,7 +2,16 @@ use crate::config::DistanceAlgorithm;
 
 use crate::vec_set::{TypedVecRef, Vector};
 pub trait Distance {
+    /// The *square* of the L2 distance.
+    ///
+    /// `l2_distance = sum((self - other) ** 2)`
+    ///
+    /// Range: `[0.0, +inf]`
     fn l2_distance(&self, other: &Self) -> f32;
+    /// Cosine distance.
+    /// `cosine_distance = 1 - dot_product / (norm_self * norm_other)`
+    ///
+    /// Range: `[0.0, 2.0]`
     fn cosine_distance(&self, other: &Self) -> f32;
     fn distance(&self, other: &Self, algorithm: DistanceAlgorithm) -> f32 {
         use DistanceAlgorithm::*;
