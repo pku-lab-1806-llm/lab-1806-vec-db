@@ -1,11 +1,64 @@
-use std::ops::{Index, Range};
+use std::{
+    io::Read,
+    mem,
+    ops::{Index, Range},
+};
 
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
 
 use crate::config::{DataType, DistanceAlgorithm, VecDataConfig};
 
 pub type Vector<ScalarType> = [ScalarType];
+
+/// Trait for loading data from a binary file.
+/// Occupies constant space, apart from the data itself.
+pub trait BinaryScalar: Sized {
+    fn file_size_limit(file_path: &str, limit: Option<usize>) -> Result<usize> {
+        let file_size = std::fs::metadata(file_path)?.len() as usize;
+        let file_limit = file_size / mem::size_of::<Self>();
+        Ok(limit.unwrap_or(usize::MAX).min(file_limit))
+    }
+    /// Load data from a binary file.
+    /// The layout of the binary file is assumed to be a sequence of scalar values.
+    /// The number of scalar values to be loaded is limited by `limit`.
+    fn from_binary_file(file_path: &str, limit: Option<usize>) -> Result<Box<[Self]>>;
+
+    fn to_binary_file(data: &[Self], file_path: &str) -> Result<()> {
+        let mut file = std::fs::File::create(file_path)?;
+        std::io::Write::write_all(&mut file, unsafe {
+            std::slice::from_raw_parts(
+                data.as_ptr() as *const u8,
+                mem::size_of::<Self>() * data.len(),
+            )
+        })?;
+        Ok(())
+    }
+}
+
+impl BinaryScalar for u8 {
+    fn from_binary_file(file_path: &str, limit: Option<usize>) -> Result<Box<[Self]>> {
+        let limit = Self::file_size_limit(file_path, limit)?;
+        let mut buffer = vec![0; limit].into_boxed_slice();
+        let mut file = std::fs::File::open(file_path)?;
+        file.read_exact(&mut buffer)?;
+        Ok(buffer)
+    }
+}
+
+impl BinaryScalar for f32 {
+    fn from_binary_file(file_path: &str, limit: Option<usize>) -> Result<Box<[Self]>> {
+        let limit = Self::file_size_limit(file_path, limit)?;
+        let mut buffer = vec![0.0; limit].into_boxed_slice();
+        let mut file = std::fs::File::open(file_path)?;
+        file.read_exact(unsafe {
+            std::slice::from_raw_parts_mut(
+                buffer.as_mut_ptr() as *mut u8,
+                mem::size_of::<Self>() * buffer.len(),
+            )
+        })?;
+        Ok(buffer)
+    }
+}
 
 pub trait Distance {
     fn l2_distance(&self, other: &Self) -> f32;
@@ -73,33 +126,17 @@ impl<T> VecSet<T> {
     pub fn len(&self) -> usize {
         self.data.len() / self.dim
     }
-
-    /// Create a `VecSet` from the data.
-    pub fn from_data(dim: usize, size: Option<usize>, mut data: Vec<T>) -> Self {
-        if let Some(size) = size {
-            data.truncate(size * dim);
-        }
-        Self::new(dim, data.into_boxed_slice())
-    }
-
-    pub fn into_data(self) -> Vec<T> {
-        self.data.into_vec()
-    }
 }
-impl<'a, T: Deserialize<'a>> VecSet<T> {
-    /// Deserialize a `VecSet` from the first `size` vectors in the binary file.
-    /// Fewer than `size` vectors will be used if the data has fewer than `size` vectors.
-    /// The binary file is assumed to be serialized by `bincode`.
-    pub fn try_from_bincode(dim: usize, size: Option<usize>, data: &'a [u8]) -> Result<Self> {
-        let data = bincode::deserialize::<Vec<T>>(data)?;
-        Ok(Self::from_data(dim, size, data))
+impl<T: BinaryScalar> VecSet<T> {
+    /// Deserialize a `VecSet` from a binary file.
+    pub fn from_binary_file(dim: usize, size: Option<usize>, file_path: &str) -> Result<Self> {
+        let data = T::from_binary_file(file_path, size.map(|size| size * dim))?;
+        Ok(Self::new(dim, data))
     }
-}
-impl<T: Serialize> VecSet<T> {
+
     /// Serialize the `VecSet` to a binary file.
-    /// The binary file is serialized by `bincode`.
-    pub fn try_into_bincode(self) -> Result<Vec<u8>> {
-        bincode::serialize(&self.into_data()).map_err(Into::into)
+    pub fn into_bin_file(&self, file_path: &str) -> Result<()> {
+        T::to_binary_file(&self.data, file_path)
     }
 }
 
@@ -131,24 +168,20 @@ impl TypedVecSet {
     pub fn load_with(config: VecDataConfig) -> Result<Self> {
         let dim = config.dim;
         let size = config.size;
-        let data = std::fs::read(config.data_path)?;
+        let file = config.data_path;
+        use DataType::*;
         let vec_set = match config.data_type {
-            DataType::Float32 => Self::Float32(VecSet::try_from_bincode(dim, size, &data)?),
-            DataType::UInt8 => Self::UInt8(VecSet::try_from_bincode(dim, size, &data)?),
+            Float32 => Self::Float32(VecSet::from_binary_file(dim, size, &file)?),
+            UInt8 => Self::UInt8(VecSet::from_binary_file(dim, size, &file)?),
         };
         Ok(vec_set)
     }
-    pub fn try_into_bincode(self) -> Result<Vec<u8>> {
-        match self {
-            Self::Float32(vec_set) => vec_set.try_into_bincode(),
-            Self::UInt8(vec_set) => vec_set.try_into_bincode(),
-        }
-    }
 
-    pub fn into_bincode_file(self, file_path: &str) -> Result<()> {
-        let data = self.try_into_bincode()?;
-        std::fs::write(file_path, data)?;
-        Ok(())
+    pub fn into_bin_file(self, file_path: &str) -> Result<()> {
+        match self {
+            Self::Float32(vec_set) => vec_set.into_bin_file(file_path),
+            Self::UInt8(vec_set) => vec_set.into_bin_file(file_path),
+        }
     }
 
     /// Get the reference to the vector at the specified index.
@@ -176,6 +209,8 @@ impl From<VecSet<u8>> for TypedVecSet {
 
 #[cfg(test)]
 mod test {
+    use anyhow::bail;
+
     use super::*;
 
     #[test]
@@ -188,21 +223,31 @@ mod test {
 
     #[test]
     fn save_and_load_vec_set() -> Result<()> {
+        use TypedVecSet::*;
         let path = "data/example/test_vec_set.bin";
-        let vec_set = VecSet::new(3, vec![1, 2, 3, 4, 5, 6].into_boxed_slice());
-        let vec_set = TypedVecSet::UInt8(vec_set);
+        let vec_set = VecSet::new(2, vec![0.0, 1.0, 2.0, 3.0].into_boxed_slice());
+        let vec_set = Float32(vec_set);
         let cloned_vec_set = vec_set.clone();
-        vec_set.into_bincode_file(path)?;
+        vec_set.into_bin_file(path)?;
         let loaded_vec_set = TypedVecSet::load_with(VecDataConfig {
-            dim: 3,
-            data_type: DataType::UInt8,
+            dim: 2,
+            data_type: DataType::Float32,
             data_path: path.to_string(),
             size: None,
         })?;
-        assert_eq!(
-            cloned_vec_set.try_into_bincode()?,
-            loaded_vec_set.try_into_bincode()?
-        );
+        let loaded_vec_set = if let Float32(v) = loaded_vec_set {
+            v
+        } else {
+            bail!("Failed to load the vector set.");
+        };
+        let cloned_vec_set = if let Float32(v) = cloned_vec_set {
+            v
+        } else {
+            bail!("Failed to access the cloned vector set.");
+        };
+        assert_eq!(loaded_vec_set.data, cloned_vec_set.data);
+        dbg!(loaded_vec_set.data, cloned_vec_set.data);
+        dbg!(1.0_f32.to_ne_bytes().map(|v| format!("{:02x}", v)));
         Ok(())
     }
 }
