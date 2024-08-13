@@ -1,1 +1,3 @@
-# IBObVecDB Rust Implementation
+# lab-1806-vec-db
+
+Rust Implementation
