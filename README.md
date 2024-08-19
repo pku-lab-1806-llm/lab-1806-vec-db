@@ -8,7 +8,7 @@ Rust Implementation for Lab 1806 Vector Database
 # Install Rustup
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # Install Rust
-rustup default stable
+. "$HOME/.cargo/env"
 
 # Then install the rust-analyzer extension in VSCode.
 
