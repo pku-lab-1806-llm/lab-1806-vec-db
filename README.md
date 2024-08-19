@@ -16,7 +16,5 @@ rustup default stable
 cargo test
 
 # Run `data_loader_test` example
-cargo run --example --release data_loader_test
-# or simply
-cargo r -r --example data_loader_test
+cargo r -r --example load_vec_set_test
 ```

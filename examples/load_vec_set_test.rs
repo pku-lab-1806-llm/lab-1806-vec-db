@@ -9,6 +9,6 @@ fn main() -> Result<()> {
     let v0 = vec_set.i(0);
     let v1 = vec_set.i(1);
     println!("Distance Algorithm: {:?}", config.distance);
-    println!("L2Sqr distance: {}", v0.distance(&v1, config.distance));
+    println!("Distance: {}", v0.distance(&v1, config.distance));
     Ok(())
 }
