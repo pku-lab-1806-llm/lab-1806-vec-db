@@ -9,4 +9,5 @@ M = 16
 [vec_data]
 dim = 960
 data_type = "float32"
-data_path = "data/example/vec_set.bin"
+data_path = "/root/datasets/gist/train.data"
+size = 1000
