@@ -69,7 +69,13 @@ pub struct DBConfig {
 
 impl DBConfig {
     pub fn load_from_toml_file(file_path: &str) -> Result<Self> {
-        let content = std::fs::read_to_string(file_path)?;
+        let content = std::fs::read_to_string(file_path).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to read the TOML file at {}: {}",
+                file_path,
+                e.to_string()
+            )
+        })?;
         Ok(toml::from_str(&content)?)
     }
 }

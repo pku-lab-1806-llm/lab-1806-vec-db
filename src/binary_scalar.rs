@@ -16,7 +16,7 @@ pub trait BinaryScalar: Sized {
     fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Box<[Self]>>;
 
     fn to_binary_file(data: &[Self], file_path: impl AsRef<Path>) -> Result<()> {
-        let mut file = std::fs::File::create(file_path)?;
+        let mut file = std::fs::File::create(&file_path)?;
         std::io::Write::write_all(&mut file, unsafe {
             std::slice::from_raw_parts(
                 data.as_ptr() as *const u8,

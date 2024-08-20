@@ -52,13 +52,25 @@ impl<T> VecSet<T> {
 impl<T: BinaryScalar> VecSet<T> {
     /// Deserialize a `VecSet` from a binary file.
     pub fn from_binary_file(dim: usize, size: Option<usize>, file_path: &str) -> Result<Self> {
-        let data = T::from_binary_file(file_path, size.map(|size| size * dim))?;
+        let data = T::from_binary_file(file_path, size.map(|size| size * dim)).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to load the binary file at {}: {}",
+                file_path,
+                e.to_string()
+            )
+        })?;
         Ok(Self::new(dim, data))
     }
 
     /// Serialize the `VecSet` to a binary file.
-    pub fn into_bin_file(&self, file_path: impl AsRef<Path>) -> Result<()> {
-        T::to_binary_file(&self.data, file_path)
+    pub fn save_binary_file(&self, file_path: impl AsRef<Path>) -> Result<()> {
+        T::to_binary_file(&self.data, &file_path).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to save the binary file at {}: {}",
+                file_path.as_ref().display(),
+                e.to_string()
+            )
+        })
     }
 }
 
@@ -90,11 +102,11 @@ impl TypedVecSet {
         Ok(vec_set)
     }
 
-    pub fn into_bin_file(self, file_path: impl AsRef<Path>) -> Result<()> {
+    pub fn save_binary_file(&self, file_path: impl AsRef<Path>) -> Result<()> {
         let path = file_path.as_ref();
         match self {
-            Self::Float32(vec_set) => vec_set.into_bin_file(path),
-            Self::UInt8(vec_set) => vec_set.into_bin_file(path),
+            Self::Float32(vec_set) => vec_set.save_binary_file(path),
+            Self::UInt8(vec_set) => vec_set.save_binary_file(path),
         }
     }
 
@@ -143,7 +155,7 @@ mod test {
         let config = VecDataConfig {
             dim: 2,
             data_type: DataType::Float32,
-            data_path: "data/example/test_vec_set.bin".to_string(),
+            data_path: "data/example/test_vec_set.test.bin".to_string(),
             size: None,
         };
         let path = PathBuf::from(&config.data_path);
@@ -153,7 +165,7 @@ mod test {
         let vec_set = VecSet::new(2, vec![0.0, 1.0, 2.0, 3.0].into_boxed_slice());
         let vec_set = Float32(vec_set);
         let cloned_vec_set = vec_set.clone();
-        vec_set.into_bin_file(&path)?;
+        vec_set.save_binary_file(&path)?;
         let loaded_vec_set = TypedVecSet::load_with(config)?;
         let loaded_vec_set = if let Float32(v) = loaded_vec_set {
             v
