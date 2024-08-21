@@ -5,6 +5,7 @@ use anyhow::Result;
 /// Trait for loading data from a binary file.
 /// Occupies constant space, apart from the data itself.
 pub trait BinaryScalar: Sized {
+    /// Calculate the number of scalar values to be loaded from a binary file.
     fn file_size_limit(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<usize> {
         let file_size = std::fs::metadata(file_path)?.len() as usize;
         let file_limit = file_size / mem::size_of::<Self>();
