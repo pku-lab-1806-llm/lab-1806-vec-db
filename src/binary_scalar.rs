@@ -5,7 +5,11 @@ use anyhow::Result;
 /// Trait for loading data from a binary file.
 /// Occupies constant space, apart from the data itself.
 pub trait BinaryScalar: Sized {
-    /// Calculate the number of scalar values to be loaded from a binary file.
+    /// Calculate the exact number of scalar values to be loaded from a binary file.
+    ///
+    /// limit: The maximum number of scalar values to be loaded, or `None` to load all.
+    ///
+    /// The return value may be less than `limit` if the file size is smaller than the limit.
     fn file_size_limit(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<usize> {
         let file_size = std::fs::metadata(file_path)?.len() as usize;
         let file_limit = file_size / mem::size_of::<Self>();
@@ -16,6 +20,8 @@ pub trait BinaryScalar: Sized {
     /// The number of scalar values to be loaded is limited by `limit`.
     fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Box<[Self]>>;
 
+    /// Serialize data to a binary file.
+    /// The layout of the binary file is a sequence of scalar values.
     fn to_binary_file(data: &[Self], file_path: impl AsRef<Path>) -> Result<()> {
         let mut file = std::fs::File::create(&file_path)?;
         std::io::Write::write_all(&mut file, unsafe {
