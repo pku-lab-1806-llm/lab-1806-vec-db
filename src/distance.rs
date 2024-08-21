@@ -1,6 +1,6 @@
 use crate::config::DistanceAlgorithm;
 
-use crate::vec_set::{TypedVecRef, Vector};
+use crate::vec_set::{DynamicVecRef, Vector};
 pub trait Distance {
     /// The *square* of the L2 distance.
     ///
@@ -63,7 +63,7 @@ impl Distance for Vector<u8> {
     }
 }
 
-impl Distance for TypedVecRef<'_> {
+impl Distance for DynamicVecRef<'_> {
     fn l2_sqr_distance(&self, other: &Self) -> f32 {
         match (self, other) {
             (Self::Float32(a), Self::Float32(b)) => a.l2_sqr_distance(b),

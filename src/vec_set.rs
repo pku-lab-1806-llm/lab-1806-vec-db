@@ -78,16 +78,16 @@ impl<T: BinaryScalar> VecSet<T> {
     }
 }
 
-pub enum TypedVecRef<'a> {
+pub enum DynamicVecRef<'a> {
     Float32(&'a [f32]),
     UInt8(&'a [u8]),
 }
 #[derive(Debug, Clone)]
-pub enum TypedVecSet {
+pub enum DynamicVecSet {
     Float32(VecSet<f32>),
     UInt8(VecSet<u8>),
 }
-impl TypedVecSet {
+impl DynamicVecSet {
     pub fn len(&self) -> usize {
         match self {
             Self::Float32(vec_set) => vec_set.len(),
@@ -115,43 +115,43 @@ impl TypedVecSet {
     }
 
     /// Get the reference to the vector at the specified index.
-    pub fn index(&self, index: usize) -> TypedVecRef {
+    pub fn index(&self, index: usize) -> DynamicVecRef {
         match self {
-            Self::Float32(vec_set) => TypedVecRef::Float32(&vec_set[index]),
-            Self::UInt8(vec_set) => TypedVecRef::UInt8(&vec_set[index]),
+            Self::Float32(vec_set) => DynamicVecRef::Float32(&vec_set[index]),
+            Self::UInt8(vec_set) => DynamicVecRef::UInt8(&vec_set[index]),
         }
     }
     /// Alias for `index`.
-    pub fn i(&self, index: usize) -> TypedVecRef {
+    pub fn i(&self, index: usize) -> DynamicVecRef {
         self.index(index)
     }
 }
-impl From<VecSet<f32>> for TypedVecSet {
+impl From<VecSet<f32>> for DynamicVecSet {
     fn from(vec_set: VecSet<f32>) -> Self {
         Self::Float32(vec_set)
     }
 }
-impl From<VecSet<u8>> for TypedVecSet {
+impl From<VecSet<u8>> for DynamicVecSet {
     fn from(vec_set: VecSet<u8>) -> Self {
         Self::UInt8(vec_set)
     }
 }
-impl TryFrom<TypedVecSet> for VecSet<f32> {
+impl TryFrom<DynamicVecSet> for VecSet<f32> {
     type Error = anyhow::Error;
 
-    fn try_from(value: TypedVecSet) -> Result<Self> {
+    fn try_from(value: DynamicVecSet) -> Result<Self> {
         match value {
-            TypedVecSet::Float32(vec_set) => Ok(vec_set),
+            DynamicVecSet::Float32(vec_set) => Ok(vec_set),
             _ => Err(anyhow::anyhow!("Failed to convert to VecSet<f32>.")),
         }
     }
 }
-impl TryFrom<TypedVecSet> for VecSet<u8> {
+impl TryFrom<DynamicVecSet> for VecSet<u8> {
     type Error = anyhow::Error;
 
-    fn try_from(value: TypedVecSet) -> Result<Self> {
+    fn try_from(value: DynamicVecSet) -> Result<Self> {
         match value {
-            TypedVecSet::UInt8(vec_set) => Ok(vec_set),
+            DynamicVecSet::UInt8(vec_set) => Ok(vec_set),
             _ => Err(anyhow::anyhow!("Failed to convert to VecSet<u8>.")),
         }
     }
@@ -180,7 +180,7 @@ mod test {
         let file_path = "config/example/db_config.toml";
         let config = DBConfig::load_from_toml_file(file_path)?;
         println!("Loaded config: {:#?}", config);
-        let vec_set = TypedVecSet::load_with(config.vec_data)?;
+        let vec_set = DynamicVecSet::load_with(config.vec_data)?;
         let v0 = vec_set.i(0);
         let v1 = vec_set.i(1);
         println!("Distance Algorithm: {:?}", config.distance);
@@ -198,7 +198,7 @@ mod test {
 
         // Save a TypedVecSet to a binary file.
         let vec_set = VecSet::new(2, vec![0.0, 1.0, 2.0, 3.0].into_boxed_slice());
-        let vec_set = TypedVecSet::Float32(vec_set);
+        let vec_set = DynamicVecSet::Float32(vec_set);
         let cloned_vec_set = vec_set.clone();
         vec_set.save_binary_file(&file_path)?;
 
