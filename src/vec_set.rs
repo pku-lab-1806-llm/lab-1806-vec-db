@@ -196,7 +196,7 @@ mod test {
         let dir = file_path.parent().ok_or_else(|| anyhow!("Invalid path."))?;
         create_dir_all(dir)?;
 
-        // Save a TypedVecSet to a binary file.
+        // Save a DynamicVecSet to a binary file.
         let vec_set = VecSet::new(2, vec![0.0, 1.0, 2.0, 3.0].into_boxed_slice());
         let vec_set = DynamicVecSet::Float32(vec_set);
         let cloned_vec_set = vec_set.clone();
