@@ -1,20 +1,18 @@
-use std::{
-    ops::{Index, Range},
-    path::Path,
-};
+use std::{ops::Index, path::Path};
 
 use crate::binary_scalar::BinaryScalar;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 
 use crate::config::{DataType, VecDataConfig};
 
-pub type Vector<ScalarType> = [ScalarType];
-
+/// The vector set with scalar type T.
+/// Can be indexed to get the vector at the specified index.
+/// Load and save the vector set from/to a binary file with constant extra memory.
 #[derive(Debug, Clone)]
-pub struct VecSet<ScalarType> {
+pub struct VecSet<T> {
     pub dim: usize,
-    pub data: Box<[ScalarType]>,
+    pub data: Box<[T]>,
 }
 
 impl<T> Index<usize> for VecSet<T> {
@@ -23,15 +21,6 @@ impl<T> Index<usize> for VecSet<T> {
     fn index(&self, index: usize) -> &Self::Output {
         let start = index * self.dim;
         let end = start + self.dim;
-        &self.data[start..end]
-    }
-}
-impl<T> Index<Range<usize>> for VecSet<T> {
-    type Output = [T];
-
-    fn index(&self, range: Range<usize>) -> &Self::Output {
-        let start = range.start * self.dim;
-        let end = range.end * self.dim;
         &self.data[start..end]
     }
 }
@@ -48,7 +37,12 @@ impl<T> VecSet<T> {
     pub fn len(&self) -> usize {
         self.data.len() / self.dim
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = &[T]> {
+        (0..self.len()).map(move |i| &self[i])
+    }
 }
+
 impl<T: BinaryScalar> VecSet<T> {
     /// Deserialize a `VecSet` from a binary file.
     pub fn from_binary_file(
@@ -78,10 +72,51 @@ impl<T: BinaryScalar> VecSet<T> {
     }
 }
 
+/// The reference to the vector with scalar type f32 or u8.
+/// The data type is determined at runtime.
+#[derive(Debug, Clone)]
 pub enum DynamicVecRef<'a> {
     Float32(&'a [f32]),
     UInt8(&'a [u8]),
 }
+impl<'a> From<&'a [f32]> for DynamicVecRef<'a> {
+    fn from(slice: &'a [f32]) -> Self {
+        Self::Float32(slice)
+    }
+}
+
+impl<'a> From<&'a [u8]> for DynamicVecRef<'a> {
+    fn from(slice: &'a [u8]) -> Self {
+        Self::UInt8(slice)
+    }
+}
+
+impl<'a> TryFrom<DynamicVecRef<'a>> for &'a [f32] {
+    type Error = anyhow::Error;
+
+    fn try_from(value: DynamicVecRef<'a>) -> Result<Self> {
+        match value {
+            DynamicVecRef::Float32(slice) => Ok(slice),
+            _ => bail!("Failed to convert to &[f32]."),
+        }
+    }
+}
+
+impl<'a> TryFrom<DynamicVecRef<'a>> for &'a [u8] {
+    type Error = anyhow::Error;
+
+    fn try_from(value: DynamicVecRef<'a>) -> Result<Self> {
+        match value {
+            DynamicVecRef::UInt8(slice) => Ok(slice),
+            _ => bail!("Failed to convert to &[u8]."),
+        }
+    }
+}
+
+/// The dynamic vector set with scalar type f32 or u8.
+/// Can be indexed to get the vector at the specified index.
+/// Load and save the vector set from/to a binary file with constant extra memory.
+/// The data type is determined at runtime.
 #[derive(Debug, Clone)]
 pub enum DynamicVecSet {
     Float32(VecSet<f32>),
@@ -142,7 +177,7 @@ impl TryFrom<DynamicVecSet> for VecSet<f32> {
     fn try_from(value: DynamicVecSet) -> Result<Self> {
         match value {
             DynamicVecSet::Float32(vec_set) => Ok(vec_set),
-            _ => Err(anyhow::anyhow!("Failed to convert to VecSet<f32>.")),
+            _ => bail!("Failed to convert to VecSet<f32>."),
         }
     }
 }
@@ -152,7 +187,7 @@ impl TryFrom<DynamicVecSet> for VecSet<u8> {
     fn try_from(value: DynamicVecSet) -> Result<Self> {
         match value {
             DynamicVecSet::UInt8(vec_set) => Ok(vec_set),
-            _ => Err(anyhow::anyhow!("Failed to convert to VecSet<u8>.")),
+            _ => bail!("Failed to convert to VecSet<u8>."),
         }
     }
 }

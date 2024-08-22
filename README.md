@@ -18,15 +18,4 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # Add `-r` to test with release mode
 cargo test
 # Or you can click the 'Run Test' button in VSCode to show output
-
-# Remember NOT to put time cost tests in test modules.
-# Just create a new example file for time cost tests.
-
-# Examples
-# Put the file at `examples/some_example.rs`
-cargo r -r --example some_example
-
-# Binaries
-# Put the file at `src/bin/some_binary.rs`
-cargo r -r --bin some_binary
 ```
