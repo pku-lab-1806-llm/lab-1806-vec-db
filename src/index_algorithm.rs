@@ -6,6 +6,8 @@ use crate::vec_set::{DynamicVecRef, DynamicVecSet, VecSet};
 
 /// A pair of the index and the distance.
 /// For the response of the k-nearest neighbors search.
+///
+/// This should implement `Ord` to be used in `BTreeSet`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResponsePair {
     pub index: usize,
@@ -30,6 +32,10 @@ impl Ord for ResponsePair {
     }
 }
 
+/// Linear index for the k-nearest neighbors search.
+/// The distance algorithm is configurable.
+///
+/// Holds a reference to the `VecSet`.
 pub struct LinearIndex<'a, T> {
     vec_set: &'a VecSet<T>,
     distance: DistanceAlgorithm,
@@ -62,6 +68,11 @@ where
     }
 }
 
+/// Linear index for the k-nearest neighbors search.
+///
+/// Holds a reference to the `DynamicVecSet`.
+///
+/// The data type is determined at runtime.
 pub enum DynamicLinearIndex<'a> {
     Float32(LinearIndex<'a, f32>),
     UInt8(LinearIndex<'a, u8>),

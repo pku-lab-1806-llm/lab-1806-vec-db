@@ -131,7 +131,7 @@ impl DynamicVecSet {
     }
     pub fn load_with(config: VecDataConfig) -> Result<Self> {
         let dim = config.dim;
-        let size = config.size;
+        let size = config.limit;
         let file = config.data_path;
         use DataType::*;
         let vec_set = match config.data_type {

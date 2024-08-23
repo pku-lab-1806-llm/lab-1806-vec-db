@@ -1,6 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+/// The configuration of the HNSW (Hierarchical Navigable Small World) algorithm.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct HNSWConfig {
@@ -14,14 +15,20 @@ pub struct HNSWConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IVFConfig {}
 
+/// The configuration of the index algorithm.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum VecDBAlgorithm {
+pub enum IndexAlgorithm {
+    /// Linear search. *Precise but slow.*
+    /// No configuration is required.
     Linear,
     /// HNSW (Hierarchical Navigable Small World)
     HNSW(HNSWConfig),
     IVF(IVFConfig),
 }
 
+/// Distance algorithm to be used in the vector database.
+///
+/// See also `DistanceAlgorithm::d()`.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum DistanceAlgorithm {
     /// L2 squared distance, AKA squared Euclidean distance.
@@ -39,6 +46,7 @@ pub enum DistanceAlgorithm {
     Cosine,
 }
 
+/// Data type of the vector elements.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum DataType {
     // 32-bit floating point number `f32`
@@ -49,21 +57,27 @@ pub enum DataType {
     UInt8,
 }
 
+/// The configuration of the vector data file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VecDataConfig {
+    /// Dimension of each vector.
     pub dim: usize,
+    /// Data type of the vector elements.
     pub data_type: DataType,
+    /// Path to the data file.
     pub data_path: String,
-    /// Number of vectors to read from the data file.
-    /// If `None`, read all vectors;
-    /// If `Some(n)`, read the first `min(n, total_vectors)` vectors.
-    pub size: Option<usize>,
+    /// *Optional:* The maximum number of vectors to be loaded.
+    pub limit: Option<usize>,
 }
 
+/// The configuration of the vector database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DBConfig {
-    pub algorithm: VecDBAlgorithm,
+    /// The configuration of the index algorithm.
+    pub algorithm: IndexAlgorithm,
+    /// The distance algorithm to be used in the vector database.
     pub distance: DistanceAlgorithm,
+    /// The configuration of the vector data file.
     pub vec_data: VecDataConfig,
 }
 
