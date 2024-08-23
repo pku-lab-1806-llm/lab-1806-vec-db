@@ -51,13 +51,30 @@ impl<T: BinaryScalar> VecSet<T> {
 
     pub fn put(&mut self, index: usize, vector: &[T]) {
         assert_eq!(vector.len(), self.dim);
+        self.get_mut(index).clone_from_slice(vector);
+    }
+
+    pub fn get_mut(&mut self, index: usize) -> &mut [T] {
         let start = index * self.dim;
         let end = start + self.dim;
-        self.data[start..end].copy_from_slice(vector);
+        &mut self.data[start..end]
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &[T]> {
         (0..self.len()).map(move |i| &self[i])
+    }
+
+    pub fn to_f32(&self) -> VecSet<f32>
+    where
+        T: Into<f32>,
+    {
+        let data = self
+            .data
+            .iter()
+            .map(|&x| x.into())
+            .collect::<Vec<f32>>()
+            .into_boxed_slice();
+        VecSet::new(self.dim, data)
     }
 }
 
