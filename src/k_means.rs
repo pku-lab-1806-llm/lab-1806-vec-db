@@ -1,5 +1,3 @@
-use std::ops::{AddAssign, DivAssign};
-
 use crate::{
     binary_scalar::BinaryScalar, config::DistanceAlgorithm, distance::Distance, vec_set::VecSet,
 };
