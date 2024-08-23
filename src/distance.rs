@@ -86,6 +86,33 @@ impl DistanceAlgorithm {
             Cosine => a.cosine_distance(b),
         }
     }
+
+    /// Alias for `distance`.
+    /// Calculate distance between two vectors using the specified algorithm.
+    pub fn d<T: Distance + ?Sized>(&self, a: &T, b: &T) -> f32 {
+        self.distance(a, b)
+    }
+
+    /// Calculate distance between two slices using the specified algorithm.
+    ///
+    /// This may help the type inference system.
+    pub fn distance_slice<T>(&self, a: &[T], b: &[T]) -> f32
+    where
+        [T]: Distance,
+    {
+        self.distance(a, b)
+    }
+
+    /// Alias for `distance_slice`.
+    /// Calculate distance between two slices using the specified algorithm.
+    ///
+    /// This may help the type inference system.
+    pub fn ds<T>(&self, a: &[T], b: &[T]) -> f32
+    where
+        [T]: Distance,
+    {
+        self.distance(a, b)
+    }
 }
 
 #[cfg(test)]
@@ -100,7 +127,7 @@ mod test {
         use DistanceAlgorithm::*;
         let a = vec![1.0, 2.0, 3.0];
         let b = vec![4.0, 5.0, 6.0];
-        assert!((L2Sqr.distance::<[f32]>(&a, &b) - 27.0_f32).abs() < EPSILON);
+        assert!((L2Sqr.ds(&a, &b) - 27.0_f32).abs() < EPSILON);
     }
 
     #[test]
@@ -108,6 +135,6 @@ mod test {
         use DistanceAlgorithm::*;
         let a = [1, 2, 3];
         let b = [2, 4, 6];
-        assert!((Cosine.distance::<[u8]>(&a, &b) - 0.0_f32).abs() < EPSILON);
+        assert!((Cosine.ds(&a, &b) - 0.0_f32).abs() < EPSILON);
     }
 }

@@ -219,7 +219,7 @@ mod test {
         let v0 = vec_set.i(0);
         let v1 = vec_set.i(1);
         println!("Distance Algorithm: {:?}", config.distance);
-        let distance = config.distance.distance(&v0, &v1);
+        let distance = config.distance.d(&v0, &v1);
         println!("Distance: {}", distance);
         assert!((distance - 2.3230).abs() < 1e-4);
         Ok(())
