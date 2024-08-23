@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use crate::binary_scalar::BinaryScalar;
 use crate::config::DistanceAlgorithm;
 use crate::distance::Distance;
 use crate::vec_set::{DynamicVecRef, DynamicVecSet, VecSet};
@@ -43,6 +44,7 @@ pub struct LinearIndex<'a, T> {
 
 impl<'a, T> LinearIndex<'a, T>
 where
+    T: BinaryScalar,
     [T]: Distance,
 {
     pub fn from_vec_set(vec_set: &'a VecSet<T>, distance: DistanceAlgorithm) -> Self {

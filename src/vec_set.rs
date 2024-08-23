@@ -11,8 +11,8 @@ use crate::config::{DataType, VecDataConfig};
 /// Load and save the vector set from/to a binary file with constant extra memory.
 #[derive(Debug, Clone)]
 pub struct VecSet<T> {
-    pub dim: usize,
-    pub data: Box<[T]>,
+    dim: usize,
+    data: Box<[T]>,
 }
 
 impl<T> Index<usize> for VecSet<T> {
@@ -25,7 +25,7 @@ impl<T> Index<usize> for VecSet<T> {
     }
 }
 
-impl<T> VecSet<T> {
+impl<T: BinaryScalar> VecSet<T> {
     fn new(dim: usize, data: Box<[T]>) -> Self {
         assert!(
             data.len() % dim == 0,
@@ -34,8 +34,26 @@ impl<T> VecSet<T> {
         Self { dim, data }
     }
 
+    pub fn dim(&self) -> usize {
+        self.dim
+    }
+
+    pub fn zeros(dim: usize, len: usize) -> Self
+    where
+        T: Default + Clone,
+    {
+        Self::new(dim, vec![T::default(); dim * len].into_boxed_slice())
+    }
+
     pub fn len(&self) -> usize {
         self.data.len() / self.dim
+    }
+
+    pub fn put(&mut self, index: usize, vector: &[T]) {
+        assert_eq!(vector.len(), self.dim);
+        let start = index * self.dim;
+        let end = start + self.dim;
+        self.data[start..end].copy_from_slice(vector);
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &[T]> {

@@ -4,7 +4,7 @@ use anyhow::Result;
 
 /// Trait for loading data from a binary file.
 /// Occupies constant space, apart from the data itself.
-pub trait BinaryScalar: Sized {
+pub trait BinaryScalar: Sized + Default + Copy {
     /// Calculate the exact number of scalar values to be loaded from a binary file.
     ///
     /// limit: The maximum number of scalar values to be loaded, or `None` to load all.
