@@ -17,13 +17,9 @@ pub trait Distance {
     ///
     /// Range: `[0.0, 2.0]`
     fn cosine_distance(&self, other: &Self) -> f32;
-    fn distance(&self, other: &Self, algorithm: DistanceAlgorithm) -> f32 {
-        use DistanceAlgorithm::*;
-        match algorithm {
-            L2Sqr => self.l2_sqr_distance(other),
-            L2 => self.l2_distance(other),
-            Cosine => self.cosine_distance(other),
-        }
+    /// Calculate distance using the specified algorithm.
+    fn dynamic_distance(&self, other: &Self, algorithm: DistanceAlgorithm) -> f32 {
+        algorithm.distance(self, other)
     }
 }
 impl Distance for [f32] {
@@ -79,6 +75,19 @@ impl Distance for DynamicVecRef<'_> {
         }
     }
 }
+
+impl DistanceAlgorithm {
+    /// Calculate distance between two vectors using the specified algorithm.
+    pub fn distance<T: Distance + ?Sized>(&self, a: &T, b: &T) -> f32 {
+        use DistanceAlgorithm::*;
+        match self {
+            L2Sqr => a.l2_sqr_distance(b),
+            L2 => a.l2_distance(b),
+            Cosine => a.cosine_distance(b),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
 
@@ -88,15 +97,17 @@ mod test {
 
     #[test]
     fn test_l2_sqr_distance() {
+        use DistanceAlgorithm::*;
         let a = vec![1.0, 2.0, 3.0];
         let b = vec![4.0, 5.0, 6.0];
-        assert!((a.l2_sqr_distance(&b) - 27.0_f32).abs() < EPSILON);
+        assert!((L2Sqr.distance::<[f32]>(&a, &b) - 27.0_f32).abs() < EPSILON);
     }
 
     #[test]
     fn test_cosine_distance() {
+        use DistanceAlgorithm::*;
         let a = [1, 2, 3];
         let b = [2, 4, 6];
-        assert!((a.cosine_distance(&b)).abs() < EPSILON);
+        assert!((Cosine.distance::<[u8]>(&a, &b) - 0.0_f32).abs() < EPSILON);
     }
 }

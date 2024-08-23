@@ -48,7 +48,7 @@ where
     pub fn knn(&self, query: &[T], k: usize) -> Vec<ResponsePair> {
         let mut result = BTreeSet::new();
         for (i, v) in self.vec_set.iter().enumerate() {
-            let dist = query.distance(v, self.distance);
+            let dist = self.distance.distance(query, v);
             if result.len() < k {
                 result.insert(ResponsePair::new(i, dist));
             } else if let Some(max) = result.last() {
