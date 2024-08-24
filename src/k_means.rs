@@ -21,7 +21,6 @@ pub struct KMeansConfig {
 pub struct KMeans<T> {
     pub centroids: VecSet<T>,
 }
-#[allow(unused)] // Remove this line soon.
 impl<T: BinaryScalar> KMeans<T>
 where
     [T]: Distance,
@@ -68,10 +67,10 @@ where
             let mut new_centroids = VecSet::<f32>::zeros(vec_set.dim(), config.k);
             let mut count = vec![0; config.k];
 
-            for (idx, v) in vec_set.iter().enumerate() {
+            for v in vec_set.iter() {
                 // Find the nearest centroid.
                 // *May panic* since f32 is not Ord.
-                let (min_dist, min_idx) = centroids
+                let (_, min_idx) = centroids
                     .iter()
                     .enumerate()
                     .map(|(i, c)| (config.dist.d(v, c), i))
