@@ -183,6 +183,24 @@ mod test {
     }
 
     #[test]
+    fn test_k_means_u8() {
+        let vec_set = VecSet::new(2, vec![0, 0, 1, 0, 255, 254, 255, 255].into_boxed_slice());
+        let config = KMeansConfig {
+            k: 2,
+            max_iter: 20,
+            tol: 1e-6,
+            dist: DistanceAlgorithm::L2Sqr,
+        };
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let k_means = KMeans::from_vec_set(&vec_set, &config, &mut rng);
+        assert_eq!(k_means.centroids.len(), config.k);
+        for c in k_means.centroids.iter() {
+            assert_eq!(c.len(), vec_set.dim());
+            println!("{:?}", c);
+        }
+    }
+
+    #[test]
     fn test_k_means_on_real_set() -> Result<()> {
         fn clip_msg(s: &str) -> String {
             if s.len() > 100 {
