@@ -1,10 +1,21 @@
-use std::{io::Read, mem, path::Path};
+use std::{fmt::Debug, io::Read, mem, path::Path};
 
 use anyhow::Result;
 
 /// Trait for loading data from a binary file.
 /// Occupies constant space, apart from the data itself.
-pub trait BinaryScalar: Sized + Default + Copy {
+pub trait BinaryScalar: Sized + Default + Copy + Debug {
+    /// Cast a float value to the scalar type. *Alias for `as`.*
+    ///
+    /// Casting from a float to an integer will round the float towards zero
+    /// - NaN will return 0
+    /// - Values larger than the maximum integer value, including INFINITY, will saturate to the maximum value of the integer type.
+    /// - Values smaller than the minimum integer value, including NEG_INFINITY, will saturate to the minimum value of the integer type.
+    fn cast_from_f32(value: f32) -> Self;
+
+    /// Cast the scalar value to a float value. *Alias for `as`.*
+    fn cast_to_f32(self) -> f32;
+
     /// Calculate the exact number of scalar values to be loaded from a binary file.
     ///
     /// limit: The maximum number of scalar values to be loaded, or `None` to load all.
@@ -35,6 +46,12 @@ pub trait BinaryScalar: Sized + Default + Copy {
 }
 
 impl BinaryScalar for u8 {
+    fn cast_from_f32(value: f32) -> Self {
+        value as u8
+    }
+    fn cast_to_f32(self) -> f32 {
+        self as f32
+    }
     fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Box<[Self]>> {
         let limit = Self::file_size_limit(&file_path, limit)?;
         let mut buffer = vec![0; limit].into_boxed_slice();
@@ -45,6 +62,12 @@ impl BinaryScalar for u8 {
 }
 
 impl BinaryScalar for f32 {
+    fn cast_from_f32(value: f32) -> Self {
+        value
+    }
+    fn cast_to_f32(self) -> f32 {
+        self
+    }
     fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Box<[Self]>> {
         let limit = Self::file_size_limit(&file_path, limit)?;
         let mut buffer = vec![0.0; limit].into_boxed_slice();

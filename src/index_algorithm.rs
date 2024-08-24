@@ -29,7 +29,7 @@ impl Ord for ResponsePair {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.distance
             .partial_cmp(&other.distance)
-            .unwrap_or(std::cmp::Ordering::Equal)
+            .expect("Failed to compare f32 distance in response pair.")
     }
 }
 
@@ -108,16 +108,15 @@ mod test {
 
     use super::*;
 
-    fn clip_msg(s: &str) -> String {
-        if s.len() > 100 {
-            format!("{}...", &s[..100])
-        } else {
-            s.to_string()
-        }
-    }
-
     #[test]
     pub fn linear_index_test() -> Result<()> {
+        fn clip_msg(s: &str) -> String {
+            if s.len() > 100 {
+                format!("{}...", &s[..100])
+            } else {
+                s.to_string()
+            }
+        }
         let file_path = "config/example/db_config.toml";
         let config = DBConfig::load_from_toml_file(file_path)?;
         println!("Loaded config: {:#?}", config);

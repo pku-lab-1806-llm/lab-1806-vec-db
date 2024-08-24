@@ -26,7 +26,7 @@ impl<T> Index<usize> for VecSet<T> {
 }
 
 impl<T: BinaryScalar> VecSet<T> {
-    fn new(dim: usize, data: Box<[T]>) -> Self {
+    pub fn new(dim: usize, data: Box<[T]>) -> Self {
         assert!(
             data.len() % dim == 0,
             "Data length must be a multiple of the dimension."
@@ -61,18 +61,22 @@ impl<T: BinaryScalar> VecSet<T> {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &[T]> {
-        (0..self.len()).map(move |i| &self[i])
+        self.data.chunks_exact(self.dim)
     }
 
-    pub fn to_f32(&self) -> VecSet<f32>
-    where
-        T: Into<f32>,
-    {
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut [T]> {
+        self.data.chunks_exact_mut(self.dim)
+    }
+
+    /// Convert the `VecSet` to a `VecSet` with a different scalar type.
+    ///
+    /// The conversion is done by casting the scalar values to `f32` and then to the target type `U`.
+    pub fn to_type<U: BinaryScalar>(&self) -> VecSet<U> {
         let data = self
             .data
             .iter()
-            .map(|&x| x.into())
-            .collect::<Vec<f32>>()
+            .map(|&x| U::cast_from_f32(x.cast_to_f32()))
+            .collect::<Vec<U>>()
             .into_boxed_slice();
         VecSet::new(self.dim, data)
     }
@@ -194,6 +198,10 @@ impl DynamicVecSet {
     /// Alias for `index`.
     pub fn i(&self, index: usize) -> DynamicVecRef {
         self.index(index)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = DynamicVecRef> {
+        (0..self.len()).map(move |i| self.index(i))
     }
 }
 impl From<VecSet<f32>> for DynamicVecSet {
