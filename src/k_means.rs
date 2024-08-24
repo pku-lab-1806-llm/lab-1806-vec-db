@@ -26,6 +26,8 @@ impl<T: BinaryScalar> KMeans<T>
 where
     [T]: Distance,
 {
+    /// Initialize the centroids using the k-means++ algorithm.
+    /// Returns the initialized centroids.
     fn k_means_init(vec_set: &VecSet<T>, config: &KMeansConfig, rng: &mut impl Rng) -> VecSet<T> {
         let k = config.k;
         let dist = config.dist;
@@ -39,9 +41,11 @@ where
             for (v, w) in vec_set.iter().zip(weight.iter_mut()) {
                 *w = w.min(dist.d(&centroids[idx - 1], v));
             }
+            // Randomly choose the next centroid with probability proportional to the distance.
+            // If all weights are zero, choose randomly.
             let c = WeightedIndex::new(&weight)
-                .expect("WeightedIndex::new failed")
-                .sample(rng);
+                .map(|d| d.sample(rng))
+                .unwrap_or(rng.gen_range(0..vec_set.len()));
 
             centroids.put(idx, &vec_set[c]);
         }
@@ -51,7 +55,7 @@ where
     /// The initial centroids are initialized by the k-means++ algorithm.
     /// `k` should be in the range `[0, len(vec_set)]`.
     ///
-    // *May panic* since f32 is not Ord.
+    // *May panic* since f32 is partially ordered.
     pub fn from_vec_set(vec_set: &VecSet<T>, config: &KMeansConfig, rng: &mut impl Rng) -> Self {
         assert!(
             (0..=vec_set.len()).contains(&config.k),
