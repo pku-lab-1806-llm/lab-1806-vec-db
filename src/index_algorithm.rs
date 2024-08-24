@@ -82,19 +82,17 @@ pub enum DynamicLinearIndex<'a> {
 
 impl<'a> DynamicLinearIndex<'a> {
     pub fn from_dynamic_vec_set(vec_set: &'a DynamicVecSet, distance: DistanceAlgorithm) -> Self {
+        use DynamicVecSet::*;
         match vec_set {
-            DynamicVecSet::Float32(vec_set) => {
-                Self::Float32(LinearIndex::from_vec_set(vec_set, distance))
-            }
-            DynamicVecSet::UInt8(vec_set) => {
-                Self::UInt8(LinearIndex::from_vec_set(vec_set, distance))
-            }
+            Float32(vec_set) => Self::Float32(LinearIndex::from_vec_set(vec_set, distance)),
+            UInt8(vec_set) => Self::UInt8(LinearIndex::from_vec_set(vec_set, distance)),
         }
     }
     pub fn knn(&self, query: &DynamicVecRef, k: usize) -> Vec<ResponsePair> {
+        use DynamicVecRef::*;
         match (self, query) {
-            (Self::Float32(index), DynamicVecRef::Float32(query)) => index.knn(query, k),
-            (Self::UInt8(index), DynamicVecRef::UInt8(query)) => index.knn(query, k),
+            (Self::Float32(index), Float32(query)) => index.knn(query, k),
+            (Self::UInt8(index), UInt8(query)) => index.knn(query, k),
             _ => panic!("Mismatched types when calling knn in DynamicLinearIndex."),
         }
     }
