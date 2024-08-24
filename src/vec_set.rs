@@ -11,8 +11,8 @@ use crate::config::{DataType, VecDataConfig};
 /// Load and save the vector set from/to a binary file with constant extra memory.
 #[derive(Debug, Clone)]
 pub struct VecSet<T> {
-    pub dim: usize,
-    pub data: Box<[T]>,
+    dim: usize,
+    data: Box<[T]>,
 }
 
 impl<T> Index<usize> for VecSet<T> {
@@ -25,8 +25,8 @@ impl<T> Index<usize> for VecSet<T> {
     }
 }
 
-impl<T> VecSet<T> {
-    fn new(dim: usize, data: Box<[T]>) -> Self {
+impl<T: BinaryScalar> VecSet<T> {
+    pub fn new(dim: usize, data: Box<[T]>) -> Self {
         assert!(
             data.len() % dim == 0,
             "Data length must be a multiple of the dimension."
@@ -34,12 +34,51 @@ impl<T> VecSet<T> {
         Self { dim, data }
     }
 
+    pub fn dim(&self) -> usize {
+        self.dim
+    }
+
+    pub fn zeros(dim: usize, len: usize) -> Self
+    where
+        T: Default + Clone,
+    {
+        Self::new(dim, vec![T::default(); dim * len].into_boxed_slice())
+    }
+
     pub fn len(&self) -> usize {
         self.data.len() / self.dim
     }
 
+    pub fn put(&mut self, index: usize, vector: &[T]) {
+        assert_eq!(vector.len(), self.dim);
+        self.get_mut(index).clone_from_slice(vector);
+    }
+
+    pub fn get_mut(&mut self, index: usize) -> &mut [T] {
+        let start = index * self.dim;
+        let end = start + self.dim;
+        &mut self.data[start..end]
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &[T]> {
-        (0..self.len()).map(move |i| &self[i])
+        self.data.chunks_exact(self.dim)
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut [T]> {
+        self.data.chunks_exact_mut(self.dim)
+    }
+
+    /// Convert the `VecSet` to a `VecSet` with a different scalar type.
+    ///
+    /// The conversion is done by casting the scalar values to `f32` and then to the target type `U`.
+    pub fn to_type<U: BinaryScalar>(&self) -> VecSet<U> {
+        let data = self
+            .data
+            .iter()
+            .map(|&x| U::cast_from_f32(x.cast_to_f32()))
+            .collect::<Vec<U>>()
+            .into_boxed_slice();
+        VecSet::new(self.dim, data)
     }
 }
 
@@ -159,6 +198,10 @@ impl DynamicVecSet {
     /// Alias for `index`.
     pub fn i(&self, index: usize) -> DynamicVecRef {
         self.index(index)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = DynamicVecRef> {
+        (0..self.len()).map(move |i| self.index(i))
     }
 }
 impl From<VecSet<f32>> for DynamicVecSet {
