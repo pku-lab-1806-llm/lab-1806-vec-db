@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use crate::{
     binary_scalar::BinaryScalar,
     config::DistanceAlgorithm,
@@ -16,6 +18,9 @@ pub struct KMeansConfig {
     pub tol: f32,
     /// The distance algorithm to use.
     pub dist: DistanceAlgorithm,
+    /// The range of the dimension to use.
+    /// If None, use all dimensions.
+    pub selected: Option<Range<usize>>,
 }
 
 pub struct KMeans<T> {
@@ -30,15 +35,22 @@ where
     fn k_means_init(vec_set: &VecSet<T>, config: &KMeansConfig, rng: &mut impl Rng) -> VecSet<T> {
         let k = config.k;
         let dist = config.dist;
-        let mut centroids = VecSet::zeros(vec_set.dim(), k);
-        centroids.put(0, &vec_set[rng.gen_range(0..vec_set.len())]);
+        let selected = match &config.selected {
+            Some(selected) => selected.clone(),
+            None => 0..vec_set.dim(),
+        };
+        let mut centroids = VecSet::zeros(selected.len(), k);
+        centroids.put(
+            0,
+            &vec_set[rng.gen_range(0..vec_set.len())][selected.clone()],
+        );
         let mut weight = vec![0_f32; vec_set.len()];
         for (v, w) in vec_set.iter().zip(weight.iter_mut()) {
-            *w = dist.d(&centroids[0], v);
+            *w = dist.d(&centroids[0], &v[selected.clone()]);
         }
         for idx in 1..k {
             for (v, w) in vec_set.iter().zip(weight.iter_mut()) {
-                *w = w.min(dist.d(&centroids[idx - 1], v));
+                *w = w.min(dist.d(&centroids[idx - 1], &v[selected.clone()]));
             }
             // Randomly choose the next centroid with probability proportional to the distance.
             // If all weights are zero, choose randomly.
@@ -46,7 +58,7 @@ where
                 .map(|d| d.sample(rng))
                 .unwrap_or(rng.gen_range(0..vec_set.len()));
 
-            centroids.put(idx, &vec_set[c]);
+            centroids.put(idx, &vec_set[c][selected.clone()]);
         }
         centroids
     }
@@ -60,14 +72,23 @@ where
             (0..=vec_set.len()).contains(&config.k),
             "k in k-means should be in the range [0, len(vec_set)]"
         );
+        assert!(
+            config.selected.is_none() || config.selected.as_ref().unwrap().end <= vec_set.dim(),
+            "The selected range should be in the range [0, vec_set.dim())"
+        );
         let mut centroids = Self::k_means_init(vec_set, config, rng);
+        let selected = match &config.selected {
+            Some(selected) => selected.clone(),
+            None => 0..vec_set.dim(),
+        };
 
         for _ in 0..config.max_iter {
             // Use f32 to avoid overflow when summing up.
-            let mut new_centroids = VecSet::<f32>::zeros(vec_set.dim(), config.k);
+            let mut new_centroids = VecSet::<f32>::zeros(selected.len(), config.k);
             let mut count = vec![0; config.k];
 
             for v in vec_set.iter() {
+                let v = &v[selected.clone()];
                 // Find the nearest centroid.
                 // *May panic* since f32 is not Ord.
                 let (_, min_idx) = centroids
@@ -154,6 +175,7 @@ mod test {
             max_iter: 0, // Not used in k_means_init.
             tol: 0.0,    // Not used in k_means_init.
             dist: DistanceAlgorithm::L2Sqr,
+            selected: None,
         };
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let centroids = KMeans::k_means_init(&vec_set, &config, &mut rng);
@@ -175,6 +197,7 @@ mod test {
             max_iter: 20,
             tol: 1e-6,
             dist: DistanceAlgorithm::L2Sqr,
+            selected: None,
         };
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let k_means = KMeans::from_vec_set(&vec_set, &config, &mut rng);
@@ -193,6 +216,7 @@ mod test {
             max_iter: 20,
             tol: 1e-6,
             dist: DistanceAlgorithm::L2Sqr,
+            selected: None,
         };
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let k_means = KMeans::from_vec_set(&vec_set, &config, &mut rng);
@@ -220,6 +244,7 @@ mod test {
             max_iter: 20,
             tol: 1e-6,
             dist: DistanceAlgorithm::L2Sqr,
+            selected: Some(0..2),
         };
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let k_means = DynamicKMeans::from_vec_set(&vec_set, &k_means_config, &mut rng);
