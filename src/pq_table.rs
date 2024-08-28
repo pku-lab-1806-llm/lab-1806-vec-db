@@ -21,8 +21,6 @@ pub struct PQConfig {
     /// Should satisfy `dim % m == 0`. Usually `dim / 4`.
     m: usize,
     /// The distance algorithm to use.
-    ///
-    /// Currently only `L2Sqr` or `L2` is supported.
     dist: DistanceAlgorithm,
     /// The number of iterations for the k-means algorithm.
     k_means_max_iter: usize,
@@ -45,8 +43,8 @@ pub struct PQTable<T: BinaryScalar> {
     /// The k-means centroids for each group.
     pub group_k_means: Vec<KMeans<T>>,
     /// The lookup table for each group (flatten). Size `(m * k * k,)`.
-    ///
-    /// `v[i, c0, c1] = lookup_table[i * k * k + c0 * k + c1]`.
+    /// - For L2Sqr and L2 distance, cache the L2Sqr distance.
+    /// - For Cosine distance, cache the dot product.
     pub lookup_table: Vec<f32>,
 }
 
@@ -90,7 +88,13 @@ where
                         }
                     }
                 }
-                _ => panic!("Only L2Sqr or L2 distance is supported in PQTable."),
+                Cosine => {
+                    for c0 in 0..k {
+                        for c1 in 0..k {
+                            lookup_table.push(cs[c0].dot_product_sqr(&cs[c1]));
+                        }
+                    }
+                }
             }
             for c0 in 0..k {
                 for c1 in 0..k {
@@ -165,6 +169,11 @@ where
         }
     }
 
+    /// Get the lookup value from the lookup table.
+    pub fn lookup(&self, i: usize, c0: usize, c1: usize) -> f32 {
+        self.lookup_table[i * self.k * self.k + c0 * self.k + c1]
+    }
+
     /// Compute the distance between two encoded vectors.
     pub fn distance(&self, v0: &[u8], v1: &[u8]) -> f32 {
         let m = self.config.m;
@@ -174,12 +183,22 @@ where
         use DistanceAlgorithm::*;
         let mut d = 0.0;
         for i in 0..m {
-            d += self.lookup_table[i * self.k * self.k + v0[i] * self.k + v1[i]];
+            d += self.lookup(i, v0[i], v1[i]);
         }
         match dist {
             L2Sqr => d,
             L2 => d.sqrt(),
-            _ => panic!("Only L2Sqr or L2 distance is supported in PQTable."),
+            Cosine => {
+                let mut norm0 = 0.0;
+                let mut norm1 = 0.0;
+                for i in 0..m {
+                    norm0 += self.lookup(i, v0[i], v0[i]);
+                    norm1 += self.lookup(i, v1[i], v1[i]);
+                }
+                let norm0 = norm0.sqrt();
+                let norm1 = norm1.sqrt();
+                1.0 - d / (norm0 * norm1)
+            }
         }
     }
 
