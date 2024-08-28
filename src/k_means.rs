@@ -8,8 +8,9 @@ use crate::{
 };
 use anyhow::{bail, Result};
 use rand::{distributions::WeightedIndex, prelude::*};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KMeansConfig {
     /// The number of clusters.
     pub k: usize,
@@ -24,6 +25,7 @@ pub struct KMeansConfig {
     pub selected: Option<Range<usize>>,
 }
 
+#[derive(Debug, Clone)]
 pub struct KMeans<T> {
     pub config: KMeansConfig,
     pub centroids: VecSet<T>,
@@ -146,6 +148,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub enum DynamicKMeans {
     Float32(KMeans<f32>),
     UInt8(KMeans<u8>),
