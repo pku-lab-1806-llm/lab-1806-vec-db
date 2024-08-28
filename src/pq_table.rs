@@ -6,7 +6,7 @@ use crate::{
     config::DistanceAlgorithm,
     distance::Distance,
     k_means::{KMeans, KMeansConfig},
-    vec_set::VecSet,
+    vec_set::{DynamicVecRef, DynamicVecSet, VecSet},
 };
 
 /// The configuration for the Product Quantization (PQ) table.
@@ -96,11 +96,6 @@ where
                     }
                 }
             }
-            for c0 in 0..k {
-                for c1 in 0..k {
-                    lookup_table.push(config.dist.d(&cs[c0], &cs[c1]));
-                }
-            }
             group_k_means.push(k_means);
         }
         Self {
@@ -169,6 +164,25 @@ where
         }
     }
 
+    /// Decode the given encoded vector.
+    ///
+    /// *Usually used for debugging.*
+    /// See `distance()` for the actual distance computation.
+    pub fn decode(&self, v: &[u8]) -> Vec<T> {
+        let m = self.config.m;
+        let group_dim = self.group_k_means[0].centroids.dim();
+        let dim = m * group_dim;
+        let indices = self.split_indices(v);
+        let mut decoded = Vec::with_capacity(dim);
+        for i in 0..m {
+            let group = &self.group_k_means[i];
+            let index = indices[i];
+            let centroid = &group.centroids[index];
+            decoded.extend_from_slice(centroid);
+        }
+        decoded
+    }
+
     /// Get the lookup value from the lookup table.
     pub fn lookup(&self, i: usize, c0: usize, c1: usize) -> f32 {
         self.lookup_table[i * self.k * self.k + c0 * self.k + c1]
@@ -206,5 +220,184 @@ where
     /// Compute the distance between two encoded vectors.
     pub fn d(&self, v0: &[u8], v1: &[u8]) -> f32 {
         self.distance(v0, v1)
+    }
+}
+
+#[derive(Debug)]
+pub enum DynamicPQTable {
+    UInt8(PQTable<u8>),
+    Float32(PQTable<f32>),
+}
+
+impl DynamicPQTable {
+    /// Create a new dynamic PQ table from the given vector set.
+    pub fn from_vec_set(vec_set: &DynamicVecSet, config: &PQConfig, rng: &mut impl Rng) -> Self {
+        use DynamicVecSet::*;
+        match vec_set {
+            UInt8(vec_set) => Self::UInt8(PQTable::from_vec_set(vec_set, config, rng)),
+            Float32(vec_set) => Self::Float32(PQTable::from_vec_set(vec_set, config, rng)),
+        }
+    }
+
+    /// Encode the given vector.
+    pub fn encode(&self, v: &DynamicVecRef) -> Vec<u8> {
+        match (self, v) {
+            (Self::UInt8(pq_table), DynamicVecRef::UInt8(v)) => pq_table.encode(v),
+            (Self::Float32(pq_table), DynamicVecRef::Float32(v)) => pq_table.encode(v),
+            _ => panic!("Cannot encode different types of vectors."),
+        }
+    }
+
+    /// Get the dimension of the encoded vector.
+    pub fn encoded_dim(&self) -> usize {
+        match self {
+            Self::UInt8(pq_table) => pq_table.encoded_dim(),
+            Self::Float32(pq_table) => pq_table.encoded_dim(),
+        }
+    }
+
+    /// Encode the given vector set.
+    pub fn encode_batch(&self, vec_set: &DynamicVecSet) -> VecSet<u8> {
+        match (self, vec_set) {
+            (Self::UInt8(pq_table), DynamicVecSet::UInt8(vec_set)) => {
+                pq_table.encode_batch(vec_set)
+            }
+            (Self::Float32(pq_table), DynamicVecSet::Float32(vec_set)) => {
+                pq_table.encode_batch(vec_set)
+            }
+            _ => panic!("Cannot encode different types of vectors."),
+        }
+    }
+
+    /// Get indices from a encoded vector.
+    pub fn split_indices(&self, v: &[u8]) -> Vec<usize> {
+        match self {
+            Self::UInt8(pq_table) => pq_table.split_indices(v),
+            Self::Float32(pq_table) => pq_table.split_indices(v),
+        }
+    }
+
+    /// Get the lookup value from the lookup table.
+    pub fn lookup(&self, i: usize, c0: usize, c1: usize) -> f32 {
+        match self {
+            Self::UInt8(pq_table) => pq_table.lookup(i, c0, c1),
+            Self::Float32(pq_table) => pq_table.lookup(i, c0, c1),
+        }
+    }
+
+    /// Compute the distance between two encoded vectors.
+    pub fn distance(&self, v0: &[u8], v1: &[u8]) -> f32 {
+        match self {
+            Self::UInt8(pq_table) => pq_table.distance(v0, v1),
+            Self::Float32(pq_table) => pq_table.distance(v0, v1),
+        }
+    }
+
+    /// Alias of `DynamicPQTable::distance()`.
+    /// Compute the distance between two encoded vectors.
+    pub fn d(&self, v0: &[u8], v1: &[u8]) -> f32 {
+        self.distance(v0, v1)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use anyhow::Result;
+    use rand::SeedableRng;
+
+    use crate::config::DBConfig;
+
+    use super::*;
+
+    fn pq_table_precise_test_base(dist: DistanceAlgorithm) {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let dim = 8;
+        let n_bits = 4;
+        let m = 2;
+        let num_vec = 5;
+
+        let mut src_set = VecSet::<f32>::zeros(dim, num_vec);
+        for i in 0..num_vec {
+            let v = src_set.get_mut(i);
+            for v in v.iter_mut() {
+                *v = rng.gen_range(-1.0..1.0);
+            }
+        }
+        let pq_config = PQConfig {
+            n_bits,
+            m,
+            dist,
+            k_means_max_iter: 20,
+            k_means_tol: 1e-6,
+        };
+        let pq_table = PQTable::from_vec_set(&src_set, &pq_config, &mut rng);
+
+        let encoded_set = pq_table.encode_batch(&src_set);
+        for i in 0..num_vec {
+            let src = &src_set[i];
+            let decoded = pq_table.decode(&encoded_set[i]);
+            println!("{}: {:?}", i, &src_set[i]);
+            assert_eq!(src, &decoded);
+        }
+        for i in 0..num_vec {
+            for j in 0..num_vec {
+                let src0 = &src_set[i];
+                let src1 = &src_set[j];
+                let src_dist = dist.d(src0, src1);
+
+                let e0 = &encoded_set[i];
+                let e1 = &encoded_set[j];
+                let e_dist = pq_table.d(e0, e1);
+
+                if i <= j {
+                    println!("{}<->{}: src={:.6} encoded={:.6}", i, j, src_dist, e_dist);
+                }
+                assert!((src_dist - e_dist).abs() < 1e-6);
+            }
+        }
+    }
+
+    // Test the PQ table with num_vec < k, so that the centroids are the same as the vectors.
+    #[test]
+    fn pq_table_precise_test() {
+        pq_table_precise_test_base(DistanceAlgorithm::L2Sqr);
+        pq_table_precise_test_base(DistanceAlgorithm::L2);
+        pq_table_precise_test_base(DistanceAlgorithm::Cosine);
+    }
+
+    #[test]
+    fn pq_table_test_on_real_set() -> Result<()> {
+        let file_path = "config/example/db_config.toml";
+        let mut config = DBConfig::load_from_toml_file(file_path)?;
+        config.vec_data.limit = Some(64);
+        let vec_set = DynamicVecSet::load_with(config.vec_data)?;
+        let dim = vec_set.dim();
+        let dist = config.distance;
+        let pq_config = PQConfig {
+            n_bits: 4,
+            m: dim / 4,
+            dist,
+            k_means_max_iter: 20,
+            k_means_tol: 1e-6,
+        };
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let pq_table = DynamicPQTable::from_vec_set(&vec_set, &pq_config, &mut rng);
+
+        println!("Distance Algorithm: {:?}", dist);
+        for _ in 0..6 {
+            let i0 = rng.gen_range(0..vec_set.len());
+            let i1 = rng.gen_range(0..vec_set.len());
+            let v0 = vec_set.i(i0);
+            let v1 = vec_set.i(i1);
+            let distance = pq_table.d(&pq_table.encode(&v0), &pq_table.encode(&v1));
+            let expected = dist.d(&v0, &v1);
+            let relative_error = (distance - expected).abs() / expected;
+            println!(
+                "Distance: {} / Expected: {} / Relative Error: {}",
+                distance, expected, relative_error
+            );
+            assert!(relative_error < 0.25);
+        }
+        Ok(())
     }
 }

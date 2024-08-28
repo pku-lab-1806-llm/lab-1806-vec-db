@@ -32,12 +32,22 @@ pub trait Distance {
 }
 impl Distance for [f32] {
     fn l2_sqr_distance(&self, other: &Self) -> f32 {
+        assert_eq!(
+            self.len(),
+            other.len(),
+            "Vectors must have the same length to calculate distance."
+        );
         self.iter()
             .zip(other.iter())
             .map(|(a, b)| (a - b).powi(2))
             .sum::<f32>()
     }
     fn dot_product_sqr(&self, other: &Self) -> f32 {
+        assert_eq!(
+            self.len(),
+            other.len(),
+            "Vectors must have the same length to calculate distance."
+        );
         self.iter()
             .zip(other.iter())
             .map(|(a, b)| a * b)
@@ -52,12 +62,22 @@ impl Distance for [f32] {
 }
 impl Distance for [u8] {
     fn l2_sqr_distance(&self, other: &Self) -> f32 {
+        assert_eq!(
+            self.len(),
+            other.len(),
+            "Vectors must have the same length to calculate distance."
+        );
         self.iter()
             .zip(other.iter())
             .map(|(a, b)| (*a as f32 - *b as f32).powi(2))
             .sum::<f32>()
     }
     fn dot_product_sqr(&self, other: &Self) -> f32 {
+        assert_eq!(
+            self.len(),
+            other.len(),
+            "Vectors must have the same length to calculate distance."
+        );
         self.iter()
             .zip(other.iter())
             .map(|(a, b)| (*a as f32 * *b as f32))

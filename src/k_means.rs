@@ -68,14 +68,9 @@ where
     }
     /// Perform the k-means clustering on the given vector set.
     /// The initial centroids are initialized by the k-means++ algorithm.
-    /// `k` should be in the range `[0, len(vec_set)]`.
     ///
     // *May panic* since f32 is partially ordered.
     pub fn from_vec_set(vec_set: &VecSet<T>, config: &KMeansConfig, rng: &mut impl Rng) -> Self {
-        assert!(
-            (0..=vec_set.len()).contains(&config.k),
-            "k in k-means should be in the range [0, len(vec_set)]"
-        );
         assert!(
             config.selected.is_none() || config.selected.as_ref().unwrap().end <= vec_set.dim(),
             "The selected range should be in the range [0, vec_set.dim())"
@@ -110,9 +105,15 @@ where
             }
             for i in 0..config.k {
                 let c = new_centroids.get_mut(i);
-                for v in c.iter_mut() {
-                    *v /= count[i] as f32;
+                if count[i] == 0 {
+                    // If there is no vector assigned to the centroid, keep the centroid unchanged.
+                    for (nc, c) in c.iter_mut().zip(centroids[i].iter()) {
+                        *nc = c.cast_to_f32();
+                    }
+                    continue;
                 }
+                let n = count[i] as f32;
+                c.iter_mut().for_each(|v| *v /= n);
             }
             let new_centroids = new_centroids.to_type::<T>();
             let mut max_diff = 0_f32;
@@ -322,11 +323,20 @@ mod test {
         };
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let k_means = DynamicKMeans::from_vec_set(&vec_set, &k_means_config, &mut rng);
+
         let k_means = KMeans::<f32>::try_from(k_means)?;
         assert_eq!(k_means.centroids.len(), k_means_config.k);
         for c in k_means.centroids.iter() {
             println!("{}", clip_msg(&format!("{:?}", c)));
         }
+
+        let i = 1;
+        let find_i = k_means.find_nearest(&k_means.centroids[i]);
+        assert_eq!(
+            find_i, i,
+            "The nearest centroid should be the vector itself."
+        );
+
         Ok(())
     }
 }
