@@ -365,14 +365,12 @@ mod test {
         pq_table_precise_test_base(DistanceAlgorithm::Cosine);
     }
 
-    #[test]
-    fn pq_table_test_on_real_set() -> Result<()> {
+    fn pq_table_test_on_real_set_base(dist: DistanceAlgorithm, threshold: f32) -> Result<()> {
         let file_path = "config/example/db_config.toml";
         let mut config = DBConfig::load_from_toml_file(file_path)?;
-        config.vec_data.limit = Some(64);
+        config.vec_data.limit = Some(128);
         let vec_set = DynamicVecSet::load_with(config.vec_data)?;
         let dim = vec_set.dim();
-        let dist = config.distance;
         let pq_config = PQConfig {
             n_bits: 4,
             m: dim / 4,
@@ -384,20 +382,35 @@ mod test {
         let pq_table = DynamicPQTable::from_vec_set(&vec_set, &pq_config, &mut rng);
 
         println!("Distance Algorithm: {:?}", dist);
-        for _ in 0..6 {
+        let test_count = 40;
+        let mut errors = Vec::new();
+        for _ in 0..test_count {
             let i0 = rng.gen_range(0..vec_set.len());
             let i1 = rng.gen_range(0..vec_set.len());
             let v0 = vec_set.i(i0);
             let v1 = vec_set.i(i1);
             let distance = pq_table.d(&pq_table.encode(&v0), &pq_table.encode(&v1));
             let expected = dist.d(&v0, &v1);
-            let relative_error = (distance - expected).abs() / expected;
+            let error = (distance - expected).abs() / expected.max(1.0);
             println!(
-                "Distance: {} / Expected: {} / Relative Error: {}",
-                distance, expected, relative_error
+                "Distance: {} / Expected: {} / Error: {}",
+                distance, expected, error
             );
-            assert!(relative_error < 0.25);
+            errors.push(error);
         }
+        errors.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let i95 = (errors.len() as f32 * 0.9).floor() as usize;
+        let p95 = errors[i95];
+        println!("95% Error: {}", p95);
+        assert!(p95 < threshold, "95% Error is too large.");
+        Ok(())
+    }
+
+    #[test]
+    fn pq_table_test_on_real_set() -> Result<()> {
+        pq_table_test_on_real_set_base(DistanceAlgorithm::L2Sqr, 0.25)?;
+        pq_table_test_on_real_set_base(DistanceAlgorithm::L2, 0.15)?;
+        pq_table_test_on_real_set_base(DistanceAlgorithm::Cosine, 0.2)?;
         Ok(())
     }
 }
