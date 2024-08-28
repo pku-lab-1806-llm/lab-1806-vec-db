@@ -23,6 +23,11 @@ pub struct PQConfig {
     k_means_tol: f32,
 }
 
+/// The Product Quantization (PQ) table.
+///
+/// Can be used to encode vectors, and compute the distance between quantized vectors.
+///
+/// The encoded vector is stored as `Vec<u8>` with `ceil(m * n_bits / 8)` bytes.
 #[derive(Debug)]
 pub struct PQTable<T: BinaryScalar> {
     /// The configuration for the PQ table.
