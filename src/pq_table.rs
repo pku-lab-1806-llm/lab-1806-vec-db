@@ -310,6 +310,7 @@ mod test {
     use super::*;
 
     fn pq_table_precise_test_base(dist: DistanceAlgorithm) {
+        // Test the PQ table with num_vec < k, so that the centroids are the same as the vectors.
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let dim = 8;
         let n_bits = 4;
@@ -357,7 +358,6 @@ mod test {
         }
     }
 
-    // Test the PQ table with num_vec < k, so that the centroids are the same as the vectors.
     #[test]
     fn pq_table_precise_test() {
         pq_table_precise_test_base(DistanceAlgorithm::L2Sqr);
