@@ -162,6 +162,12 @@ pub enum DynamicVecSet {
     UInt8(VecSet<u8>),
 }
 impl DynamicVecSet {
+    pub fn dim(&self) -> usize {
+        match self {
+            Self::Float32(vec_set) => vec_set.dim(),
+            Self::UInt8(vec_set) => vec_set.dim(),
+        }
+    }
     pub fn len(&self) -> usize {
         match self {
             Self::Float32(vec_set) => vec_set.len(),

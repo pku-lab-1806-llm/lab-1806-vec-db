@@ -16,6 +16,8 @@ pub trait Distance {
     fn l2_distance(&self, other: &Self) -> f32 {
         self.l2_sqr_distance(other).sqrt()
     }
+    /// The dot product of two vectors. (For internal use)
+    fn dot_product_sqr(&self, other: &Self) -> f32;
     /// Cosine distance.
     /// `cosine_distance = 1 - dot_product / (norm_self * norm_other)`
     ///
@@ -30,38 +32,62 @@ pub trait Distance {
 }
 impl Distance for [f32] {
     fn l2_sqr_distance(&self, other: &Self) -> f32 {
+        assert_eq!(
+            self.len(),
+            other.len(),
+            "Vectors must have the same length to calculate distance."
+        );
         self.iter()
             .zip(other.iter())
             .map(|(a, b)| (a - b).powi(2))
             .sum::<f32>()
     }
-    fn cosine_distance(&self, other: &Self) -> f32 {
-        let dot_product = self
-            .iter()
+    fn dot_product_sqr(&self, other: &Self) -> f32 {
+        assert_eq!(
+            self.len(),
+            other.len(),
+            "Vectors must have the same length to calculate distance."
+        );
+        self.iter()
             .zip(other.iter())
             .map(|(a, b)| a * b)
-            .sum::<f32>();
-        let norm_self = self.iter().map(|v| v.powi(2)).sum::<f32>().sqrt();
-        let norm_other = other.iter().map(|v| v.powi(2)).sum::<f32>().sqrt();
-        1.0 - dot_product / (norm_self * norm_other)
+            .sum::<f32>()
+    }
+    fn cosine_distance(&self, other: &Self) -> f32 {
+        let dot_product_sqr = self.dot_product_sqr(other);
+        let norm_self = self.dot_product_sqr(self).sqrt();
+        let norm_other = other.dot_product_sqr(other).sqrt();
+        1.0 - dot_product_sqr / (norm_self * norm_other)
     }
 }
 impl Distance for [u8] {
     fn l2_sqr_distance(&self, other: &Self) -> f32 {
+        assert_eq!(
+            self.len(),
+            other.len(),
+            "Vectors must have the same length to calculate distance."
+        );
         self.iter()
             .zip(other.iter())
-            .map(|(a, b)| (*a as i32 - *b as i32).pow(2))
-            .sum::<i32>() as f32
+            .map(|(a, b)| (*a as f32 - *b as f32).powi(2))
+            .sum::<f32>()
+    }
+    fn dot_product_sqr(&self, other: &Self) -> f32 {
+        assert_eq!(
+            self.len(),
+            other.len(),
+            "Vectors must have the same length to calculate distance."
+        );
+        self.iter()
+            .zip(other.iter())
+            .map(|(a, b)| (*a as f32 * *b as f32))
+            .sum::<f32>()
     }
     fn cosine_distance(&self, other: &Self) -> f32 {
-        let dot_product = self
-            .iter()
-            .zip(other.iter())
-            .map(|(a, b)| (*a as i32 * *b as i32))
-            .sum::<i32>() as f32;
-        let norm_self = self.iter().map(|v| (*v as i32).pow(2)).sum::<i32>() as f32;
-        let norm_other = other.iter().map(|v| (*v as i32).pow(2)).sum::<i32>() as f32;
-        1.0 - dot_product / (norm_self.sqrt() * norm_other.sqrt())
+        let dot_product_sqr = self.dot_product_sqr(other);
+        let norm_self = self.dot_product_sqr(self).sqrt();
+        let norm_other = other.dot_product_sqr(other).sqrt();
+        1.0 - dot_product_sqr / (norm_self * norm_other)
     }
 }
 
@@ -70,6 +96,13 @@ impl Distance for DynamicVecRef<'_> {
         match (self, other) {
             (Self::Float32(a), Self::Float32(b)) => a.l2_sqr_distance(b),
             (Self::UInt8(a), Self::UInt8(b)) => a.l2_sqr_distance(b),
+            _ => panic!("Cannot calculate distance between different types of vectors."),
+        }
+    }
+    fn dot_product_sqr(&self, other: &Self) -> f32 {
+        match (self, other) {
+            (Self::Float32(a), Self::Float32(b)) => a.dot_product_sqr(b),
+            (Self::UInt8(a), Self::UInt8(b)) => a.dot_product_sqr(b),
             _ => panic!("Cannot calculate distance between different types of vectors."),
         }
     }
