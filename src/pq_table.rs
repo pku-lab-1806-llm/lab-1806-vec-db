@@ -32,9 +32,8 @@ pub struct PQConfig {
 pub struct PQTable<T: BinaryScalar> {
     /// The configuration for the PQ table.
     pub config: PQConfig,
-    /// The number of dimensions for each vector.
-    ///
     /// `k = 2**n_bits` is the number of centroids for each group.
+    /// *Cached for convenience.*
     pub k: usize,
     /// The k-means centroids for each group.
     pub group_k_means: Vec<KMeans<T>>,
