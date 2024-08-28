@@ -365,7 +365,10 @@ mod test {
         pq_table_precise_test_base(DistanceAlgorithm::Cosine);
     }
 
-    fn pq_table_test_on_real_set_base(dist: DistanceAlgorithm, threshold: f32) -> Result<()> {
+    fn pq_table_test_on_real_set_base(
+        dist: DistanceAlgorithm,
+        p90_error_threshold: f32,
+    ) -> Result<()> {
         let file_path = "config/example/db_config.toml";
         let mut config = DBConfig::load_from_toml_file(file_path)?;
         config.vec_data.limit = Some(128);
@@ -399,10 +402,10 @@ mod test {
             errors.push(error);
         }
         errors.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let i95 = (errors.len() as f32 * 0.9).floor() as usize;
-        let p95 = errors[i95];
-        println!("95% Error: {}", p95);
-        assert!(p95 < threshold, "95% Error is too large.");
+        let i90 = (errors.len() as f32 * 0.9).floor() as usize;
+        let p90 = errors[i90];
+        println!("90% Error: {}", p90);
+        assert!(p90 < p90_error_threshold, "90% Error is too large.");
         Ok(())
     }
 
