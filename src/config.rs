@@ -29,7 +29,7 @@ pub enum IndexAlgorithm {
 /// Distance algorithm to be used in the vector database.
 ///
 /// See also `DistanceAlgorithm::d()`.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum DistanceAlgorithm {
     /// L2 squared distance, AKA squared Euclidean distance.
     ///
