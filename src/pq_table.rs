@@ -7,11 +7,11 @@ use crate::{binary_scalar::BinaryScalar, config::DistanceAlgorithm, k_means::KMe
 pub struct PQConfig {
     /// The number of bits for each quantized group.
     ///
-    /// Should be 4 or 8. Default is 4.
+    /// Should be 4 or 8. Usually 4.
     n_bits: usize,
     /// The number of groups.
     ///
-    /// Should satisfy `dim % m == 0`. Default is `dim / 4`.
+    /// Usually `ceil(dim / n_bits)`.
     m: usize,
     /// The distance algorithm to use.
     ///
