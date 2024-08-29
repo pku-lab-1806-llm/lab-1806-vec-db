@@ -176,14 +176,14 @@ pub enum DynamicVecSet {
     UInt8(VecSet<u8>),
 }
 impl DynamicVecSet {
-    pub fn load_with(config: &VecDataConfig) -> Result<DynamicVecSet> {
+    pub fn load_with(config: &VecDataConfig) -> Result<Self> {
         let dim = config.dim;
         let size = config.limit;
         let file = &config.data_path;
         use DataType::*;
         let vec_set = match config.data_type {
-            Float32 => DynamicVecSet::Float32(VecSet::load_file(dim, size, &file)?),
-            UInt8 => DynamicVecSet::UInt8(VecSet::load_file(dim, size, &file)?),
+            Float32 => Self::Float32(VecSet::load_file(dim, size, &file)?),
+            UInt8 => Self::UInt8(VecSet::load_file(dim, size, &file)?),
         };
         Ok(vec_set)
     }
