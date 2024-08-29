@@ -225,6 +225,8 @@ mod test {
 
     use anyhow::anyhow;
 
+    use crate::config::DBConfig;
+
     use super::*;
 
     #[test]
@@ -236,7 +238,27 @@ mod test {
     }
 
     #[test]
-    fn vec_set_test() -> Result<()> {
+    fn load_vec_set_test() -> Result<()> {
+        // See also the `match` usage in the doc test of `DynamicVecSet`.
+
+        let file_path = "config/example/db_config.toml";
+        let config = DBConfig::load_from_toml_file(file_path).expect("Failed to load the config.");
+        println!("Loaded config: {:#?}", config);
+        let vec_set =
+            VecSet::<f32>::load_with(&config.vec_data).expect("Failed to load the vec_set.");
+
+        let v0 = &vec_set[0];
+        let v1 = &vec_set[1];
+        println!("Distance Algorithm: {:?}", config.distance);
+        let distance = config.distance.d(v0, v1);
+        println!("Distance: {}", distance);
+        assert!((distance - 2.3230).abs() < 1e-4);
+
+        Ok(())
+    }
+
+    #[test]
+    fn save_vec_set_test() -> Result<()> {
         let file_path = PathBuf::from("data/example/test_vec_set.test.bin");
         let dir = file_path.parent().ok_or_else(|| anyhow!("Invalid path."))?;
         create_dir_all(dir)?;
