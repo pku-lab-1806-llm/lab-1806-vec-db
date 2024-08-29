@@ -1,53 +1,67 @@
-use super::*;
-use crate::{distance::Distance, k_means::KMeans};
+use rand::Rng;
 
-pub struct IVFIndex<T> {
+use crate::{
+    binary_scalar::BinaryScalar,
+    config::DistanceAlgorithm,
+    distance::Distance,
+    k_means::{KMeans, KMeansConfig},
+    vec_set::VecSet,
+};
+#[derive(Clone)]
+pub struct IVFConfig {
+    /// The number of clusters.
     pub k: usize,
-    pub vec_sets: Vec<VecSet<T>>,
+    /// The distance algorithm.
     pub dist: DistanceAlgorithm,
-    pub centroids: VecSet<T>,
+    /// The number of iterations for the k-means algorithm.
+    k_means_max_iter: usize,
+    /// The tolerance for the k-means algorithm.
+    k_means_tol: f32,
 }
 
-impl<T> IVFIndex<T>
+pub struct IVFIndex<T> {
+    pub config: IVFConfig,
+    /// The vector sets of the clusters. Length: k.
+    pub clusters: Vec<VecSet<T>>,
+    /// K-means struct for the centroids.
+    pub k_means: KMeans<T>,
+}
+
+impl<T: BinaryScalar> IVFIndex<T>
 where
-    T: BinaryScalar,
     [T]: Distance,
 {
-    pub fn from_vec_set(
-        vec_set: &VecSet<T>,
-        dist: DistanceAlgorithm,
-        centroids: VecSet<T>,
-    ) -> Self {
-        let k = centroids.len();
-        let mut vec_sets = Vec::new();
-        let mut cent_ids = vec![Vec::<usize>::new(); k];
-
-        for (i, v) in vec_set.iter().enumerate() {
-            let (_, min_idx) = centroids
-                .iter()
-                .enumerate()
-                .map(|(i, c)| (dist.distance(c, v), i))
-                .min_by(|(d0, _), (d1, _)| d0.partial_cmp(d1).unwrap())
-                .unwrap();
-            cent_ids[min_idx].push(i);
-        }
-
-        for i in 0..k {
-            vec_sets.push(VecSet::<T>::zeros(vec_set.dim(), cent_ids[i].len()));
-        }
-
-        // 将数据复制到ivf索引中
-        for (cents, v) in cent_ids.iter().zip(vec_sets.iter_mut()) {
-            for (i, vec_id) in cents.iter().enumerate() {
-                v.put(i, &vec_set[i]);
-            }
-        }
-
-        Self {
-            k: k,
-            vec_sets,
+    /// Create an IVF index from a `VecSet`.
+    pub fn from_vec_set(vec_set: &VecSet<T>, config: &IVFConfig, rng: &mut impl Rng) -> Self {
+        let k = config.k;
+        let dist = config.dist;
+        let k_means_config = KMeansConfig {
+            k,
+            max_iter: config.k_means_max_iter,
+            tol: config.k_means_tol,
             dist,
-            centroids,
+            selected: None,
+        };
+        let k_means = KMeans::from_vec_set(vec_set, &k_means_config, rng);
+        let mut clusters = vec![vec![]; k];
+        for (i, v) in vec_set.iter().enumerate() {
+            let idx = k_means.find_nearest(v);
+            clusters[idx].push(i);
+        }
+        let clusters = clusters
+            .into_iter()
+            .map(|ids| {
+                let mut cluster = VecSet::zeros(vec_set.dim(), ids.len());
+                for (i, vec_id) in ids.iter().enumerate() {
+                    cluster.put(i, &vec_set[*vec_id]);
+                }
+                cluster
+            })
+            .collect();
+        IVFIndex {
+            config: config.clone(),
+            clusters,
+            k_means,
         }
     }
 }
