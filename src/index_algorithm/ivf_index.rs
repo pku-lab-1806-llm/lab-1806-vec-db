@@ -15,7 +15,7 @@ where
 {
     pub fn from_vec_set(vec_set: & VecSet<T>, dist: DistanceAlgorithm, centroids: VecSet<T>) -> Self {
         let k = centroids.len();
-        let vec_sets = Vec::new();
+        let mut vec_sets = Vec::new();
         let mut cent_ids = vec![Vec::<usize>::new(); k];
 
         for (i, v) in vec_set.iter().enumerate() {
@@ -27,7 +27,9 @@ where
                 .unwrap();
             cent_ids[min_idx].push(i);
         }
-        
+        for i in 0..k {
+            vec_sets.push(VecSet<T>::zeros(vec_set.dim(), cent_ids[i]));
+        }
         Self {k: k, vec_sets, dist, centroids}
     }
 }
