@@ -1,3 +1,4 @@
+pub mod ivf_index;
 pub mod linear_index;
 
 /// A pair of the index and the distance.
