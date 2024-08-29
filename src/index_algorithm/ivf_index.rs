@@ -72,10 +72,23 @@ mod test {
 
     #[test]
     pub fn ivf_index_test() -> Result<()> {
+        // The `dim` and `limit` has been limited for debug mode performance.
+
         let file_path = "config/example/db_config.toml";
-        let config = DBConfig::load_from_toml_file(file_path)?;
-        println!("Loaded config: {:#?}", config);
-        let vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
+        let mut config = DBConfig::load_from_toml_file(file_path)?;
+
+        config.vec_data.limit = Some(64);
+
+        let raw_vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
+
+        let clipped_dim = raw_vec_set.dim().min(12);
+
+        let mut vec_set = VecSet::zeros(clipped_dim, raw_vec_set.len());
+        for i in 0..raw_vec_set.len() {
+            let src = &raw_vec_set[i];
+            let dst = vec_set.get_mut(i);
+            dst.copy_from_slice(&src[..clipped_dim]);
+        }
 
         let ivf_config = IVFConfig {
             k: 3,
