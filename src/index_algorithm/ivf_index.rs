@@ -1,10 +1,9 @@
 use rand::Rng;
 
 use crate::{
-    binary_scalar::BinaryScalar,
-    config::DistanceAlgorithm,
-    distance::Distance,
+    distance::DistanceAlgorithm,
     k_means::{KMeans, KMeansConfig},
+    scalar::Scalar,
     vec_set::VecSet,
 };
 #[derive(Clone)]
@@ -27,10 +26,7 @@ pub struct IVFIndex<T> {
     pub k_means: KMeans<T>,
 }
 
-impl<T: BinaryScalar> IVFIndex<T>
-where
-    [T]: Distance,
-{
+impl<T: Scalar> IVFIndex<T> {
     /// Create an IVF index from a `VecSet`.
     pub fn from_vec_set(vec_set: &VecSet<T>, config: &IVFConfig, rng: &mut impl Rng) -> Self {
         let k = config.k;
