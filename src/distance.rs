@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use DistanceAlgorithm::*;
 /// Trait for calculating distances between two vectors.
 ///
-/// `[T] where T: BinaryScalar` and `DynamicVecRef` should implement this trait.
+/// `[T] where T: Scalar` implements this trait.
 pub trait Distance {
     /// The *square* of the L2 distance.
     ///
