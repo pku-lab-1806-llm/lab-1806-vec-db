@@ -129,7 +129,7 @@ impl<T: BinaryScalar> VecSet<T> {
 
 /// The reference to the vector with scalar type f32 or u8.
 /// The data type is determined at runtime.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum DynamicVecRef<'a> {
     Float32(&'a [f32]),
     UInt8(&'a [u8]),

@@ -29,24 +29,40 @@ pub struct PQConfig {
     k_means_tol: f32,
 }
 
+/// Flattened lookup table for the vector to be queried.
+/// Using the PQ in ADC (Asymmetric Distance Computation) algorithm.
+#[derive(Debug, Clone)]
+pub struct PQLookupTable {
+    /// Size `(m * k,)`. For group `i` and centroid `c`, the cached value is at `i * k + c`.
+    ///
+    /// - For L2Sqr and L2 distance, cache the L2Sqr distance between the centroid and the vector.
+    /// - For Cosine distance, cache the dot product of the centroid and the vector.
+    lookup: Vec<f32>,
+    /// Cached norm of the vector itself. Only used for the Cosine distance.
+    /// Otherwise, it is `0.0`.
+    norm: f32,
+}
+
 /// The Product Quantization (PQ) table.
 ///
 /// Can be used to encode vectors, and compute the distance between quantized vectors.
 ///
 /// The encoded vector is stored as `Vec<u8>` with `ceil(m * n_bits / 8)` bytes.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PQTable<T: BinaryScalar> {
     /// The configuration for the PQ table.
     pub config: PQConfig,
+    /// The dimension of the source vectors.
+    pub dim: usize,
     /// `k = 2**n_bits` is the number of centroids for each group.
     /// *Cached for convenience.*
     pub k: usize,
     /// The k-means centroids for each group.
     pub group_k_means: Vec<KMeans<T>>,
-    /// The lookup table for each group (flatten). Size `(m * k * k,)`.
-    /// - For L2Sqr and L2 distance, cache the L2Sqr distance.
-    /// - For Cosine distance, cache the dot product.
-    pub lookup_table: Vec<f32>,
+    /// The dot product of each centroid with itself (flattened).
+    /// Size `(m * k,)`, only used for the Cosine distance.
+    /// Otherwise, it is empty.
+    pub dot_product_cache: Vec<f32>,
 }
 
 impl<T: BinaryScalar> PQTable<T>
@@ -65,9 +81,14 @@ where
             "dim must be a multiple of m in PQTable."
         );
         let k = 1 << config.n_bits;
-        let d = vec_set.dim() / m;
+        let dim = vec_set.dim();
+        let d = dim / m;
         let mut group_k_means = Vec::with_capacity(m);
-        let mut lookup_table = Vec::with_capacity(m * k * k);
+        let mut dot_product_cache = if config.dist == Cosine {
+            Vec::with_capacity(m * k)
+        } else {
+            Vec::new()
+        };
         let mut k_means_config = KMeansConfig {
             k,
             max_iter: config.k_means_max_iter,
@@ -79,30 +100,19 @@ where
             let selected = d * i..d * (i + 1);
             k_means_config.selected = Some(selected);
             let k_means = KMeans::from_vec_set(vec_set, &k_means_config, rng);
-            let cs: &VecSet<T> = &k_means.centroids;
-            match config.dist {
-                L2Sqr | L2 => {
-                    for c0 in 0..k {
-                        for c1 in 0..k {
-                            lookup_table.push(L2Sqr.d(&cs[c0], &cs[c1]));
-                        }
-                    }
-                }
-                Cosine => {
-                    for c0 in 0..k {
-                        for c1 in 0..k {
-                            lookup_table.push(cs[c0].dot_product_sqr(&cs[c1]));
-                        }
-                    }
+            if config.dist == Cosine {
+                for c in k_means.centroids.iter() {
+                    dot_product_cache.push(c.dot_product(c));
                 }
             }
             group_k_means.push(k_means);
         }
         Self {
             config: config.clone(),
+            dim,
             k,
             group_k_means,
-            lookup_table,
+            dot_product_cache,
         }
     }
     /// Encode the given vector.
@@ -183,42 +193,81 @@ where
         decoded
     }
 
-    /// Get the lookup value from the lookup table.
-    pub fn lookup(&self, i: usize, c0: usize, c1: usize) -> f32 {
-        self.lookup_table[i * self.k * self.k + c0 * self.k + c1]
+    /// Create flattened lookup table for the vector to be queried.
+    /// Using the PQ in ADC (Asymmetric Distance Computation) algorithm.
+    ///
+    /// Size `(m * k,)`. For group `i` and centroid `c`, the cached value is at `i * k + c`.
+    ///
+    /// - For L2Sqr and L2 distance, cache the L2Sqr distance between the centroid and the vector.
+    /// - For Cosine distance, cache the dot product of the centroid and the vector.
+    pub fn create_lookup(&self, v: &[T]) -> PQLookupTable {
+        assert_eq!(v.len(), self.dim);
+        let m = self.config.m;
+        let k = self.k;
+        let d = self.dim / m;
+        let mut lookup = Vec::with_capacity(m * k);
+        for i in 0..m {
+            let k_means = &self.group_k_means[i];
+            let centroids = &k_means.centroids;
+            let selected = d * i..d * (i + 1);
+            let vs = &v[selected];
+            match self.config.dist {
+                L2Sqr | L2 => centroids
+                    .iter()
+                    .map(|c| c.l2_sqr_distance(vs))
+                    .for_each(|d| lookup.push(d)),
+                Cosine => centroids
+                    .iter()
+                    .map(|c| c.dot_product(vs))
+                    .for_each(|d| lookup.push(d)),
+            };
+        }
+        let norm = match self.config.dist {
+            L2Sqr | L2 => 0.0,
+            Cosine => v.dot_product(v).sqrt(),
+        };
+        PQLookupTable { lookup, norm }
     }
 
-    /// Compute the distance between two encoded vectors.
-    pub fn distance(&self, v0: &[u8], v1: &[u8]) -> f32 {
-        let m = self.config.m;
+    /// Compute the distance between an encoded vector and the lookup table.
+    ///
+    /// `encoded` is usually in the encoded vec_set from `encode_batch()`.
+    /// See `create_lookup()` for creating the lookup table for the vector to be queried.
+    pub fn distance(&self, encoded: &[u8], lookup_table: &PQLookupTable) -> f32 {
+        let k = self.k;
         let dist = self.config.dist;
-        let v0 = self.split_indices(v0);
-        let v1 = self.split_indices(v1);
-        let mut d = 0.0;
-        for i in 0..m {
-            d += self.lookup(i, v0[i], v1[i]);
-        }
+
+        let lookup = &lookup_table.lookup;
+
+        let indices = self.split_indices(encoded);
+        let d: f32 = indices
+            .iter()
+            .enumerate()
+            .map(|(i, &c)| lookup[i * k + c])
+            .sum();
+
         match dist {
             L2Sqr => d,
             L2 => d.sqrt(),
             Cosine => {
-                let mut norm0 = 0.0;
-                let mut norm1 = 0.0;
-                for i in 0..m {
-                    norm0 += self.lookup(i, v0[i], v0[i]);
-                    norm1 += self.lookup(i, v1[i], v1[i]);
-                }
-                let norm0 = norm0.sqrt();
-                let norm1 = norm1.sqrt();
-                1.0 - d / (norm0 * norm1)
+                let dot_product = d;
+                let norm0 = indices
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &c)| self.dot_product_cache[i * k + c])
+                    .sum::<f32>()
+                    .sqrt();
+                let norm1 = lookup_table.norm;
+
+                1.0 - dot_product / (norm0 * norm1)
             }
         }
     }
 
     /// Alias of `PQTable::distance()`.
-    /// Compute the distance between two encoded vectors.
-    pub fn d(&self, v0: &[u8], v1: &[u8]) -> f32 {
-        self.distance(v0, v1)
+    /// Compute the distance between an encoded vector and the lookup table.
+    pub fn d(&self, encoded: &[u8], lookup_table: &PQLookupTable) -> f32 {
+        self.distance(encoded, lookup_table)
     }
 }
 
@@ -239,7 +288,7 @@ impl DynamicPQTable {
     }
 
     /// Encode the given vector.
-    pub fn encode(&self, v: &DynamicVecRef) -> Vec<u8> {
+    pub fn encode(&self, v: DynamicVecRef) -> Vec<u8> {
         match (self, v) {
             (Self::UInt8(pq_table), DynamicVecRef::UInt8(v)) => pq_table.encode(v),
             (Self::Float32(pq_table), DynamicVecRef::Float32(v)) => pq_table.encode(v),
@@ -268,34 +317,39 @@ impl DynamicPQTable {
         }
     }
 
-    /// Get indices from a encoded vector.
-    pub fn split_indices(&self, v: &[u8]) -> Vec<usize> {
-        match self {
-            Self::UInt8(pq_table) => pq_table.split_indices(v),
-            Self::Float32(pq_table) => pq_table.split_indices(v),
+    /// Create flattened lookup table for the vector to be queried.
+    /// Using the PQ in ADC (Asymmetric Distance Computation) algorithm.
+    ///
+    /// Size `(m * k,)`. For group `i` and centroid `c`, the cached value is at `i * k + c`.
+    ///
+    /// - For L2Sqr and L2 distance, cache the L2Sqr distance between the centroid and the vector.
+    /// - For Cosine distance, cache the dot product of the centroid and the vector.
+    pub fn create_lookup(&self, v: DynamicVecRef) -> PQLookupTable {
+        match (self, v) {
+            (Self::UInt8(pq_table), DynamicVecRef::UInt8(v)) => pq_table.create_lookup(v),
+            (Self::Float32(pq_table), DynamicVecRef::Float32(v)) => pq_table.create_lookup(v),
+            _ => panic!("Cannot create lookup for different types of vectors."),
         }
     }
 
-    /// Get the lookup value from the lookup table.
-    pub fn lookup(&self, i: usize, c0: usize, c1: usize) -> f32 {
+    /// Compute the distance between an encoded vector and the lookup table.
+    ///
+    /// `encoded` is usually in the encoded vec_set from `encode_batch()`.
+    /// See `create_lookup()` for creating the lookup table for the vector to be queried.
+    pub fn distance(&self, encoded: &[u8], lookup_table: &PQLookupTable) -> f32 {
         match self {
-            Self::UInt8(pq_table) => pq_table.lookup(i, c0, c1),
-            Self::Float32(pq_table) => pq_table.lookup(i, c0, c1),
-        }
-    }
-
-    /// Compute the distance between two encoded vectors.
-    pub fn distance(&self, v0: &[u8], v1: &[u8]) -> f32 {
-        match self {
-            Self::UInt8(pq_table) => pq_table.distance(v0, v1),
-            Self::Float32(pq_table) => pq_table.distance(v0, v1),
+            Self::UInt8(pq_table) => pq_table.distance(encoded, lookup_table),
+            Self::Float32(pq_table) => pq_table.distance(encoded, lookup_table),
         }
     }
 
     /// Alias of `DynamicPQTable::distance()`.
-    /// Compute the distance between two encoded vectors.
-    pub fn d(&self, v0: &[u8], v1: &[u8]) -> f32 {
-        self.distance(v0, v1)
+    /// Compute the distance between an encoded vector and the lookup table.
+    ///
+    /// `encoded` is usually in the encoded vec_set from `encode_batch()`.
+    /// See `create_lookup()` for creating the lookup table for the vector to be queried.
+    pub fn d(&self, encoded: &[u8], lookup_table: &PQLookupTable) -> f32 {
+        self.distance(encoded, lookup_table)
     }
 }
 
@@ -340,18 +394,16 @@ mod test {
             assert_eq!(src, &decoded);
         }
         for i in 0..num_vec {
+            let lookup = pq_table.create_lookup(&src_set[i]);
             for j in 0..num_vec {
                 let src0 = &src_set[i];
                 let src1 = &src_set[j];
                 let src_dist = dist.d(src0, src1);
 
-                let e0 = &encoded_set[i];
                 let e1 = &encoded_set[j];
-                let e_dist = pq_table.d(e0, e1);
+                let e_dist = pq_table.d(e1, &lookup);
 
-                if i <= j {
-                    println!("{}<->{}: src={:.6} encoded={:.6}", i, j, src_dist, e_dist);
-                }
+                println!("{}<->{}: src={:.6} encoded={:.6}", i, j, src_dist, e_dist);
                 assert!((src_dist - e_dist).abs() < 1e-6);
             }
         }
@@ -365,13 +417,9 @@ mod test {
     }
 
     fn pq_table_test_on_real_set_base(
+        vec_set: &DynamicVecSet,
         dist: DistanceAlgorithm,
-        p90_error_threshold: f32,
     ) -> Result<()> {
-        let file_path = "config/example/db_config.toml";
-        let mut config = DBConfig::load_from_toml_file(file_path)?;
-        config.vec_data.limit = Some(128);
-        let vec_set = DynamicVecSet::load_with(config.vec_data)?;
         let dim = vec_set.dim();
         let pq_config = PQConfig {
             n_bits: 4,
@@ -382,16 +430,19 @@ mod test {
         };
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let pq_table = DynamicPQTable::from_vec_set(&vec_set, &pq_config, &mut rng);
+        let encoded_set = pq_table.encode_batch(&vec_set);
 
         println!("Distance Algorithm: {:?}", dist);
-        let test_count = 40;
+        let test_count = 100;
         let mut errors = Vec::new();
         for _ in 0..test_count {
             let i0 = rng.gen_range(0..vec_set.len());
             let i1 = rng.gen_range(0..vec_set.len());
             let v0 = vec_set.i(i0);
             let v1 = vec_set.i(i1);
-            let distance = pq_table.d(&pq_table.encode(&v0), &pq_table.encode(&v1));
+            let e0 = &encoded_set[i0];
+            let lookup = pq_table.create_lookup(v1);
+            let distance = pq_table.d(e0, &lookup);
             let expected = dist.d(&v0, &v1);
             let error = (distance - expected).abs() / expected.max(1.0);
             println!(
@@ -401,18 +452,22 @@ mod test {
             errors.push(error);
         }
         errors.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let i90 = (errors.len() as f32 * 0.9).floor() as usize;
-        let p90 = errors[i90];
-        println!("90% Error: {}", p90);
-        assert!(p90 < p90_error_threshold, "90% Error is too large.");
+        let i95 = (errors.len() as f32 * 0.95).floor() as usize;
+        let p95 = errors[i95];
+        println!("95% Error: {}", p95);
+        assert!(p95 < 0.2, "95% Error is too large.");
         Ok(())
     }
 
     #[test]
     fn pq_table_test_on_real_set() -> Result<()> {
-        pq_table_test_on_real_set_base(L2Sqr, 0.25)?;
-        pq_table_test_on_real_set_base(L2, 0.15)?;
-        pq_table_test_on_real_set_base(Cosine, 0.2)?;
+        let file_path = "config/example/db_config.toml";
+        let mut config = DBConfig::load_from_toml_file(file_path)?;
+        config.vec_data.limit = Some(64);
+        let vec_set = DynamicVecSet::load_with(config.vec_data)?;
+        pq_table_test_on_real_set_base(&vec_set, L2Sqr)?;
+        pq_table_test_on_real_set_base(&vec_set, L2)?;
+        pq_table_test_on_real_set_base(&vec_set, Cosine)?;
         Ok(())
     }
 }
