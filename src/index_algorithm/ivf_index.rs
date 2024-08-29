@@ -61,3 +61,33 @@ impl<T: Scalar> IVFIndex<T> {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::config::DBConfig;
+    use anyhow::{Ok, Result};
+    use rand::prelude::*;
+
+    use super::*;
+
+    #[test]
+    pub fn ivf_index_test() -> Result<()> {
+        let file_path = "config/example/db_config.toml";
+        let config = DBConfig::load_from_toml_file(file_path)?;
+        println!("Loaded config: {:#?}", config);
+        let vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
+
+        let ivf_config = IVFConfig {
+            k: 3,
+            dist: DistanceAlgorithm::L2Sqr,
+            k_means_max_iter: 20,
+            k_means_tol: 1e-6,
+        };
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let index = IVFIndex::from_vec_set(&vec_set, &ivf_config, &mut rng);
+        for (id, cluster) in index.clusters.iter().enumerate() {
+            println!("cluster id: {}, cluster size: {}", id, cluster.len());
+        }
+        Ok(())
+    }
+}
