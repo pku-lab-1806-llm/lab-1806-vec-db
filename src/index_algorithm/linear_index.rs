@@ -64,3 +64,53 @@ impl<'a> DynamicLinearIndex<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use anyhow::Result;
+
+    use crate::config::DBConfig;
+
+    use super::*;
+
+    #[test]
+    pub fn linear_index_test() -> Result<()> {
+        fn clip_msg(s: &str) -> String {
+            if s.len() > 100 {
+                format!("{}...", &s[..100])
+            } else {
+                s.to_string()
+            }
+        }
+        let file_path = "config/example/db_config.toml";
+        let config = DBConfig::load_from_toml_file(file_path)?;
+        println!("Loaded config: {:#?}", config);
+        let vec_set = DynamicVecSet::load_with(config.vec_data)?;
+        let index = DynamicLinearIndex::from_dynamic_vec_set(&vec_set, config.distance);
+
+        let k = 4;
+        let query_index = 200;
+
+        println!("Query Index: {}", query_index);
+        println!(
+            "Query Vector: {}",
+            clip_msg(&format!("{:?}", vec_set.i(query_index)))
+        );
+
+        let result = index.knn(&vec_set.i(query_index), k);
+
+        for res in result.iter() {
+            println!("Index: {}, Distance: {}", res.index, res.distance);
+            println!(
+                "Vector: {}",
+                clip_msg(&format!("{:?}", vec_set.i(res.index)))
+            );
+        }
+        assert_eq!(result.len(), k.min(vec_set.len()));
+        assert_eq!(result[0].index, query_index);
+        assert!(result[0].distance.abs() < 1e-6);
+
+        assert!(result.windows(2).all(|w| w[0].distance <= w[1].distance));
+        Ok(())
+    }
+}

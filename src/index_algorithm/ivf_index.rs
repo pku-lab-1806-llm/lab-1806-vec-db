@@ -1,19 +1,23 @@
 use super::*;
-use crate::{config, distance, k_means::{DynamicKMeans, KMeans}};
+use crate::{distance::Distance, k_means::KMeans};
 
 pub struct IVFIndex<T> {
-    k: usize, 
-    vec_sets: Vec<VecSet<T>>,
-    dist: DistanceAlgorithm,
-    centroids: VecSet<T>,
+    pub k: usize,
+    pub vec_sets: Vec<VecSet<T>>,
+    pub dist: DistanceAlgorithm,
+    pub centroids: VecSet<T>,
 }
 
-impl<T> IVFIndex<T> 
-where 
+impl<T> IVFIndex<T>
+where
     T: BinaryScalar,
-    [T]: Distance
+    [T]: Distance,
 {
-    pub fn from_vec_set(vec_set: & VecSet<T>, dist: DistanceAlgorithm, centroids: VecSet<T>) -> Self {
+    pub fn from_vec_set(
+        vec_set: &VecSet<T>,
+        dist: DistanceAlgorithm,
+        centroids: VecSet<T>,
+    ) -> Self {
         let k = centroids.len();
         let mut vec_sets = Vec::new();
         let mut cent_ids = vec![Vec::<usize>::new(); k];
@@ -31,7 +35,7 @@ where
         for i in 0..k {
             vec_sets.push(VecSet::<T>::zeros(vec_set.dim(), cent_ids[i].len()));
         }
-        
+
         // 将数据复制到ivf索引中
         for (cents, v) in cent_ids.iter().zip(vec_sets.iter_mut()) {
             for (i, vec_id) in cents.iter().enumerate() {
@@ -39,6 +43,11 @@ where
             }
         }
 
-        Self {k: k, vec_sets, dist, centroids}
+        Self {
+            k: k,
+            vec_sets,
+            dist,
+            centroids,
+        }
     }
 }
