@@ -1,4 +1,9 @@
-use super::*;
+use crate::binary_scalar::BinaryScalar;
+use crate::config::DistanceAlgorithm;
+use crate::distance::Distance;
+use crate::index_algorithm::ResponsePair;
+use crate::vec_set::{DynamicVecRef, DynamicVecSet, VecSet};
+use std::collections::BTreeSet;
 
 /// Linear index for the k-nearest neighbors search.
 /// The distance algorithm is configurable.

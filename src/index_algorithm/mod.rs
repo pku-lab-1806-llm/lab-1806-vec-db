@@ -1,9 +1,4 @@
-use std::collections::BTreeSet;
-
-use crate::binary_scalar::BinaryScalar;
-use crate::config::DistanceAlgorithm;
-use crate::distance::Distance;
-use crate::vec_set::{DynamicVecRef, DynamicVecSet, VecSet};
+pub mod linear_index;
 
 /// A pair of the index and the distance.
 /// For the response of the k-nearest neighbors search.
@@ -32,6 +27,3 @@ impl Ord for ResponsePair {
             .expect("Failed to compare f32 distance in response pair.")
     }
 }
-
-pub mod ivf_index;
-pub mod linear_index;
