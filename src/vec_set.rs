@@ -12,7 +12,7 @@ use crate::config::{DataType, VecDataConfig};
 #[derive(Debug, Clone)]
 pub struct VecSet<T> {
     dim: usize,
-    data: Box<[T]>,
+    data: Vec<T>,
 }
 
 impl<T> Index<usize> for VecSet<T> {
@@ -26,7 +26,7 @@ impl<T> Index<usize> for VecSet<T> {
 }
 
 impl<T: BinaryScalar> VecSet<T> {
-    pub fn new(dim: usize, data: Box<[T]>) -> Self {
+    pub fn new(dim: usize, data: Vec<T>) -> Self {
         assert!(
             data.len() % dim == 0,
             "Data length must be a multiple of the dimension."
@@ -42,7 +42,7 @@ impl<T: BinaryScalar> VecSet<T> {
     where
         T: Default + Clone,
     {
-        Self::new(dim, vec![T::default(); dim * len].into_boxed_slice())
+        Self::new(dim, vec![T::default(); dim * len])
     }
 
     pub fn len(&self) -> usize {
@@ -68,6 +68,21 @@ impl<T: BinaryScalar> VecSet<T> {
         self.data.chunks_exact_mut(self.dim)
     }
 
+    pub fn push(&mut self, vector: &[T]) {
+        assert_eq!(vector.len(), self.dim);
+        self.data.extend_from_slice(vector);
+    }
+
+    pub fn pop_last(&mut self) -> Option<Vec<T>> {
+        if self.data.len() >= self.dim {
+            let start = self.data.len() - self.dim;
+            let end = self.data.len();
+            Some(self.data.drain(start..end).collect())
+        } else {
+            None
+        }
+    }
+
     /// Convert the `VecSet` to a `VecSet` with a different scalar type.
     ///
     /// The conversion is done by casting the scalar values to `f32` and then to the target type `U`.
@@ -76,8 +91,7 @@ impl<T: BinaryScalar> VecSet<T> {
             .data
             .iter()
             .map(|&x| U::cast_from_f32(x.cast_to_f32()))
-            .collect::<Vec<U>>()
-            .into_boxed_slice();
+            .collect::<Vec<U>>();
         VecSet::new(self.dim, data)
     }
 }
@@ -155,7 +169,9 @@ impl<'a> TryFrom<DynamicVecRef<'a>> for &'a [u8] {
 /// The dynamic vector set with scalar type f32 or u8.
 /// Can be indexed to get the vector at the specified index.
 /// Load and save the vector set from/to a binary file with constant extra memory.
+///
 /// The data type is determined at runtime.
+/// For some operations, you may need to `match` the data type.
 #[derive(Debug, Clone)]
 pub enum DynamicVecSet {
     Float32(VecSet<f32>),
@@ -206,6 +222,7 @@ impl DynamicVecSet {
         self.index(index)
     }
 
+    /// Iterate over the vectors.
     pub fn iter(&self) -> impl Iterator<Item = DynamicVecRef> {
         (0..self.len()).map(move |i| self.index(i))
     }
@@ -253,7 +270,7 @@ mod test {
 
     #[test]
     fn test_vec_set() {
-        let vec_set = VecSet::new(3, vec![1, 2, 3, 4, 5, 6].into_boxed_slice());
+        let vec_set = VecSet::new(3, vec![1, 2, 3, 4, 5, 6]);
         assert_eq!(vec_set.len(), 2);
         assert_eq!(vec_set[0], [1, 2, 3]);
         assert_eq!(vec_set[1], [4, 5, 6]);
@@ -281,7 +298,7 @@ mod test {
         create_dir_all(dir)?;
 
         // Save a DynamicVecSet to a binary file.
-        let vec_set = VecSet::new(2, vec![0.0, 1.0, 2.0, 3.0].into_boxed_slice());
+        let vec_set = VecSet::new(2, vec![0.0, 1.0, 2.0, 3.0]);
         let vec_set = DynamicVecSet::Float32(vec_set);
         let cloned_vec_set = vec_set.clone();
         vec_set.save_binary_file(&file_path)?;

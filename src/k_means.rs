@@ -69,8 +69,15 @@ where
     /// Perform the k-means clustering on the given vector set.
     /// The initial centroids are initialized by the k-means++ algorithm.
     ///
-    // *May panic* since f32 is partially ordered.
+    /// *May panic* when:
+    /// - NaN or Inf exists since `f32` is partially ordered.
+    /// - The selected range is out of the dimension range.
+    /// - The number of clusters is 0.
     pub fn from_vec_set(vec_set: &VecSet<T>, config: &KMeansConfig, rng: &mut impl Rng) -> Self {
+        assert!(
+            config.k > 0,
+            "The number of clusters should be greater than 0."
+        );
         assert!(
             config.selected.is_none() || config.selected.as_ref().unwrap().end <= vec_set.dim(),
             "The selected range should be in the range [0, vec_set.dim())"
@@ -135,7 +142,7 @@ where
     /// Find the nearest centroid to the given vector.
     /// This will use the selected range if it is specified in the config.
     ///
-    /// *May panic* since f32 is not Ord.
+    /// *May panic* since f32 is not Ord or k is accidentally set to 0.
     pub fn find_nearest(&self, v: &[T]) -> usize {
         let dim = self.centroids.dim();
         let v = &v[self.config.selected.clone().unwrap_or(0..dim)];
@@ -240,10 +247,7 @@ mod test {
     #[test]
     fn test_k_means_init() {
         let dim = 2;
-        let vec_set = VecSet::new(
-            dim,
-            vec![0.0, 0.0, 1.0, 0.0, -1.0, -2.0, -2.0, -1.0].into_boxed_slice(),
-        );
+        let vec_set = VecSet::new(dim, vec![0.0, 0.0, 1.0, 0.0, -1.0, -2.0, -2.0, -1.0]);
         let k = 2;
         let config = KMeansConfig {
             k,
@@ -263,10 +267,7 @@ mod test {
 
     #[test]
     fn test_k_means() {
-        let vec_set = VecSet::new(
-            2,
-            vec![0.0, 0.0, 1.0, 0.0, -1.0, -2.0, -2.0, -1.0].into_boxed_slice(),
-        );
+        let vec_set = VecSet::new(2, vec![0.0, 0.0, 1.0, 0.0, -1.0, -2.0, -2.0, -1.0]);
         let config = KMeansConfig {
             k: 2,
             max_iter: 20,
@@ -285,7 +286,7 @@ mod test {
 
     #[test]
     fn test_k_means_u8() {
-        let vec_set = VecSet::new(2, vec![0, 0, 1, 0, 255, 254, 255, 255].into_boxed_slice());
+        let vec_set = VecSet::new(2, vec![0, 0, 1, 0, 255, 254, 255, 255]);
         let config = KMeansConfig {
             k: 2,
             max_iter: 20,
