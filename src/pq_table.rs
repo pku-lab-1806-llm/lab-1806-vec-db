@@ -8,6 +8,7 @@ use crate::{
     k_means::{KMeans, KMeansConfig},
     vec_set::{DynamicVecRef, DynamicVecSet, VecSet},
 };
+use DistanceAlgorithm::*;
 
 /// The configuration for the Product Quantization (PQ) table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,7 +80,6 @@ where
             k_means_config.selected = Some(selected);
             let k_means = KMeans::from_vec_set(vec_set, &k_means_config, rng);
             let cs: &VecSet<T> = &k_means.centroids;
-            use DistanceAlgorithm::*;
             match config.dist {
                 L2Sqr | L2 => {
                     for c0 in 0..k {
@@ -194,7 +194,6 @@ where
         let dist = self.config.dist;
         let v0 = self.split_indices(v0);
         let v1 = self.split_indices(v1);
-        use DistanceAlgorithm::*;
         let mut d = 0.0;
         for i in 0..m {
             d += self.lookup(i, v0[i], v1[i]);
@@ -360,9 +359,9 @@ mod test {
 
     #[test]
     fn pq_table_precise_test() {
-        pq_table_precise_test_base(DistanceAlgorithm::L2Sqr);
-        pq_table_precise_test_base(DistanceAlgorithm::L2);
-        pq_table_precise_test_base(DistanceAlgorithm::Cosine);
+        pq_table_precise_test_base(L2Sqr);
+        pq_table_precise_test_base(L2);
+        pq_table_precise_test_base(Cosine);
     }
 
     fn pq_table_test_on_real_set_base(
@@ -411,9 +410,9 @@ mod test {
 
     #[test]
     fn pq_table_test_on_real_set() -> Result<()> {
-        pq_table_test_on_real_set_base(DistanceAlgorithm::L2Sqr, 0.25)?;
-        pq_table_test_on_real_set_base(DistanceAlgorithm::L2, 0.15)?;
-        pq_table_test_on_real_set_base(DistanceAlgorithm::Cosine, 0.2)?;
+        pq_table_test_on_real_set_base(L2Sqr, 0.25)?;
+        pq_table_test_on_real_set_base(L2, 0.15)?;
+        pq_table_test_on_real_set_base(Cosine, 0.2)?;
         Ok(())
     }
 }

@@ -1,7 +1,7 @@
 use crate::config::DistanceAlgorithm;
 
 use crate::vec_set::DynamicVecRef;
-
+use DistanceAlgorithm::*;
 /// Trait for calculating distances between two vectors.
 ///
 /// `[T] where T: BinaryScalar` and `DynamicVecRef` should implement this trait.
@@ -118,7 +118,6 @@ impl Distance for DynamicVecRef<'_> {
 impl DistanceAlgorithm {
     /// Calculate distance between two vectors using the specified algorithm.
     pub fn distance<T: Distance + ?Sized>(&self, a: &T, b: &T) -> f32 {
-        use DistanceAlgorithm::*;
         match self {
             L2Sqr => a.l2_sqr_distance(b),
             L2 => a.l2_distance(b),
@@ -163,7 +162,6 @@ mod test {
 
     #[test]
     fn test_l2_sqr_distance() {
-        use DistanceAlgorithm::*;
         let a = vec![1.0, 2.0, 3.0];
         let b = vec![4.0, 5.0, 6.0];
         assert!((L2Sqr.ds(&a, &b) - 27.0_f32).abs() < EPSILON);
@@ -171,7 +169,6 @@ mod test {
 
     #[test]
     fn test_cosine_distance() {
-        use DistanceAlgorithm::*;
         let a = [1, 2, 3];
         let b = [2, 4, 6];
         assert!((Cosine.ds(&a, &b) - 0.0_f32).abs() < EPSILON);
