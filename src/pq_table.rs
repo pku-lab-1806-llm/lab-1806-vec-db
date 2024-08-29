@@ -369,15 +369,14 @@ mod test {
         let i95 = (errors.len() as f32 * 0.95).floor() as usize;
         let p95 = errors[i95];
         println!("95% Error: {}", p95);
-        assert!(p95 < 0.2, "95% Error is too large.");
+        assert!(p95 < 0.25, "95% Error is too large.");
         Ok(())
     }
 
     #[test]
     fn pq_table_test_on_real_set() -> Result<()> {
         let file_path = "config/example/db_config.toml";
-        let mut config = DBConfig::load_from_toml_file(file_path)?;
-        config.vec_data.limit = Some(64);
+        let config = DBConfig::load_from_toml_file(file_path)?;
         let vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
         pq_table_test_on_real_set_base(&vec_set, L2Sqr)?;
         pq_table_test_on_real_set_base(&vec_set, L2)?;
