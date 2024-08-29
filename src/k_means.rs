@@ -1,12 +1,6 @@
 use std::ops::Range;
 
-use crate::{
-    binary_scalar::BinaryScalar,
-    config::DistanceAlgorithm,
-    distance::Distance,
-    vec_set::{DynamicVecRef, DynamicVecSet, VecSet},
-};
-use anyhow::{bail, Result};
+use crate::{scalar::Scalar, distance::DistanceAlgorithm, vec_set::VecSet};
 use rand::{distributions::WeightedIndex, prelude::*};
 use serde::{Deserialize, Serialize};
 
@@ -30,10 +24,7 @@ pub struct KMeans<T> {
     pub config: KMeansConfig,
     pub centroids: VecSet<T>,
 }
-impl<T: BinaryScalar> KMeans<T>
-where
-    [T]: Distance,
-{
+impl<T: Scalar> KMeans<T> {
     /// Initialize the centroids using the k-means++ algorithm.
     /// Returns the initialized centroids.
     fn k_means_init(vec_set: &VecSet<T>, config: &KMeansConfig, rng: &mut impl Rng) -> VecSet<T> {
@@ -156,85 +147,6 @@ where
     }
 }
 
-#[derive(Debug)]
-pub enum DynamicKMeans {
-    Float32(KMeans<f32>),
-    UInt8(KMeans<u8>),
-}
-
-impl DynamicKMeans {
-    /// Perform the k-means clustering on the given vector set.
-    /// The initial centroids are initialized by the k-means++ algorithm.
-    /// `k` should be in the range `[0, len(vec_set)]`.
-    ///
-    // *May panic* since f32 is partially ordered.
-    pub fn from_vec_set(
-        vec_set: &DynamicVecSet,
-        config: &KMeansConfig,
-        rng: &mut impl Rng,
-    ) -> Self {
-        use DynamicVecSet::*;
-        match vec_set {
-            Float32(vec_set) => {
-                let k_means = KMeans::from_vec_set(vec_set, config, rng);
-                Self::Float32(k_means)
-            }
-            UInt8(vec_set) => {
-                let k_means = KMeans::from_vec_set(vec_set, config, rng);
-                Self::UInt8(k_means)
-            }
-        }
-    }
-    /// Get the config.
-    pub fn config(&self) -> &KMeansConfig {
-        match self {
-            Self::Float32(k_means) => &k_means.config,
-            Self::UInt8(k_means) => &k_means.config,
-        }
-    }
-
-    pub fn find_nearest(&self, v: DynamicVecRef) -> usize {
-        use DynamicVecRef::*;
-        match (self, v) {
-            (Self::Float32(k_means), Float32(v)) => k_means.find_nearest(v),
-            (Self::UInt8(k_means), UInt8(v)) => k_means.find_nearest(v),
-            _ => panic!("The vector type does not match the k-means type."),
-        }
-    }
-}
-
-impl From<KMeans<f32>> for DynamicKMeans {
-    fn from(k_means: KMeans<f32>) -> Self {
-        Self::Float32(k_means)
-    }
-}
-
-impl From<KMeans<u8>> for DynamicKMeans {
-    fn from(k_means: KMeans<u8>) -> Self {
-        Self::UInt8(k_means)
-    }
-}
-
-impl TryFrom<DynamicKMeans> for KMeans<f32> {
-    type Error = anyhow::Error;
-    fn try_from(k_means: DynamicKMeans) -> Result<KMeans<f32>> {
-        match k_means {
-            DynamicKMeans::Float32(k_means) => Ok(k_means),
-            _ => bail!("Failed to convert to KMeans<f32>."),
-        }
-    }
-}
-
-impl TryFrom<DynamicKMeans> for KMeans<u8> {
-    type Error = anyhow::Error;
-    fn try_from(k_means: DynamicKMeans) -> Result<KMeans<u8>> {
-        match k_means {
-            DynamicKMeans::UInt8(k_means) => Ok(k_means),
-            _ => bail!("Failed to convert to KMeans<u8>."),
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
 
@@ -314,7 +226,7 @@ mod test {
         }
         let file_path = "config/example/db_config.toml";
         let config = DBConfig::load_from_toml_file(file_path)?;
-        let vec_set = DynamicVecSet::load_with(config.vec_data)?;
+        let vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
         let k_means_config = KMeansConfig {
             k: 3,
             max_iter: 20,
@@ -323,7 +235,7 @@ mod test {
             selected: Some(0..2),
         };
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let k_means = DynamicKMeans::from_vec_set(&vec_set, &k_means_config, &mut rng);
+        let k_means = KMeans::from_vec_set(&vec_set, &k_means_config, &mut rng);
 
         let k_means = KMeans::<f32>::try_from(k_means)?;
         assert_eq!(k_means.centroids.len(), k_means_config.k);

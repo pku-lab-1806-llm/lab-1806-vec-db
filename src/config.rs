@@ -1,3 +1,4 @@
+use crate::distance::DistanceAlgorithm;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
@@ -24,26 +25,6 @@ pub enum IndexAlgorithm {
     /// HNSW (Hierarchical Navigable Small World)
     HNSW(HNSWConfig),
     IVF(IVFConfig),
-}
-
-/// Distance algorithm to be used in the vector database.
-///
-/// See also `DistanceAlgorithm::d()`.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum DistanceAlgorithm {
-    /// L2 squared distance, AKA squared Euclidean distance.
-    ///
-    /// Range: `[0.0, +inf]`
-    L2Sqr,
-    /// L2 distance, AKA Euclidean distance.
-    ///
-    /// Range: `[0.0, +inf]`
-    L2,
-    /// Cosine distance.
-    /// `cosine_distance = 1 - dot_product / (norm_self * norm_other)`
-    ///
-    /// Range: `[0.0, 2.0]`
-    Cosine,
 }
 
 /// Data type of the vector elements.

@@ -1,8 +1,7 @@
-use crate::binary_scalar::BinaryScalar;
-use crate::config::DistanceAlgorithm;
-use crate::distance::Distance;
+use crate::scalar::Scalar;
+use crate::distance::DistanceAlgorithm;
 use crate::index_algorithm::ResponsePair;
-use crate::vec_set::{DynamicVecRef, DynamicVecSet, VecSet};
+use crate::vec_set::VecSet;
 use std::collections::BTreeSet;
 
 /// Linear index for the k-nearest neighbors search.
@@ -14,11 +13,7 @@ pub struct LinearIndex<'a, T> {
     distance: DistanceAlgorithm,
 }
 
-impl<'a, T> LinearIndex<'a, T>
-where
-    T: BinaryScalar,
-    [T]: Distance,
-{
+impl<'a, T: Scalar> LinearIndex<'a, T> {
     pub fn from_vec_set(vec_set: &'a VecSet<T>, distance: DistanceAlgorithm) -> Self {
         Self { vec_set, distance }
     }
@@ -42,34 +37,6 @@ where
     }
 }
 
-/// Linear index for the k-nearest neighbors search.
-///
-/// Holds a reference to the `DynamicVecSet`.
-///
-/// The data type is determined at runtime.
-pub enum DynamicLinearIndex<'a> {
-    Float32(LinearIndex<'a, f32>),
-    UInt8(LinearIndex<'a, u8>),
-}
-
-impl<'a> DynamicLinearIndex<'a> {
-    pub fn from_dynamic_vec_set(vec_set: &'a DynamicVecSet, distance: DistanceAlgorithm) -> Self {
-        use DynamicVecSet::*;
-        match vec_set {
-            Float32(vec_set) => Self::Float32(LinearIndex::from_vec_set(vec_set, distance)),
-            UInt8(vec_set) => Self::UInt8(LinearIndex::from_vec_set(vec_set, distance)),
-        }
-    }
-    pub fn knn(&self, query: &DynamicVecRef, k: usize) -> Vec<ResponsePair> {
-        use DynamicVecRef::*;
-        match (self, query) {
-            (Self::Float32(index), Float32(query)) => index.knn(query, k),
-            (Self::UInt8(index), UInt8(query)) => index.knn(query, k),
-            _ => panic!("Mismatched types when calling knn in DynamicLinearIndex."),
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use anyhow::Result;
@@ -90,8 +57,9 @@ mod test {
         let file_path = "config/example/db_config.toml";
         let config = DBConfig::load_from_toml_file(file_path)?;
         println!("Loaded config: {:#?}", config);
-        let vec_set = DynamicVecSet::load_with(config.vec_data)?;
-        let index = DynamicLinearIndex::from_dynamic_vec_set(&vec_set, config.distance);
+        let vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
+
+        let index = LinearIndex::from_vec_set(&vec_set, config.distance);
 
         let k = 4;
         let query_index = 200;
@@ -99,16 +67,16 @@ mod test {
         println!("Query Index: {}", query_index);
         println!(
             "Query Vector: {}",
-            clip_msg(&format!("{:?}", vec_set.i(query_index)))
+            clip_msg(&format!("{:?}", &vec_set[query_index]))
         );
 
-        let result = index.knn(&vec_set.i(query_index), k);
+        let result = index.knn(&vec_set[query_index], k);
 
         for res in result.iter() {
             println!("Index: {}, Distance: {}", res.index, res.distance);
             println!(
                 "Vector: {}",
-                clip_msg(&format!("{:?}", vec_set.i(res.index)))
+                clip_msg(&format!("{:?}", &vec_set[res.index]))
             );
         }
         assert_eq!(result.len(), k.min(vec_set.len()));

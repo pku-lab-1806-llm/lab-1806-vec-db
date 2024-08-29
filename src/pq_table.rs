@@ -2,11 +2,10 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    binary_scalar::BinaryScalar,
-    config::DistanceAlgorithm,
-    distance::Distance,
+    distance::{Distance, DistanceAlgorithm},
     k_means::{KMeans, KMeansConfig},
-    vec_set::{DynamicVecRef, DynamicVecSet, VecSet},
+    scalar::Scalar,
+    vec_set::VecSet,
 };
 use DistanceAlgorithm::*;
 
@@ -49,7 +48,7 @@ pub struct PQLookupTable {
 ///
 /// The encoded vector is stored as `Vec<u8>` with `ceil(m * n_bits / 8)` bytes.
 #[derive(Debug, Clone)]
-pub struct PQTable<T: BinaryScalar> {
+pub struct PQTable<T> {
     /// The configuration for the PQ table.
     pub config: PQConfig,
     /// The dimension of the source vectors.
@@ -65,10 +64,7 @@ pub struct PQTable<T: BinaryScalar> {
     pub dot_product_cache: Vec<f32>,
 }
 
-impl<T: BinaryScalar> PQTable<T>
-where
-    [T]: Distance,
-{
+impl<T: Scalar> PQTable<T> {
     /// Create a new PQ table from the given vector set.
     pub fn from_vec_set(vec_set: &VecSet<T>, config: &PQConfig, rng: &mut impl Rng) -> PQTable<T> {
         assert!(
@@ -271,94 +267,12 @@ where
     }
 }
 
-#[derive(Debug)]
-pub enum DynamicPQTable {
-    UInt8(PQTable<u8>),
-    Float32(PQTable<f32>),
-}
-
-impl DynamicPQTable {
-    /// Create a new dynamic PQ table from the given vector set.
-    pub fn from_vec_set(vec_set: &DynamicVecSet, config: &PQConfig, rng: &mut impl Rng) -> Self {
-        use DynamicVecSet::*;
-        match vec_set {
-            UInt8(vec_set) => Self::UInt8(PQTable::from_vec_set(vec_set, config, rng)),
-            Float32(vec_set) => Self::Float32(PQTable::from_vec_set(vec_set, config, rng)),
-        }
-    }
-
-    /// Encode the given vector.
-    pub fn encode(&self, v: DynamicVecRef) -> Vec<u8> {
-        match (self, v) {
-            (Self::UInt8(pq_table), DynamicVecRef::UInt8(v)) => pq_table.encode(v),
-            (Self::Float32(pq_table), DynamicVecRef::Float32(v)) => pq_table.encode(v),
-            _ => panic!("Cannot encode different types of vectors."),
-        }
-    }
-
-    /// Get the dimension of the encoded vector.
-    pub fn encoded_dim(&self) -> usize {
-        match self {
-            Self::UInt8(pq_table) => pq_table.encoded_dim(),
-            Self::Float32(pq_table) => pq_table.encoded_dim(),
-        }
-    }
-
-    /// Encode the given vector set.
-    pub fn encode_batch(&self, vec_set: &DynamicVecSet) -> VecSet<u8> {
-        match (self, vec_set) {
-            (Self::UInt8(pq_table), DynamicVecSet::UInt8(vec_set)) => {
-                pq_table.encode_batch(vec_set)
-            }
-            (Self::Float32(pq_table), DynamicVecSet::Float32(vec_set)) => {
-                pq_table.encode_batch(vec_set)
-            }
-            _ => panic!("Cannot encode different types of vectors."),
-        }
-    }
-
-    /// Create flattened lookup table for the vector to be queried.
-    /// Using the PQ in ADC (Asymmetric Distance Computation) algorithm.
-    ///
-    /// Size `(m * k,)`. For group `i` and centroid `c`, the cached value is at `i * k + c`.
-    ///
-    /// - For L2Sqr and L2 distance, cache the L2Sqr distance between the centroid and the vector.
-    /// - For Cosine distance, cache the dot product of the centroid and the vector.
-    pub fn create_lookup(&self, v: DynamicVecRef) -> PQLookupTable {
-        match (self, v) {
-            (Self::UInt8(pq_table), DynamicVecRef::UInt8(v)) => pq_table.create_lookup(v),
-            (Self::Float32(pq_table), DynamicVecRef::Float32(v)) => pq_table.create_lookup(v),
-            _ => panic!("Cannot create lookup for different types of vectors."),
-        }
-    }
-
-    /// Compute the distance between an encoded vector and the lookup table.
-    ///
-    /// `encoded` is usually in the encoded vec_set from `encode_batch()`.
-    /// See `create_lookup()` for creating the lookup table for the vector to be queried.
-    pub fn distance(&self, encoded: &[u8], lookup_table: &PQLookupTable) -> f32 {
-        match self {
-            Self::UInt8(pq_table) => pq_table.distance(encoded, lookup_table),
-            Self::Float32(pq_table) => pq_table.distance(encoded, lookup_table),
-        }
-    }
-
-    /// Alias of `DynamicPQTable::distance()`.
-    /// Compute the distance between an encoded vector and the lookup table.
-    ///
-    /// `encoded` is usually in the encoded vec_set from `encode_batch()`.
-    /// See `create_lookup()` for creating the lookup table for the vector to be queried.
-    pub fn d(&self, encoded: &[u8], lookup_table: &PQLookupTable) -> f32 {
-        self.distance(encoded, lookup_table)
-    }
-}
-
 #[cfg(test)]
 mod test {
     use anyhow::Result;
     use rand::SeedableRng;
 
-    use crate::config::DBConfig;
+    use crate::{config::DBConfig, scalar::Scalar};
 
     use super::*;
 
@@ -416,8 +330,8 @@ mod test {
         pq_table_precise_test_base(Cosine);
     }
 
-    fn pq_table_test_on_real_set_base(
-        vec_set: &DynamicVecSet,
+    fn pq_table_test_on_real_set_base<T: Scalar>(
+        vec_set: &VecSet<T>,
         dist: DistanceAlgorithm,
     ) -> Result<()> {
         let dim = vec_set.dim();
@@ -429,7 +343,7 @@ mod test {
             k_means_tol: 1e-6,
         };
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let pq_table = DynamicPQTable::from_vec_set(&vec_set, &pq_config, &mut rng);
+        let pq_table = PQTable::from_vec_set(&vec_set, &pq_config, &mut rng);
         let encoded_set = pq_table.encode_batch(&vec_set);
 
         println!("Distance Algorithm: {:?}", dist);
@@ -438,12 +352,12 @@ mod test {
         for _ in 0..test_count {
             let i0 = rng.gen_range(0..vec_set.len());
             let i1 = rng.gen_range(0..vec_set.len());
-            let v0 = vec_set.i(i0);
-            let v1 = vec_set.i(i1);
+            let v0 = &vec_set[i0];
+            let v1 = &vec_set[i1];
             let e0 = &encoded_set[i0];
             let lookup = pq_table.create_lookup(v1);
             let distance = pq_table.d(e0, &lookup);
-            let expected = dist.d(&v0, &v1);
+            let expected = dist.d(v0, v1);
             let error = (distance - expected).abs() / expected.max(1.0);
             println!(
                 "Distance: {} / Expected: {} / Error: {}",
@@ -464,7 +378,7 @@ mod test {
         let file_path = "config/example/db_config.toml";
         let mut config = DBConfig::load_from_toml_file(file_path)?;
         config.vec_data.limit = Some(64);
-        let vec_set = DynamicVecSet::load_with(config.vec_data)?;
+        let vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
         pq_table_test_on_real_set_base(&vec_set, L2Sqr)?;
         pq_table_test_on_real_set_base(&vec_set, L2)?;
         pq_table_test_on_real_set_base(&vec_set, Cosine)?;
