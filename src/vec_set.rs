@@ -237,8 +237,7 @@ mod test {
         let file_path = "config/example/db_config.toml";
         let config = DBConfig::load_from_toml_file(file_path).unwrap();
         println!("Loaded config: {:#?}", config);
-        let vec_set = VecSet::<u8>::load_with(&config.vec_data).unwrap();
-        println!("{:?}", std::any::type_name_of_val(&vec_set));
+        VecSet::<u8>::load_with(&config.vec_data).unwrap();
     }
 
     #[test]
