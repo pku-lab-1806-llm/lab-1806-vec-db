@@ -29,7 +29,7 @@ pub trait BinaryScalar: Sized + Default + Copy + Debug {
     /// Load data from a binary file.
     /// The layout of the binary file is assumed to be a sequence of scalar values.
     /// The number of scalar values to be loaded is limited by `limit`.
-    fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Box<[Self]>>;
+    fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Vec<Self>>;
 
     /// Serialize data to a binary file.
     /// The layout of the binary file is a sequence of scalar values.
@@ -52,9 +52,9 @@ impl BinaryScalar for u8 {
     fn cast_to_f32(self) -> f32 {
         self as f32
     }
-    fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Box<[Self]>> {
+    fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Vec<Self>> {
         let limit = Self::file_size_limit(&file_path, limit)?;
-        let mut buffer = vec![0; limit].into_boxed_slice();
+        let mut buffer = vec![0; limit];
         let mut file = std::fs::File::open(file_path)?;
         file.read_exact(&mut buffer)?;
         Ok(buffer)
@@ -68,9 +68,9 @@ impl BinaryScalar for f32 {
     fn cast_to_f32(self) -> f32 {
         self
     }
-    fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Box<[Self]>> {
+    fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Vec<Self>> {
         let limit = Self::file_size_limit(&file_path, limit)?;
-        let mut buffer = vec![0.0; limit].into_boxed_slice();
+        let mut buffer = vec![0.0; limit];
         let mut file = std::fs::File::open(file_path)?;
         file.read_exact(unsafe {
             std::slice::from_raw_parts_mut(
