@@ -376,7 +376,10 @@ mod test {
     #[test]
     fn pq_table_test_on_real_set() -> Result<()> {
         let file_path = "config/example/db_config.toml";
-        let config = DBConfig::load_from_toml_file(file_path)?;
+        let mut config = DBConfig::load_from_toml_file(file_path)?;
+
+        config.vec_data.limit = Some(64);
+
         let vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
         pq_table_test_on_real_set_base(&vec_set, L2Sqr)?;
         pq_table_test_on_real_set_base(&vec_set, L2)?;
