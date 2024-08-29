@@ -238,14 +238,23 @@ mod test {
     }
 
     #[test]
+    #[should_panic(expected = "Failed to convert to VecSet<u8>.")]
+    fn data_type_mismatched_test() {
+        let file_path = "config/example/db_config.toml";
+        let config = DBConfig::load_from_toml_file(file_path).unwrap();
+        println!("Loaded config: {:#?}", config);
+        let vec_set = VecSet::<u8>::load_with(&config.vec_data).unwrap();
+        println!("{:?}", std::any::type_name_of_val(&vec_set));
+    }
+
+    #[test]
     fn load_vec_set_test() -> Result<()> {
         // See also the `match` usage in the doc test of `DynamicVecSet`.
 
         let file_path = "config/example/db_config.toml";
-        let config = DBConfig::load_from_toml_file(file_path).expect("Failed to load the config.");
+        let config = DBConfig::load_from_toml_file(file_path)?;
         println!("Loaded config: {:#?}", config);
-        let vec_set =
-            VecSet::<f32>::load_with(&config.vec_data).expect("Failed to load the vec_set.");
+        let vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
 
         let v0 = &vec_set[0];
         let v1 = &vec_set[1];
