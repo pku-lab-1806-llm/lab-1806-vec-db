@@ -27,9 +27,18 @@ where
                 .unwrap();
             cent_ids[min_idx].push(i);
         }
+
         for i in 0..k {
-            vec_sets.push(VecSet<T>::zeros(vec_set.dim(), cent_ids[i]));
+            vec_sets.push(VecSet::<T>::zeros(vec_set.dim(), cent_ids[i].len()));
         }
+        
+        // 将数据复制到ivf索引中
+        for (cents, v) in cent_ids.iter().zip(vec_sets.iter_mut()) {
+            for (i, vec_id) in cents.iter().enumerate() {
+                v.put(i, &vec_set[i]);
+            }
+        }
+
         Self {k: k, vec_sets, dist, centroids}
     }
 }
