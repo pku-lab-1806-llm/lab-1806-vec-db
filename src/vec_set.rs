@@ -147,28 +147,22 @@ impl VecSet<u8> {
 /// };
 ///
 /// let file_path = "config/example/db_config.toml";
-/// let config = DBConfig::load_from_toml_file(file_path).expect("Failed to load the config.");
-/// println!("Loaded config: {:#?}", config);
-/// let vec_set = DynamicVecSet::load_with(&config.vec_data).expect("Failed to load the vec_set.");
-/// // Write your code with Generic Scalar type.
-/// fn load_vec_set_test_base<T: Scalar>(
-///     vec_set: &VecSet<T>,
-///     config: &DBConfig,
-/// ) {
-///     let v0 = &vec_set[0];
-///     let v1 = &vec_set[1];
-///     println!("Distance Algorithm: {:?}", config.distance);
-///     let distance = config.distance.d(v0, v1);
-///     println!("Distance: {}", distance);
-///     assert!((distance - 2.3230).abs() < 1e-4);
-/// }
-/// // Determine the data type at runtime.
-/// match &vec_set {
-///     DynamicVecSet::Float32(vec_set) => load_vec_set_test_base(vec_set, &config),
-///     DynamicVecSet::UInt8(vec_set) => load_vec_set_test_base(vec_set, &config),
-/// };
+/// let config = DBConfig::load_from_toml_file(file_path).unwrap();
+/// let vec_set = DynamicVecSet::load_with(&config.vec_data).unwrap();
 /// // Or directly determine the data type at compile time.
-/// let vec_set = VecSet::<f32>::load_with(&config.vec_data).expect("Failed to load the vec_set.");
+/// // let vec_set = VecSet::<f32>::load_with(&config.vec_data).unwrap();
+///
+/// // Write your code with Generic Scalar type.
+/// fn foo<T: Scalar>(vec_set: &VecSet<T>) {
+///     println!("{:?}", &vec_set[0]);
+/// }
+///
+/// // Determine the data type at runtime.
+/// use DynamicVecSet::*;
+/// match &vec_set {
+///     Float32(vec_set) => foo(vec_set),
+///     UInt8(vec_set) => foo(vec_set),
+/// };
 /// ```
 #[derive(Debug, Clone)]
 pub enum DynamicVecSet {

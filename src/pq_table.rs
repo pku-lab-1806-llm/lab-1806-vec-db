@@ -15,17 +15,17 @@ pub struct PQConfig {
     /// The number of bits for each quantized group.
     ///
     /// Should be 4 or 8. Usually 4.
-    n_bits: usize,
+    pub n_bits: usize,
     /// The number of groups.
     ///
     /// Should satisfy `dim % m == 0`. Usually `dim / 4`.
-    m: usize,
+    pub m: usize,
     /// The distance algorithm to use.
-    dist: DistanceAlgorithm,
+    pub dist: DistanceAlgorithm,
     /// The number of iterations for the k-means algorithm.
-    k_means_max_iter: usize,
+    pub k_means_max_iter: usize,
     /// The tolerance for the k-means algorithm.
-    k_means_tol: f32,
+    pub k_means_tol: f32,
 }
 
 /// Flattened lookup table for the vector to be queried.
@@ -330,10 +330,7 @@ mod test {
         pq_table_precise_test_base(Cosine);
     }
 
-    fn pq_table_test_on_real_set_base<T: Scalar>(
-        vec_set: &VecSet<T>,
-        dist: DistanceAlgorithm,
-    ) -> Result<()> {
+    fn pq_table_test_base<T: Scalar>(vec_set: &VecSet<T>, dist: DistanceAlgorithm) -> Result<()> {
         let dim = vec_set.dim();
         let pq_config = PQConfig {
             n_bits: 4,
@@ -347,7 +344,7 @@ mod test {
         let encoded_set = pq_table.encode_batch(&vec_set);
 
         println!("Distance Algorithm: {:?}", dist);
-        let test_count = 100;
+        let test_count = 20;
         let mut errors = Vec::new();
         for _ in 0..test_count {
             let i0 = rng.gen_range(0..vec_set.len());
@@ -366,24 +363,38 @@ mod test {
             errors.push(error);
         }
         errors.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let i95 = (errors.len() as f32 * 0.95).floor() as usize;
-        let p95 = errors[i95];
-        println!("95% Error: {}", p95);
-        assert!(p95 < 0.25, "95% Error is too large.");
+        let i90 = (errors.len() as f32 * 0.9).ceil() as usize - 1;
+        let p90 = errors[i90];
+        println!("90% Error: {}", p90);
+        assert!(p90 < 0.2, "90% Error is too large.");
         Ok(())
     }
 
     #[test]
-    fn pq_table_test_on_real_set() -> Result<()> {
+    fn pq_table_test() -> Result<()> {
+        // The `dim` and `limit` has been limited for debug mode performance.
+        // Try `cargo r -r --example pq_table_test` for release mode testing,
+        // which provides more accurate results.
+
         let file_path = "config/example/db_config.toml";
         let mut config = DBConfig::load_from_toml_file(file_path)?;
 
         config.vec_data.limit = Some(64);
 
-        let vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
-        pq_table_test_on_real_set_base(&vec_set, L2Sqr)?;
-        pq_table_test_on_real_set_base(&vec_set, L2)?;
-        pq_table_test_on_real_set_base(&vec_set, Cosine)?;
+        let raw_vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
+
+        let clipped_dim = raw_vec_set.dim().min(12);
+
+        let mut vec_set = VecSet::zeros(clipped_dim, raw_vec_set.len());
+        for i in 0..raw_vec_set.len() {
+            let src = &raw_vec_set[i];
+            let dst = vec_set.get_mut(i);
+            dst.copy_from_slice(&src[..clipped_dim]);
+        }
+
+        pq_table_test_base(&vec_set, L2Sqr)?;
+        pq_table_test_base(&vec_set, L2)?;
+        pq_table_test_base(&vec_set, Cosine)?;
         Ok(())
     }
 }
