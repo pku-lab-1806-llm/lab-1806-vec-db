@@ -11,7 +11,9 @@ use crate::config::{DataType, VecDataConfig};
 /// Load and save the vector set from/to a binary file with constant extra memory.
 #[derive(Debug, Clone)]
 pub struct VecSet<T> {
+    /// The dimension of the vector.
     dim: usize,
+    /// The data of the vectors. Size&Cap: dim * len.
     data: Vec<T>,
 }
 
