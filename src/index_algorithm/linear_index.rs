@@ -1,29 +1,38 @@
+use rand::Rng;
+
 use crate::distance::{DistanceAdapter, DistanceAlgorithm};
 use crate::index_algorithm::ResponsePair;
 use crate::scalar::Scalar;
 use crate::vec_set::VecSet;
 use std::collections::BTreeSet;
+use std::rc::Rc;
+
+use super::IndexAlgorithm;
+
+#[derive(Debug, Clone)]
+pub struct LinearIndexConfig {
+    pub dist: DistanceAlgorithm,
+}
 
 /// Linear index for the k-nearest neighbors search.
 /// The distance algorithm is configurable.
 ///
 /// Holds a reference to the `VecSet`.
-pub struct LinearIndex<'a, T> {
-    vec_set: &'a VecSet<T>,
-    distance: DistanceAlgorithm,
+pub struct LinearIndex<T> {
+    config: Rc<LinearIndexConfig>,
+    vec_set: Rc<VecSet<T>>,
 }
 
-impl<'a, T: Scalar> LinearIndex<'a, T> {
-    pub fn from_vec_set(vec_set: &'a VecSet<T>, distance: DistanceAlgorithm) -> Self {
-        Self { vec_set, distance }
+impl<T: Scalar> IndexAlgorithm<T> for LinearIndex<T> {
+    type Config = LinearIndexConfig;
+
+    fn from_vec_set(vec_set: Rc<VecSet<T>>, config: Rc<Self::Config>, _: &mut impl Rng) -> Self {
+        Self { config, vec_set }
     }
-    /// Get the precise k-nearest neighbors.
-    /// Returns a vector of pairs of the index and the distance.
-    /// The vector is sorted by the distance in ascending order.
-    pub fn knn(&self, query: &[T], k: usize) -> Vec<ResponsePair> {
+    fn knn(&self, query: &[T], k: usize) -> Vec<ResponsePair> {
         let mut result = BTreeSet::new();
         for (i, v) in self.vec_set.iter().enumerate() {
-            let dist = self.distance.d(query, v);
+            let dist = self.config.dist.d(query, v);
             if result.len() < k {
                 result.insert(ResponsePair::new(i, dist));
             } else if let Some(max) = result.last() {
@@ -40,6 +49,7 @@ impl<'a, T: Scalar> LinearIndex<'a, T> {
 #[cfg(test)]
 mod test {
     use anyhow::Result;
+    use rand::SeedableRng;
 
     use crate::config::DBConfig;
 
@@ -58,8 +68,13 @@ mod test {
         let config = DBConfig::load_from_toml_file(file_path)?;
         println!("Loaded config: {:#?}", config);
         let vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
+        let vec_set = Rc::new(vec_set);
+        let linear_config = Rc::new(LinearIndexConfig {
+            dist: config.distance,
+        });
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
 
-        let index = LinearIndex::from_vec_set(&vec_set, config.distance);
+        let index = LinearIndex::from_vec_set(vec_set.clone(), linear_config, &mut rng);
 
         let k = 4;
         let query_index = 200;

@@ -6,20 +6,20 @@ use crate::{
     scalar::Scalar,
     vec_set::VecSet,
 };
-#[derive(Clone)]
-pub struct IVFConfig {
+#[derive(Debug, Clone)]
+pub struct IVFIndexConfig {
     /// The number of clusters.
     pub k: usize,
     /// The distance algorithm.
     pub dist: DistanceAlgorithm,
     /// The number of iterations for the k-means algorithm.
-    k_means_max_iter: usize,
+    pub k_means_max_iter: usize,
     /// The tolerance for the k-means algorithm.
-    k_means_tol: f32,
+    pub k_means_tol: f32,
 }
 
 pub struct IVFIndex<T> {
-    pub config: IVFConfig,
+    pub config: IVFIndexConfig,
     /// The vector sets of the clusters. Length: k.
     pub clusters: Vec<VecSet<T>>,
     /// K-means struct for the centroids.
@@ -28,7 +28,7 @@ pub struct IVFIndex<T> {
 
 impl<T: Scalar> IVFIndex<T> {
     /// Create an IVF index from a `VecSet`.
-    pub fn from_vec_set(vec_set: &VecSet<T>, config: &IVFConfig, rng: &mut impl Rng) -> Self {
+    pub fn from_vec_set(vec_set: &VecSet<T>, config: &IVFIndexConfig, rng: &mut impl Rng) -> Self {
         let k = config.k;
         let dist = config.dist;
         let k_means_config = KMeansConfig {
@@ -90,7 +90,7 @@ mod test {
             dst.copy_from_slice(&src[..clipped_dim]);
         }
 
-        let ivf_config = IVFConfig {
+        let ivf_config = IVFIndexConfig {
             k: 3,
             dist: DistanceAlgorithm::L2Sqr,
             k_means_max_iter: 20,
