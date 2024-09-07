@@ -1,3 +1,5 @@
+pub mod k_means;
+pub mod pq_table;
 use crate::scalar::Scalar;
 
 use serde::{Deserialize, Serialize};

@@ -1,3 +1,10 @@
+use std::rc::Rc;
+
+use rand::Rng;
+
+use crate::{distance::DistanceAlgorithm, scalar::Scalar, vec_set::VecSet};
+
+pub mod hnsw_index;
 pub mod ivf_index;
 pub mod linear_index;
 
@@ -27,4 +34,18 @@ impl Ord for ResponsePair {
             .partial_cmp(&other.distance)
             .expect("Failed to compare f32 distance in response pair.")
     }
+}
+
+pub trait IndexAlgorithmTrait<T: Scalar> {
+    type Config;
+    fn from_vec_set(
+        vec_set: Rc<VecSet<T>>,
+        dist: DistanceAlgorithm,
+        config: Rc<Self::Config>,
+        rng: &mut impl Rng,
+    ) -> Self;
+    /// Get the precise k-nearest neighbors.
+    /// Returns a vector of pairs of the index and the distance.
+    /// The vector is sorted by the distance in ascending order.
+    fn knn(&self, query: &[T], k: usize) -> Vec<ResponsePair>;
 }
