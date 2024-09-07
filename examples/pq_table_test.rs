@@ -4,10 +4,10 @@ use anyhow::Result;
 use lab_1806_vec_db::{
     config::DBConfig,
     distance::{
+        pq_table::{PQConfig, PQTable},
         DistanceAdapter,
         DistanceAlgorithm::{self, *},
     },
-    pq_table::{PQConfig, PQTable},
     scalar::Scalar,
     vec_set::VecSet,
 };

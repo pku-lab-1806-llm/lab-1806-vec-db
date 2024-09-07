@@ -37,6 +37,6 @@ impl<T: Scalar> IndexAlgorithmTrait<T> for HNSWIndex<T> {
     }
     fn knn(&self, query: &[T], k: usize) -> Vec<ResponsePair> {
         let _ = (query, k);
-        unimplemented!()
+        unimplemented!("HNSWIndex::knn")
     }
 }

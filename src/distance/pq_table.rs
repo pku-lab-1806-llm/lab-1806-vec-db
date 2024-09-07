@@ -4,8 +4,10 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    distance::{DistanceAdapter, DistanceAlgorithm, SliceDistance},
-    k_means::{KMeans, KMeansConfig},
+    distance::{
+        k_means::{KMeans, KMeansConfig},
+        DistanceAdapter, DistanceAlgorithm, SliceDistance,
+    },
     scalar::Scalar,
     vec_set::VecSet,
 };
