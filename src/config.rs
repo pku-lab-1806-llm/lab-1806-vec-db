@@ -1,24 +1,13 @@
-use crate::distance::DistanceAlgorithm;
+use crate::{
+    distance::DistanceAlgorithm,
+    index_algorithm::{hnsw_index::HNSWConfig, ivf_index::IVFConfig},
+};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-/// The configuration of the HNSW (Hierarchical Navigable Small World) algorithm.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(non_snake_case)]
-pub struct HNSWConfig {
-    pub num_elements: usize,
-    pub max_elements: usize,
-    pub ef_construction: usize,
-    pub M: usize,
-}
-
-/// TODO: Implement IVFConfig
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IVFConfig {}
-
 /// The configuration of the index algorithm.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum IndexAlgorithm {
+pub enum IndexAlgorithmConfig {
     /// Linear search. *Precise but slow.*
     /// No configuration is required.
     Linear,
@@ -55,7 +44,7 @@ pub struct VecDataConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DBConfig {
     /// The configuration of the index algorithm.
-    pub algorithm: IndexAlgorithm,
+    pub algorithm: IndexAlgorithmConfig,
     /// The distance algorithm to be used in the vector database.
     pub distance: DistanceAlgorithm,
     /// The configuration of the vector data file.

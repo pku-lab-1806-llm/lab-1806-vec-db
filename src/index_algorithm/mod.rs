@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use rand::Rng;
 
-use crate::{scalar::Scalar, vec_set::VecSet};
+use crate::{distance::DistanceAlgorithm, scalar::Scalar, vec_set::VecSet};
 
 pub mod hnsw_index;
 pub mod ivf_index;
@@ -36,9 +36,14 @@ impl Ord for ResponsePair {
     }
 }
 
-pub trait IndexAlgorithm<T: Scalar> {
+pub trait IndexAlgorithmTrait<T: Scalar> {
     type Config;
-    fn from_vec_set(vec_set: Rc<VecSet<T>>, config: Rc<Self::Config>, rng: &mut impl Rng) -> Self;
+    fn from_vec_set(
+        vec_set: Rc<VecSet<T>>,
+        dist: DistanceAlgorithm,
+        config: Rc<Self::Config>,
+        rng: &mut impl Rng,
+    ) -> Self;
     /// Get the precise k-nearest neighbors.
     /// Returns a vector of pairs of the index and the distance.
     /// The vector is sorted by the distance in ascending order.
