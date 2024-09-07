@@ -1,11 +1,31 @@
 use crate::scalar::Scalar;
 
 use serde::{Deserialize, Serialize};
+
+/// Distance algorithm to be used in the vector database.
+///
+/// See also `DistanceAlgorithm::d()`.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum DistanceAlgorithm {
+    /// L2 squared distance, AKA squared Euclidean distance.
+    ///
+    /// Range: `[0.0, +inf]`
+    L2Sqr,
+    /// L2 distance, AKA Euclidean distance.
+    ///
+    /// Range: `[0.0, +inf]`
+    L2,
+    /// Cosine distance.
+    /// `cosine_distance = 1 - dot_product / (norm_self * norm_other)`
+    ///
+    /// Range: `[0.0, 2.0]`
+    Cosine,
+}
 use DistanceAlgorithm::*;
 /// Trait for calculating distances between two vectors.
 ///
 /// `[T] where T: Scalar` implements this trait.
-pub trait Distance {
+pub trait SliceDistance {
     /// The *square* of the L2 distance.
     ///
     /// Range: `[0.0, +inf]`
@@ -24,7 +44,7 @@ pub trait Distance {
     /// Range: `[0.0, 2.0]`
     fn cosine_distance(&self, other: &Self) -> f32;
 }
-impl<T: Scalar> Distance for [T] {
+impl<T: Scalar> SliceDistance for [T] {
     fn l2_sqr_distance(&self, other: &Self) -> f32 {
         assert_eq!(
             self.len(),
@@ -55,40 +75,23 @@ impl<T: Scalar> Distance for [T] {
     }
 }
 
-/// Distance algorithm to be used in the vector database.
-///
-/// See also `DistanceAlgorithm::d()`.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum DistanceAlgorithm {
-    /// L2 squared distance, AKA squared Euclidean distance.
-    ///
-    /// Range: `[0.0, +inf]`
-    L2Sqr,
-    /// L2 distance, AKA Euclidean distance.
-    ///
-    /// Range: `[0.0, +inf]`
-    L2,
-    /// Cosine distance.
-    /// `cosine_distance = 1 - dot_product / (norm_self * norm_other)`
-    ///
-    /// Range: `[0.0, 2.0]`
-    Cosine,
+pub trait DistanceAdapter<Lhs: ?Sized, Rhs: ?Sized> {
+    /// Calculate distance using the specified algorithm.
+    fn distance(&self, a: &Lhs, b: &Rhs) -> f32;
+    /// Calculate distance using the specified algorithm.
+    /// Alias of `distance()`.
+    fn d(&self, a: &Lhs, b: &Rhs) -> f32 {
+        self.distance(a, b)
+    }
 }
 
-impl DistanceAlgorithm {
-    /// Calculate distance between two slices using the specified algorithm.
-    pub fn distance<T: Scalar>(&self, a: &[T], b: &[T]) -> f32 {
+impl<T: Scalar> DistanceAdapter<[T], [T]> for DistanceAlgorithm {
+    fn distance(&self, a: &[T], b: &[T]) -> f32 {
         match self {
             L2Sqr => a.l2_sqr_distance(b),
             L2 => a.l2_distance(b),
             Cosine => a.cosine_distance(b),
         }
-    }
-
-    /// Alias of `distance()`.
-    /// Calculate distance between two slices using the specified algorithm.
-    pub fn d<T: Scalar>(&self, a: &[T], b: &[T]) -> f32 {
-        self.distance(a, b)
     }
 }
 
@@ -103,13 +106,13 @@ mod test {
     fn test_l2_sqr_distance() {
         let a = vec![1.0, 2.0, 3.0];
         let b = vec![4.0, 5.0, 6.0];
-        assert!((L2Sqr.d(&a, &b) - 27.0_f32).abs() < EPSILON);
+        assert!((L2Sqr.d(a.as_slice(), b.as_slice()) - 27.0_f32).abs() < EPSILON);
     }
 
     #[test]
     fn test_cosine_distance() {
         let a = [1, 2, 3];
         let b = [2, 4, 6];
-        assert!((Cosine.d(&a, &b) - 0.0_f32).abs() < EPSILON);
+        assert!((Cosine.d(a.as_slice(), b.as_slice()) - 0.0_f32).abs() < EPSILON);
     }
 }

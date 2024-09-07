@@ -1,6 +1,6 @@
-use crate::scalar::Scalar;
-use crate::distance::DistanceAlgorithm;
+use crate::distance::{DistanceAdapter, DistanceAlgorithm};
 use crate::index_algorithm::ResponsePair;
+use crate::scalar::Scalar;
 use crate::vec_set::VecSet;
 use std::collections::BTreeSet;
 

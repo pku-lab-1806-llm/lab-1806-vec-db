@@ -1,8 +1,10 @@
+use std::rc::Rc;
+
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    distance::{Distance, DistanceAlgorithm},
+    distance::{DistanceAdapter, DistanceAlgorithm, SliceDistance},
     k_means::{KMeans, KMeansConfig},
     scalar::Scalar,
     vec_set::VecSet,
@@ -28,10 +30,28 @@ pub struct PQConfig {
     pub k_means_tol: f32,
 }
 
+pub fn split_indices(n_bits: usize, m: usize, v: &[u8]) -> Vec<usize> {
+    match n_bits {
+        4 => v
+            .iter()
+            .flat_map(|&x| [(x & 0xf) as usize, (x >> 4) as usize])
+            .take(m)
+            .collect(),
+        8 => v.iter().copied().map(Into::into).collect(),
+        _ => panic!("n_bits must be 4 or 8 in PQTable."),
+    }
+}
+
 /// Flattened lookup table for the vector to be queried.
 /// Using the PQ in ADC (Asymmetric Distance Computation) algorithm.
 #[derive(Debug, Clone)]
 pub struct PQLookupTable {
+    /// Configuration for the PQ table.
+    /// *Cached for convenience.*
+    config: Rc<PQConfig>,
+    /// The cached dot product of each centroid with the vector.
+    /// *Cached for convenience.*
+    dot_product_cache: Rc<Vec<f32>>,
     /// Size `(m * k,)`. For group `i` and centroid `c`, the cached value is at `i * k + c`.
     ///
     /// - For L2Sqr and L2 distance, cache the L2Sqr distance between the centroid and the vector.
@@ -50,7 +70,7 @@ pub struct PQLookupTable {
 #[derive(Debug, Clone)]
 pub struct PQTable<T> {
     /// The configuration for the PQ table.
-    pub config: PQConfig,
+    pub config: Rc<PQConfig>,
     /// The dimension of the source vectors.
     pub dim: usize,
     /// `k = 2**n_bits` is the number of centroids for each group.
@@ -61,12 +81,16 @@ pub struct PQTable<T> {
     /// The dot product of each centroid with itself (flattened).
     /// Size `(m * k,)`, only used for the Cosine distance.
     /// Otherwise, it is empty.
-    pub dot_product_cache: Vec<f32>,
+    pub dot_product_cache: Rc<Vec<f32>>,
 }
 
 impl<T: Scalar> PQTable<T> {
     /// Create a new PQ table from the given vector set.
-    pub fn from_vec_set(vec_set: &VecSet<T>, config: &PQConfig, rng: &mut impl Rng) -> PQTable<T> {
+    pub fn from_vec_set(
+        vec_set: &VecSet<T>,
+        config: Rc<PQConfig>,
+        rng: &mut impl Rng,
+    ) -> PQTable<T> {
         assert!(
             config.n_bits == 4 || config.n_bits == 8,
             "n_bits must be 4 or 8 in PQTable."
@@ -104,11 +128,11 @@ impl<T: Scalar> PQTable<T> {
             group_k_means.push(k_means);
         }
         Self {
-            config: config.clone(),
+            config,
             dim,
             k,
             group_k_means,
-            dot_product_cache,
+            dot_product_cache: Rc::new(dot_product_cache),
         }
     }
     /// Encode the given vector.
@@ -159,15 +183,7 @@ impl<T: Scalar> PQTable<T> {
 
     /// Get indices from a encoded vector.
     pub fn split_indices(&self, v: &[u8]) -> Vec<usize> {
-        match self.config.n_bits {
-            4 => v
-                .iter()
-                .flat_map(|&x| [(x & 0xf) as usize, (x >> 4) as usize])
-                .take(self.config.m)
-                .collect(),
-            8 => v.iter().copied().map(Into::into).collect(),
-            _ => panic!("n_bits must be 4 or 8 in PQTable."),
-        }
+        split_indices(self.config.n_bits, self.config.m, v)
     }
 
     /// Decode the given encoded vector.
@@ -222,27 +238,32 @@ impl<T: Scalar> PQTable<T> {
             L2Sqr | L2 => 0.0,
             Cosine => v.dot_product(v).sqrt(),
         };
-        PQLookupTable { lookup, norm }
+        PQLookupTable {
+            config: self.config.clone(),
+            dot_product_cache: self.dot_product_cache.clone(),
+            lookup,
+            norm,
+        }
     }
-
-    /// Compute the distance between an encoded vector and the lookup table.
-    ///
-    /// `encoded` is usually in the encoded vec_set from `encode_batch()`.
-    /// See `create_lookup()` for creating the lookup table for the vector to be queried.
-    pub fn distance(&self, encoded: &[u8], lookup_table: &PQLookupTable) -> f32 {
-        let k = self.k;
-        let dist = self.config.dist;
+}
+impl DistanceAdapter<[u8], PQLookupTable> for DistanceAlgorithm {
+    /// *** This will ignore the DistanceAlgorithm of `self`
+    /// and use the DistanceAlgorithm of `lookup_table`. ***
+    fn distance(&self, encoded: &[u8], lookup_table: &PQLookupTable) -> f32 {
+        let n_bits = lookup_table.config.n_bits;
+        let k = 1 << n_bits;
+        let m = lookup_table.config.m;
 
         let lookup = &lookup_table.lookup;
 
-        let indices = self.split_indices(encoded);
+        let indices = split_indices(n_bits, m, encoded);
         let d: f32 = indices
             .iter()
             .enumerate()
             .map(|(i, &c)| lookup[i * k + c])
             .sum();
 
-        match dist {
+        match lookup_table.config.dist {
             L2Sqr => d,
             L2 => d.sqrt(),
             Cosine => {
@@ -250,7 +271,7 @@ impl<T: Scalar> PQTable<T> {
                 let norm0 = indices
                     .iter()
                     .enumerate()
-                    .map(|(i, &c)| self.dot_product_cache[i * k + c])
+                    .map(|(i, &c)| lookup_table.dot_product_cache[i * k + c])
                     .sum::<f32>()
                     .sqrt();
                 let norm1 = lookup_table.norm;
@@ -259,12 +280,6 @@ impl<T: Scalar> PQTable<T> {
             }
         }
     }
-
-    /// Alias of `PQTable::distance()`.
-    /// Compute the distance between an encoded vector and the lookup table.
-    pub fn d(&self, encoded: &[u8], lookup_table: &PQLookupTable) -> f32 {
-        self.distance(encoded, lookup_table)
-    }
 }
 
 #[cfg(test)]
@@ -272,7 +287,7 @@ mod test {
     use anyhow::Result;
     use rand::SeedableRng;
 
-    use crate::{config::DBConfig, scalar::Scalar};
+    use crate::{config::DBConfig, distance::DistanceAdapter, scalar::Scalar};
 
     use super::*;
 
@@ -291,14 +306,14 @@ mod test {
                 *v = rng.gen_range(-1.0..1.0);
             }
         }
-        let pq_config = PQConfig {
+        let pq_config = Rc::new(PQConfig {
             n_bits,
             m,
             dist,
             k_means_max_iter: 20,
             k_means_tol: 1e-6,
-        };
-        let pq_table = PQTable::from_vec_set(&src_set, &pq_config, &mut rng);
+        });
+        let pq_table = PQTable::from_vec_set(&src_set, pq_config, &mut rng);
 
         let encoded_set = pq_table.encode_batch(&src_set);
         for i in 0..num_vec {
@@ -315,7 +330,7 @@ mod test {
                 let src_dist = dist.d(src0, src1);
 
                 let e1 = &encoded_set[j];
-                let e_dist = pq_table.d(e1, &lookup);
+                let e_dist = dist.d(e1, &lookup);
 
                 println!("{}<->{}: src={:.6} encoded={:.6}", i, j, src_dist, e_dist);
                 assert!((src_dist - e_dist).abs() < 1e-6);
@@ -332,15 +347,15 @@ mod test {
 
     fn pq_table_test_base<T: Scalar>(vec_set: &VecSet<T>, dist: DistanceAlgorithm) -> Result<()> {
         let dim = vec_set.dim();
-        let pq_config = PQConfig {
+        let pq_config = Rc::new(PQConfig {
             n_bits: 4,
             m: dim / 4,
             dist,
             k_means_max_iter: 20,
             k_means_tol: 1e-6,
-        };
+        });
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let pq_table = PQTable::from_vec_set(&vec_set, &pq_config, &mut rng);
+        let pq_table = PQTable::from_vec_set(&vec_set, pq_config, &mut rng);
         let encoded_set = pq_table.encode_batch(&vec_set);
 
         println!("Distance Algorithm: {:?}", dist);
@@ -353,7 +368,7 @@ mod test {
             let v1 = &vec_set[i1];
             let e0 = &encoded_set[i0];
             let lookup = pq_table.create_lookup(v1);
-            let distance = pq_table.d(e0, &lookup);
+            let distance = dist.d(e0, &lookup);
             let expected = dist.d(v0, v1);
             let error = (distance - expected).abs() / expected.max(1.0);
             println!(

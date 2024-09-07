@@ -1,7 +1,12 @@
+use std::rc::Rc;
+
 use anyhow::Result;
 use lab_1806_vec_db::{
     config::DBConfig,
-    distance::DistanceAlgorithm::{self, *},
+    distance::{
+        DistanceAdapter,
+        DistanceAlgorithm::{self, *},
+    },
     pq_table::{PQConfig, PQTable},
     scalar::Scalar,
     vec_set::VecSet,
@@ -14,15 +19,15 @@ fn pq_table_test_on_real_set_base<T: Scalar>(
 ) -> Result<()> {
     let start_time = std::time::Instant::now();
     let dim = vec_set.dim();
-    let pq_config = PQConfig {
+    let pq_config = Rc::new(PQConfig {
         n_bits: 4,
         m: dim / 4,
         dist,
         k_means_max_iter: 20,
         k_means_tol: 1e-6,
-    };
+    });
     let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-    let pq_table = PQTable::from_vec_set(&vec_set, &pq_config, &mut rng);
+    let pq_table = PQTable::from_vec_set(&vec_set, pq_config, &mut rng);
     let encoded_set = pq_table.encode_batch(&vec_set);
 
     println!("Distance Algorithm: {:?}", dist);
@@ -36,7 +41,7 @@ fn pq_table_test_on_real_set_base<T: Scalar>(
         let v1 = &vec_set[i1];
         let e0 = &encoded_set[i0];
         let lookup = pq_table.create_lookup(v1);
-        let distance = pq_table.d(e0, &lookup);
+        let distance = dist.d(e0, &lookup);
         let expected = dist.d(v0, v1);
         let error = (distance - expected).abs() / expected.max(1.0);
         if i < print_count {

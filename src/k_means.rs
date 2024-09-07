@@ -1,6 +1,10 @@
 use std::ops::Range;
 
-use crate::{scalar::Scalar, distance::DistanceAlgorithm, vec_set::VecSet};
+use crate::{
+    distance::{DistanceAdapter, DistanceAlgorithm},
+    scalar::Scalar,
+    vec_set::VecSet,
+};
 use rand::{distributions::WeightedIndex, prelude::*};
 use serde::{Deserialize, Serialize};
 

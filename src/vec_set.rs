@@ -219,7 +219,7 @@ mod test {
 
     use anyhow::anyhow;
 
-    use crate::config::DBConfig;
+    use crate::{config::DBConfig, distance::DistanceAdapter};
 
     use super::*;
 
