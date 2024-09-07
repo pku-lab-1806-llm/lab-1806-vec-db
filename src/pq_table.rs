@@ -247,6 +247,8 @@ impl<T: Scalar> PQTable<T> {
     }
 }
 impl DistanceAdapter<[u8], PQLookupTable> for DistanceAlgorithm {
+    /// *** This will ignore the DistanceAlgorithm of `self`
+    /// and use the DistanceAlgorithm of `lookup_table`. ***
     fn distance(&self, encoded: &[u8], lookup_table: &PQLookupTable) -> f32 {
         let n_bits = lookup_table.config.n_bits;
         let k = 1 << n_bits;
@@ -261,7 +263,7 @@ impl DistanceAdapter<[u8], PQLookupTable> for DistanceAlgorithm {
             .map(|(i, &c)| lookup[i * k + c])
             .sum();
 
-        match self {
+        match lookup_table.config.dist {
             L2Sqr => d,
             L2 => d.sqrt(),
             Cosine => {
