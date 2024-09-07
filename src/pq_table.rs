@@ -30,11 +30,12 @@ pub struct PQConfig {
     pub k_means_tol: f32,
 }
 
-pub fn split_indices(n_bits: usize, v: &[u8]) -> Vec<usize> {
+pub fn split_indices(n_bits: usize, m: usize, v: &[u8]) -> Vec<usize> {
     match n_bits {
         4 => v
             .iter()
             .flat_map(|&x| [(x & 0xf) as usize, (x >> 4) as usize])
+            .take(m)
             .collect(),
         8 => v.iter().copied().map(Into::into).collect(),
         _ => panic!("n_bits must be 4 or 8 in PQTable."),
@@ -45,14 +46,11 @@ pub fn split_indices(n_bits: usize, v: &[u8]) -> Vec<usize> {
 /// Using the PQ in ADC (Asymmetric Distance Computation) algorithm.
 #[derive(Debug, Clone)]
 pub struct PQLookupTable {
-    /// The number of centroids for each group.
-    /// Cached for convenience.
-    k: usize,
-    /// The cached values for the vector to be queried.
-    /// Cached for convenience.
-    n_bits: usize,
+    /// Configuration for the PQ table.
+    /// *Cached for convenience.*
+    config: Rc<PQConfig>,
     /// The cached dot product of each centroid with the vector.
-    /// Cached for convenience.
+    /// *Cached for convenience.*
     dot_product_cache: Rc<Vec<f32>>,
     /// Size `(m * k,)`. For group `i` and centroid `c`, the cached value is at `i * k + c`.
     ///
@@ -72,7 +70,7 @@ pub struct PQLookupTable {
 #[derive(Debug, Clone)]
 pub struct PQTable<T> {
     /// The configuration for the PQ table.
-    pub config: PQConfig,
+    pub config: Rc<PQConfig>,
     /// The dimension of the source vectors.
     pub dim: usize,
     /// `k = 2**n_bits` is the number of centroids for each group.
@@ -88,7 +86,11 @@ pub struct PQTable<T> {
 
 impl<T: Scalar> PQTable<T> {
     /// Create a new PQ table from the given vector set.
-    pub fn from_vec_set(vec_set: &VecSet<T>, config: &PQConfig, rng: &mut impl Rng) -> PQTable<T> {
+    pub fn from_vec_set(
+        vec_set: &VecSet<T>,
+        config: Rc<PQConfig>,
+        rng: &mut impl Rng,
+    ) -> PQTable<T> {
         assert!(
             config.n_bits == 4 || config.n_bits == 8,
             "n_bits must be 4 or 8 in PQTable."
@@ -126,7 +128,7 @@ impl<T: Scalar> PQTable<T> {
             group_k_means.push(k_means);
         }
         Self {
-            config: config.clone(),
+            config,
             dim,
             k,
             group_k_means,
@@ -181,7 +183,7 @@ impl<T: Scalar> PQTable<T> {
 
     /// Get indices from a encoded vector.
     pub fn split_indices(&self, v: &[u8]) -> Vec<usize> {
-        split_indices(self.config.n_bits, v)
+        split_indices(self.config.n_bits, self.config.m, v)
     }
 
     /// Decode the given encoded vector.
@@ -237,8 +239,7 @@ impl<T: Scalar> PQTable<T> {
             Cosine => v.dot_product(v).sqrt(),
         };
         PQLookupTable {
-            k,
-            n_bits: self.config.n_bits,
+            config: self.config.clone(),
             dot_product_cache: self.dot_product_cache.clone(),
             lookup,
             norm,
@@ -247,20 +248,20 @@ impl<T: Scalar> PQTable<T> {
 }
 impl DistanceAdapter<[u8], PQLookupTable> for DistanceAlgorithm {
     fn distance(&self, encoded: &[u8], lookup_table: &PQLookupTable) -> f32 {
-        let k = lookup_table.k;
-        let n_bits = lookup_table.n_bits;
-        let dist = self;
+        let n_bits = lookup_table.config.n_bits;
+        let k = 1 << n_bits;
+        let m = lookup_table.config.m;
 
         let lookup = &lookup_table.lookup;
 
-        let indices = split_indices(n_bits, encoded);
+        let indices = split_indices(n_bits, m, encoded);
         let d: f32 = indices
             .iter()
             .enumerate()
             .map(|(i, &c)| lookup[i * k + c])
             .sum();
 
-        match dist {
+        match self {
             L2Sqr => d,
             L2 => d.sqrt(),
             Cosine => {
@@ -303,14 +304,14 @@ mod test {
                 *v = rng.gen_range(-1.0..1.0);
             }
         }
-        let pq_config = PQConfig {
+        let pq_config = Rc::new(PQConfig {
             n_bits,
             m,
             dist,
             k_means_max_iter: 20,
             k_means_tol: 1e-6,
-        };
-        let pq_table = PQTable::from_vec_set(&src_set, &pq_config, &mut rng);
+        });
+        let pq_table = PQTable::from_vec_set(&src_set, pq_config, &mut rng);
 
         let encoded_set = pq_table.encode_batch(&src_set);
         for i in 0..num_vec {
@@ -344,15 +345,15 @@ mod test {
 
     fn pq_table_test_base<T: Scalar>(vec_set: &VecSet<T>, dist: DistanceAlgorithm) -> Result<()> {
         let dim = vec_set.dim();
-        let pq_config = PQConfig {
+        let pq_config = Rc::new(PQConfig {
             n_bits: 4,
             m: dim / 4,
             dist,
             k_means_max_iter: 20,
             k_means_tol: 1e-6,
-        };
+        });
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let pq_table = PQTable::from_vec_set(&vec_set, &pq_config, &mut rng);
+        let pq_table = PQTable::from_vec_set(&vec_set, pq_config, &mut rng);
         let encoded_set = pq_table.encode_batch(&vec_set);
 
         println!("Distance Algorithm: {:?}", dist);
