@@ -1,8 +1,10 @@
+use std::rc::Rc;
+
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    distance::{Distance, DistanceAlgorithm},
+    distance::{DistanceAdapter, DistanceAlgorithm, SliceDistance},
     k_means::{KMeans, KMeansConfig},
     scalar::Scalar,
     vec_set::VecSet,
@@ -28,10 +30,30 @@ pub struct PQConfig {
     pub k_means_tol: f32,
 }
 
+pub fn split_indices(n_bits: usize, v: &[u8]) -> Vec<usize> {
+    match n_bits {
+        4 => v
+            .iter()
+            .flat_map(|&x| [(x & 0xf) as usize, (x >> 4) as usize])
+            .collect(),
+        8 => v.iter().copied().map(Into::into).collect(),
+        _ => panic!("n_bits must be 4 or 8 in PQTable."),
+    }
+}
+
 /// Flattened lookup table for the vector to be queried.
 /// Using the PQ in ADC (Asymmetric Distance Computation) algorithm.
 #[derive(Debug, Clone)]
 pub struct PQLookupTable {
+    /// The number of centroids for each group.
+    /// Cached for convenience.
+    k: usize,
+    /// The cached values for the vector to be queried.
+    /// Cached for convenience.
+    n_bits: usize,
+    /// The cached dot product of each centroid with the vector.
+    /// Cached for convenience.
+    dot_product_cache: Rc<Vec<f32>>,
     /// Size `(m * k,)`. For group `i` and centroid `c`, the cached value is at `i * k + c`.
     ///
     /// - For L2Sqr and L2 distance, cache the L2Sqr distance between the centroid and the vector.
@@ -61,7 +83,7 @@ pub struct PQTable<T> {
     /// The dot product of each centroid with itself (flattened).
     /// Size `(m * k,)`, only used for the Cosine distance.
     /// Otherwise, it is empty.
-    pub dot_product_cache: Vec<f32>,
+    pub dot_product_cache: Rc<Vec<f32>>,
 }
 
 impl<T: Scalar> PQTable<T> {
@@ -108,7 +130,7 @@ impl<T: Scalar> PQTable<T> {
             dim,
             k,
             group_k_means,
-            dot_product_cache,
+            dot_product_cache: Rc::new(dot_product_cache),
         }
     }
     /// Encode the given vector.
@@ -159,15 +181,7 @@ impl<T: Scalar> PQTable<T> {
 
     /// Get indices from a encoded vector.
     pub fn split_indices(&self, v: &[u8]) -> Vec<usize> {
-        match self.config.n_bits {
-            4 => v
-                .iter()
-                .flat_map(|&x| [(x & 0xf) as usize, (x >> 4) as usize])
-                .take(self.config.m)
-                .collect(),
-            8 => v.iter().copied().map(Into::into).collect(),
-            _ => panic!("n_bits must be 4 or 8 in PQTable."),
-        }
+        split_indices(self.config.n_bits, v)
     }
 
     /// Decode the given encoded vector.
@@ -222,20 +236,24 @@ impl<T: Scalar> PQTable<T> {
             L2Sqr | L2 => 0.0,
             Cosine => v.dot_product(v).sqrt(),
         };
-        PQLookupTable { lookup, norm }
+        PQLookupTable {
+            k,
+            n_bits: self.config.n_bits,
+            dot_product_cache: self.dot_product_cache.clone(),
+            lookup,
+            norm,
+        }
     }
-
-    /// Compute the distance between an encoded vector and the lookup table.
-    ///
-    /// `encoded` is usually in the encoded vec_set from `encode_batch()`.
-    /// See `create_lookup()` for creating the lookup table for the vector to be queried.
-    pub fn distance(&self, encoded: &[u8], lookup_table: &PQLookupTable) -> f32 {
-        let k = self.k;
-        let dist = self.config.dist;
+}
+impl DistanceAdapter<[u8], PQLookupTable> for DistanceAlgorithm {
+    fn distance(&self, encoded: &[u8], lookup_table: &PQLookupTable) -> f32 {
+        let k = lookup_table.k;
+        let n_bits = lookup_table.n_bits;
+        let dist = self;
 
         let lookup = &lookup_table.lookup;
 
-        let indices = self.split_indices(encoded);
+        let indices = split_indices(n_bits, encoded);
         let d: f32 = indices
             .iter()
             .enumerate()
@@ -250,7 +268,7 @@ impl<T: Scalar> PQTable<T> {
                 let norm0 = indices
                     .iter()
                     .enumerate()
-                    .map(|(i, &c)| self.dot_product_cache[i * k + c])
+                    .map(|(i, &c)| lookup_table.dot_product_cache[i * k + c])
                     .sum::<f32>()
                     .sqrt();
                 let norm1 = lookup_table.norm;
@@ -259,12 +277,6 @@ impl<T: Scalar> PQTable<T> {
             }
         }
     }
-
-    /// Alias of `PQTable::distance()`.
-    /// Compute the distance between an encoded vector and the lookup table.
-    pub fn d(&self, encoded: &[u8], lookup_table: &PQLookupTable) -> f32 {
-        self.distance(encoded, lookup_table)
-    }
 }
 
 #[cfg(test)]
@@ -272,7 +284,7 @@ mod test {
     use anyhow::Result;
     use rand::SeedableRng;
 
-    use crate::{config::DBConfig, scalar::Scalar};
+    use crate::{config::DBConfig, distance::DistanceAdapter, scalar::Scalar};
 
     use super::*;
 
@@ -315,7 +327,7 @@ mod test {
                 let src_dist = dist.d(src0, src1);
 
                 let e1 = &encoded_set[j];
-                let e_dist = pq_table.d(e1, &lookup);
+                let e_dist = dist.d(e1, &lookup);
 
                 println!("{}<->{}: src={:.6} encoded={:.6}", i, j, src_dist, e_dist);
                 assert!((src_dist - e_dist).abs() < 1e-6);
@@ -353,7 +365,7 @@ mod test {
             let v1 = &vec_set[i1];
             let e0 = &encoded_set[i0];
             let lookup = pq_table.create_lookup(v1);
-            let distance = pq_table.d(e0, &lookup);
+            let distance = dist.d(e0, &lookup);
             let expected = dist.d(v0, v1);
             let error = (distance - expected).abs() / expected.max(1.0);
             println!(
