@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use rand::Rng;
 
 use crate::{
@@ -6,6 +8,8 @@ use crate::{
     scalar::Scalar,
     vec_set::VecSet,
 };
+
+use super::{IndexAlgorithm, ResponsePair};
 #[derive(Debug, Clone)]
 pub struct IVFIndexConfig {
     /// The number of clusters.
@@ -19,26 +23,27 @@ pub struct IVFIndexConfig {
 }
 
 pub struct IVFIndex<T> {
-    pub config: IVFIndexConfig,
+    pub config: Rc<IVFIndexConfig>,
     /// The vector sets of the clusters. Length: k.
     pub clusters: Vec<VecSet<T>>,
     /// K-means struct for the centroids.
     pub k_means: KMeans<T>,
 }
 
-impl<T: Scalar> IVFIndex<T> {
-    /// Create an IVF index from a `VecSet`.
-    pub fn from_vec_set(vec_set: &VecSet<T>, config: &IVFIndexConfig, rng: &mut impl Rng) -> Self {
+impl<T: Scalar> IndexAlgorithm<T> for IVFIndex<T> {
+    type Config = IVFIndexConfig;
+
+    fn from_vec_set(vec_set: Rc<VecSet<T>>, config: Rc<Self::Config>, rng: &mut impl Rng) -> Self {
         let k = config.k;
         let dist = config.dist;
-        let k_means_config = KMeansConfig {
+        let k_means_config = Rc::new(KMeansConfig {
             k,
             max_iter: config.k_means_max_iter,
             tol: config.k_means_tol,
             dist,
             selected: None,
-        };
-        let k_means = KMeans::from_vec_set(vec_set, &k_means_config, rng);
+        });
+        let k_means = KMeans::from_vec_set(&vec_set, k_means_config, rng);
         let mut clusters = vec![vec![]; k];
         for (i, v) in vec_set.iter().enumerate() {
             let idx = k_means.find_nearest(v);
@@ -55,10 +60,14 @@ impl<T: Scalar> IVFIndex<T> {
             })
             .collect();
         IVFIndex {
-            config: config.clone(),
+            config,
             clusters,
             k_means,
         }
+    }
+
+    fn knn(&self, _: &[T], _: usize) -> Vec<ResponsePair> {
+        unimplemented!("IVFIndex::knn is not implemented yet.");
     }
 }
 
@@ -90,14 +99,16 @@ mod test {
             dst.copy_from_slice(&src[..clipped_dim]);
         }
 
-        let ivf_config = IVFIndexConfig {
+        let ivf_config = Rc::new(IVFIndexConfig {
             k: 3,
             dist: DistanceAlgorithm::L2Sqr,
             k_means_max_iter: 20,
             k_means_tol: 1e-6,
-        };
+        });
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let index = IVFIndex::from_vec_set(&vec_set, &ivf_config, &mut rng);
+        let vec_set = Rc::new(vec_set);
+
+        let index = IVFIndex::from_vec_set(vec_set, ivf_config, &mut rng);
         for (id, cluster) in index.clusters.iter().enumerate() {
             println!("cluster id: {}, cluster size: {}", id, cluster.len());
         }

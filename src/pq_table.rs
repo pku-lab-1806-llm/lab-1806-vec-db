@@ -119,7 +119,8 @@ impl<T: Scalar> PQTable<T> {
         for i in 0..m {
             let selected = d * i..d * (i + 1);
             k_means_config.selected = Some(selected);
-            let k_means = KMeans::from_vec_set(vec_set, &k_means_config, rng);
+            let i_config = Rc::new(k_means_config.clone());
+            let k_means = KMeans::from_vec_set(vec_set, i_config, rng);
             if config.dist == Cosine {
                 for c in k_means.centroids.iter() {
                     dot_product_cache.push(c.dot_product(c));
