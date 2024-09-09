@@ -7,12 +7,13 @@ use crate::vec_set::VecSet;
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
-use super::IndexAlgorithmTrait;
+use super::{IndexFromVecSet, IndexKNN};
 
 /// Linear index for the k-nearest neighbors search.
 /// The distance algorithm is configurable.
 ///
 /// Holds a reference to the `VecSet`.
+#[derive(Debug, Clone)]
 pub struct LinearIndex<T> {
     /// The distance algorithm.
     pub dist: DistanceAlgorithm,
@@ -20,17 +21,7 @@ pub struct LinearIndex<T> {
     pub vec_set: Rc<VecSet<T>>,
 }
 
-impl<T: Scalar> IndexAlgorithmTrait<T> for LinearIndex<T> {
-    type Config = ();
-
-    fn from_vec_set(
-        vec_set: Rc<VecSet<T>>,
-        dist: DistanceAlgorithm,
-        _: Rc<Self::Config>,
-        _: &mut impl Rng,
-    ) -> Self {
-        Self { dist, vec_set }
-    }
+impl<T: Scalar> IndexKNN<T> for LinearIndex<T> {
     fn knn(&self, query: &[T], k: usize) -> Vec<ResponsePair> {
         let mut result = BTreeSet::new();
         for (i, v) in self.vec_set.iter().enumerate() {
@@ -45,6 +36,19 @@ impl<T: Scalar> IndexAlgorithmTrait<T> for LinearIndex<T> {
             }
         }
         result.into_iter().collect()
+    }
+}
+
+impl<T: Scalar> IndexFromVecSet<T> for LinearIndex<T> {
+    type Config = ();
+
+    fn from_vec_set(
+        vec_set: Rc<VecSet<T>>,
+        dist: DistanceAlgorithm,
+        _: Self::Config,
+        _: &mut impl Rng,
+    ) -> Self {
+        Self { dist, vec_set }
     }
 }
 
@@ -74,7 +78,7 @@ mod test {
         let dist = DistanceAlgorithm::L2Sqr;
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
 
-        let index = LinearIndex::from_vec_set(vec_set.clone(), dist, Rc::new(()), &mut rng);
+        let index = LinearIndex::from_vec_set(vec_set.clone(), dist, (), &mut rng);
 
         let k = 4;
         let query_index = 200;

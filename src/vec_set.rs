@@ -3,13 +3,14 @@ use std::{ops::Index, path::Path};
 use crate::scalar::{BinaryScalar, Scalar};
 
 use anyhow::{bail, Result};
+use serde::{Deserialize, Serialize};
 
 use crate::config::{DataType, VecDataConfig};
 
 /// The vector set with scalar type T.
 /// Can be indexed to get the vector at the specified index.
 /// Load and save the vector set from/to a binary file with constant extra memory.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VecSet<T> {
     /// The dimension of the vector.
     dim: usize,
@@ -100,7 +101,11 @@ impl<T: Scalar> VecSet<T> {
 
 impl<T: BinaryScalar> VecSet<T> {
     /// Deserialize a `VecSet` from a binary file.
-    pub fn load_file(dim: usize, size: Option<usize>, file_path: impl AsRef<Path>) -> Result<Self> {
+    pub fn load_raw_file(
+        dim: usize,
+        size: Option<usize>,
+        file_path: impl AsRef<Path>,
+    ) -> Result<Self> {
         let data = T::from_binary_file(&file_path, size.map(|size| size * dim)).map_err(|e| {
             anyhow::anyhow!(
                 "Failed to load the binary file at {}: {}",
@@ -112,7 +117,7 @@ impl<T: BinaryScalar> VecSet<T> {
     }
 
     /// Serialize the `VecSet` to a binary file.
-    pub fn save_file(&self, file_path: impl AsRef<Path>) -> Result<()> {
+    pub fn save_raw_file(&self, file_path: impl AsRef<Path>) -> Result<()> {
         T::to_binary_file(&self.data, &file_path).map_err(|e| {
             anyhow::anyhow!(
                 "Failed to save the binary file at {}: {}",
@@ -164,7 +169,7 @@ impl VecSet<u8> {
 ///     UInt8(vec_set) => foo(vec_set),
 /// };
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DynamicVecSet {
     Float32(VecSet<f32>),
     UInt8(VecSet<u8>),
@@ -176,8 +181,8 @@ impl DynamicVecSet {
         let file = &config.data_path;
         use DataType::*;
         let vec_set = match config.data_type {
-            Float32 => Self::Float32(VecSet::load_file(dim, size, &file)?),
-            UInt8 => Self::UInt8(VecSet::load_file(dim, size, &file)?),
+            Float32 => Self::Float32(VecSet::load_raw_file(dim, size, &file)?),
+            UInt8 => Self::UInt8(VecSet::load_raw_file(dim, size, &file)?),
         };
         Ok(vec_set)
     }
@@ -267,10 +272,10 @@ mod test {
 
         // Save a DynamicVecSet to a binary file.
         let vec_set = VecSet::new(2, vec![0.0, 1.0, 2.0, 3.0]);
-        vec_set.save_file(&file_path)?;
+        vec_set.save_raw_file(&file_path)?;
 
         // Load a VecSet<f32> from the binary file.
-        let loaded_vec_set = VecSet::<f32>::load_file(2, None, &file_path)?;
+        let loaded_vec_set = VecSet::<f32>::load_raw_file(2, None, &file_path)?;
 
         assert_eq!(loaded_vec_set.data, vec_set.data);
         Ok(())

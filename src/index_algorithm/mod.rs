@@ -36,16 +36,31 @@ impl Ord for ResponsePair {
     }
 }
 
-pub trait IndexAlgorithmTrait<T: Scalar> {
+pub trait IndexBuilder<T: Scalar> {
+    /// The configuration of the index.
     type Config;
-    fn from_vec_set(
-        vec_set: Rc<VecSet<T>>,
-        dist: DistanceAlgorithm,
-        config: Rc<Self::Config>,
-        rng: &mut impl Rng,
-    ) -> Self;
+    /// Create a new index.
+    fn new(dist: DistanceAlgorithm, config: Self::Config) -> Self;
+    /// Add a vector to the index.
+    fn add(&mut self, vec: &[T], label: usize, rng: &mut impl Rng);
+}
+
+pub trait IndexKNN<T: Scalar> {
     /// Get the precise k-nearest neighbors.
     /// Returns a vector of pairs of the index and the distance.
     /// The vector is sorted by the distance in ascending order.
     fn knn(&self, query: &[T], k: usize) -> Vec<ResponsePair>;
+}
+
+pub trait IndexFromVecSet<T: Scalar> {
+    /// The configuration of the index.
+    type Config;
+
+    /// Create an index from a vector set.
+    fn from_vec_set(
+        vec_set: Rc<VecSet<T>>,
+        dist: DistanceAlgorithm,
+        config: Self::Config,
+        rng: &mut impl Rng,
+    ) -> Self;
 }

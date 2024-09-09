@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use anyhow::Result;
 use lab_1806_vec_db::{
     config::DBConfig,
@@ -19,13 +17,13 @@ fn pq_table_test_on_real_set_base<T: Scalar>(
 ) -> Result<()> {
     let start_time = std::time::Instant::now();
     let dim = vec_set.dim();
-    let pq_config = Rc::new(PQConfig {
+    let pq_config = PQConfig {
         n_bits: 4,
         m: dim / 4,
         dist,
         k_means_max_iter: 20,
         k_means_tol: 1e-6,
-    });
+    };
     let mut rng = rand::rngs::StdRng::seed_from_u64(42);
     let pq_table = PQTable::from_vec_set(&vec_set, pq_config, &mut rng);
     let encoded_set = pq_table.encode_batch(&vec_set);
