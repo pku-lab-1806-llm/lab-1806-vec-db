@@ -111,17 +111,32 @@ impl ConcatLayout {
             offsets: vec![],
         }
     }
+    /// Push a size and alignment to the layout.
     pub fn push_size_align(&mut self, size: usize, align: usize) {
         let offset = self.size.div_ceil(align) * align;
         self.size = offset + size;
         self.align = self.align.max(align);
         self.offsets.push(offset);
     }
+    /// Push a scalar or a slice to the layout.
     pub fn push<T>(&mut self, len: usize) {
         let align = mem::align_of::<T>();
         let size = len * mem::size_of::<T>();
         self.push_size_align(size, align);
     }
+    /// Push a sub-layout to the layout.
+    pub fn push_sub(&mut self, layout: &ConcatLayout, len: usize) {
+        let align = layout.align;
+        let size = layout.size * len;
+        self.push_size_align(size, align);
+    }
+    /// Allocate memory for the layout.
+    ///
+    /// *Not zeroed.*
+    ///
+    /// *Do not modify the size, align, or offsets manually
+    /// before calling this function,
+    /// as it may cause undefined behavior.*
     pub fn alloc(&self) -> Box<[u8]> {
         let layout = std::alloc::Layout::from_size_align(self.size, self.align).unwrap();
         unsafe {
@@ -131,10 +146,5 @@ impl ConcatLayout {
             }
             Box::from_raw(std::slice::from_raw_parts_mut(ptr, self.size))
         }
-    }
-    pub fn push_sub(&mut self, layout: &ConcatLayout, len: usize) {
-        let align = layout.align;
-        let size = layout.size * len;
-        self.push_size_align(size, align);
     }
 }
