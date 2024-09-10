@@ -1,9 +1,6 @@
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 
-use crate::{distance::DistanceAlgorithm, scalar::Scalar, vec_set::VecSet};
-
-use super::{IndexBuilder, IndexKNN, ResponsePair};
+use crate::{distance::DistanceAlgorithm, vec_set::VecSet};
 
 /// The configuration of the HNSW (Hierarchical Navigable Small World) algorithm.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -17,6 +14,7 @@ pub struct HNSWConfig {
 pub struct HNSWIndex<T> {
     pub dist: DistanceAlgorithm,
     pub config: HNSWConfig,
+    pub len: usize,
     pub vec_set: VecSet<T>,
 }
 impl<T> HNSWIndex<T> {
@@ -26,21 +24,5 @@ impl<T> HNSWIndex<T> {
     }
     pub fn ef(&self) -> usize {
         10
-    }
-}
-
-impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
-    type Config = HNSWConfig;
-    fn new(_dist: DistanceAlgorithm, _config: Self::Config) -> Self {
-        unimplemented!("HNSWIndex::new")
-    }
-    fn add(&mut self, _vec: &[T], _label: usize, _rng: &mut impl Rng) {
-        unimplemented!("HNSWIndex::add")
-    }
-}
-
-impl<T: Scalar> IndexKNN<T> for HNSWIndex<T> {
-    fn knn(&self, _query: &[T], _k: usize) -> Vec<ResponsePair> {
-        unimplemented!("HNSWIndex::knn")
     }
 }

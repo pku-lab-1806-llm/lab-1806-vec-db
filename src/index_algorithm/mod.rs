@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::ops::Index;
 
 use rand::Rng;
 
@@ -36,29 +36,41 @@ impl Ord for ResponsePair {
     }
 }
 
-pub trait IndexBuilder<T: Scalar> {
+pub trait IndexIter<T: Scalar>: Index<usize, Output = [T]> {
+    /// Get the number of vectors in the index.
+    fn len(&self) -> usize;
+
+    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a [T]>
+    where
+        T: 'a,
+    {
+        (0..self.len()).map(move |i| &self[i])
+    }
+}
+
+pub trait IndexBuilder<T: Scalar>: IndexIter<T> {
     /// The configuration of the index.
     type Config;
     /// Create a new index.
     fn new(dist: DistanceAlgorithm, config: Self::Config) -> Self;
     /// Add a vector to the index.
-    fn add(&mut self, vec: &[T], label: usize, rng: &mut impl Rng);
+    fn add(&mut self, vec: &[T], rng: &mut impl Rng) -> usize;
 }
 
-pub trait IndexKNN<T: Scalar> {
+pub trait IndexKNN<T: Scalar>: IndexIter<T> {
     /// Get the precise k-nearest neighbors.
     /// Returns a vector of pairs of the index and the distance.
     /// The vector is sorted by the distance in ascending order.
     fn knn(&self, query: &[T], k: usize) -> Vec<ResponsePair>;
 }
 
-pub trait IndexFromVecSet<T: Scalar> {
+pub trait IndexFromVecSet<T: Scalar>: IndexIter<T> {
     /// The configuration of the index.
     type Config;
 
     /// Create an index from a vector set.
     fn from_vec_set(
-        vec_set: Rc<VecSet<T>>,
+        vec_set: VecSet<T>,
         dist: DistanceAlgorithm,
         config: Self::Config,
         rng: &mut impl Rng,

@@ -77,43 +77,21 @@ pub trait BinaryScalar: Scalar {
     /// Load data from a binary file.
     /// The layout of the binary file is assumed to be a sequence of scalar values.
     /// The number of scalar values to be loaded is limited by `limit`.
-    fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Vec<Self>>;
+    fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Vec<Self>> {
+        let limit = Self::file_size_limit(&file_path, limit)?;
+        let mut buffer = vec![Self::default(); limit];
+        let mut file = std::fs::File::open(file_path)?;
+        file.read_exact(unsafe { buffer.align_to_mut() }.1)?;
+        Ok(buffer)
+    }
 
     /// Serialize data to a binary file.
     /// The layout of the binary file is a sequence of scalar values.
     fn to_binary_file(data: &[Self], file_path: impl AsRef<Path>) -> Result<()> {
         let mut file = std::fs::File::create(&file_path)?;
-        std::io::Write::write_all(&mut file, unsafe {
-            std::slice::from_raw_parts(
-                data.as_ptr() as *const u8,
-                mem::size_of::<Self>() * data.len(),
-            )
-        })?;
+        std::io::Write::write_all(&mut file, unsafe { data.align_to::<u8>() }.1)?;
         Ok(())
     }
 }
-
-impl BinaryScalar for u8 {
-    fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Vec<Self>> {
-        let limit = Self::file_size_limit(&file_path, limit)?;
-        let mut buffer = vec![0; limit];
-        let mut file = std::fs::File::open(file_path)?;
-        file.read_exact(&mut buffer)?;
-        Ok(buffer)
-    }
-}
-
-impl BinaryScalar for f32 {
-    fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Vec<Self>> {
-        let limit = Self::file_size_limit(&file_path, limit)?;
-        let mut buffer = vec![0.0; limit];
-        let mut file = std::fs::File::open(file_path)?;
-        file.read_exact(unsafe {
-            std::slice::from_raw_parts_mut(
-                buffer.as_mut_ptr() as *mut u8,
-                mem::size_of::<Self>() * buffer.len(),
-            )
-        })?;
-        Ok(buffer)
-    }
-}
+impl BinaryScalar for u8 {}
+impl BinaryScalar for f32 {}

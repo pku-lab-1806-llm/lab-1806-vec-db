@@ -1,13 +1,15 @@
 use rand::Rng;
 
-use crate::distance::{DistanceAdapter, DistanceAlgorithm};
-use crate::index_algorithm::ResponsePair;
-use crate::scalar::Scalar;
-use crate::vec_set::VecSet;
+use crate::{
+    distance::{DistanceAdapter, DistanceAlgorithm},
+    index_algorithm::ResponsePair,
+    scalar::Scalar,
+    vec_set::VecSet,
+};
 use std::collections::BTreeSet;
-use std::rc::Rc;
+use std::ops::Index;
 
-use super::{IndexFromVecSet, IndexKNN};
+use super::{IndexFromVecSet, IndexIter, IndexKNN};
 
 /// Linear index for the k-nearest neighbors search.
 /// The distance algorithm is configurable.
@@ -18,7 +20,19 @@ pub struct LinearIndex<T> {
     /// The distance algorithm.
     pub dist: DistanceAlgorithm,
     /// The vector set.
-    pub vec_set: Rc<VecSet<T>>,
+    pub vec_set: VecSet<T>,
+}
+impl<T: Scalar> Index<usize> for LinearIndex<T> {
+    type Output = [T];
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.vec_set[index]
+    }
+}
+impl<T: Scalar> IndexIter<T> for LinearIndex<T> {
+    fn len(&self) -> usize {
+        self.vec_set.len()
+    }
 }
 
 impl<T: Scalar> IndexKNN<T> for LinearIndex<T> {
@@ -43,7 +57,7 @@ impl<T: Scalar> IndexFromVecSet<T> for LinearIndex<T> {
     type Config = ();
 
     fn from_vec_set(
-        vec_set: Rc<VecSet<T>>,
+        vec_set: VecSet<T>,
         dist: DistanceAlgorithm,
         _: Self::Config,
         _: &mut impl Rng,
@@ -74,11 +88,10 @@ mod test {
         let config = DBConfig::load_from_toml_file(file_path)?;
         println!("Loaded config: {:#?}", config);
         let vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
-        let vec_set = Rc::new(vec_set);
         let dist = DistanceAlgorithm::L2Sqr;
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
 
-        let index = LinearIndex::from_vec_set(vec_set.clone(), dist, (), &mut rng);
+        let index = LinearIndex::from_vec_set(vec_set, dist, (), &mut rng);
 
         let k = 4;
         let query_index = 200;
@@ -86,19 +99,16 @@ mod test {
         println!("Query Index: {}", query_index);
         println!(
             "Query Vector: {}",
-            clip_msg(&format!("{:?}", &vec_set[query_index]))
+            clip_msg(&format!("{:?}", &index[query_index]))
         );
 
-        let result = index.knn(&vec_set[query_index], k);
+        let result = index.knn(&index[query_index], k);
 
         for res in result.iter() {
             println!("Index: {}, Distance: {}", res.index, res.distance);
-            println!(
-                "Vector: {}",
-                clip_msg(&format!("{:?}", &vec_set[res.index]))
-            );
+            println!("Vector: {}", clip_msg(&format!("{:?}", &index[res.index])));
         }
-        assert_eq!(result.len(), k.min(vec_set.len()));
+        assert_eq!(result.len(), k.min(index.len()));
         assert_eq!(result[0].index, query_index);
         assert!(result[0].distance.abs() < 1e-6);
 
