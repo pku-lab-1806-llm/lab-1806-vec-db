@@ -37,8 +37,8 @@ pub struct HNSWIndex<T> {
     pub config: HNSWInnerConfig,
     pub level0_data: Box<[u8]>,
     pub len: usize,
-    pub max_level: usize,
-    pub enter_point: usize,
+    pub max_level: Option<usize>,
+    pub enter_point: Option<usize>,
 }
 impl<T: Scalar> HNSWIndex<T> {
     /// Parse an element from the memory.
@@ -149,8 +149,8 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
             config,
             level0_data,
             len: 0,
-            max_level: 0,
-            enter_point: 0,
+            max_level: None,
+            enter_point: None,
         }
     }
     fn add(&mut self, _vec: &[T], _rng: &mut impl rand::Rng) -> usize {
