@@ -73,6 +73,7 @@ impl<T: Scalar> HNSWIndex<T> {
     ///
     /// Returns links_len, &links, &data, index.
     pub fn get_element(&self, index: usize) -> (u32, &[u32], &[T], u32) {
+        assert!(index < self.len, "Index out of bounds in HNSWIndex.");
         let ptr = self.level0_data.as_ptr();
         unsafe { self.parse_element(ptr.add(index * self.config.element_level0_layout.size)) }
     }
@@ -81,6 +82,7 @@ impl<T: Scalar> HNSWIndex<T> {
     ///
     /// Returns &mut links_len, &mut links, &mut data, &mut index.
     pub fn get_element_mut(&mut self, index: usize) -> (&mut u32, &mut [u32], &mut [T], &mut u32) {
+        assert!(index < self.len, "Index out of bounds in HNSWIndex.");
         let ptr = self.level0_data.as_mut_ptr();
         unsafe { self.parse_element_mut(ptr.add(index * self.config.element_level0_layout.size)) }
     }
@@ -89,6 +91,7 @@ impl<T: Scalar> Index<usize> for HNSWIndex<T> {
     type Output = [T];
 
     fn index(&self, index: usize) -> &Self::Output {
+        assert!(index < self.len, "Index out of bounds in HNSWIndex.");
         let (_, _, data, _) = self.get_element(index);
         data
     }
