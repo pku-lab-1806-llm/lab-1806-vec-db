@@ -126,6 +126,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         element_level0_layout.push::<u32>(max_M0);
         element_level0_layout.push::<T>(dim);
         element_level0_layout.push::<u32>(1);
+        element_level0_layout.finish_sub();
 
         let mut level0_layout = ConcatLayout::new();
         level0_layout.push_sub(&element_level0_layout, max_elements);

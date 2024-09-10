@@ -102,6 +102,7 @@ pub struct ConcatLayout {
     pub size: usize,
     pub align: usize,
     pub offsets: Vec<usize>,
+    pub finished: bool,
 }
 impl ConcatLayout {
     pub fn new() -> Self {
@@ -109,26 +110,48 @@ impl ConcatLayout {
             size: 0,
             align: 1,
             offsets: vec![],
+            finished: false,
         }
+    }
+    pub fn align_to(origin_size: usize, align: usize) -> usize {
+        origin_size.div_ceil(align) * align
+    }
+    /// Ensure the size is aligned to the alignment.
+    ///
+    /// Sub-layouts must be aligned to the alignment.
+    pub fn finish_sub(&mut self) {
+        self.size = ConcatLayout::align_to(self.size, self.align);
+        self.finished = true;
     }
     /// Push a size and alignment to the layout.
     pub fn push_size_align(&mut self, size: usize, align: usize) {
-        let offset = self.size.div_ceil(align) * align;
+        assert!(
+            size % align == 0,
+            "Size must be a multiple of the alignment."
+        );
+        let offset = ConcatLayout::align_to(self.size, align);
         self.size = offset + size;
         self.align = self.align.max(align);
         self.offsets.push(offset);
     }
+    /// Push a size and alignment to the layout, multiplied by the length.
+    pub fn push_size_align_len(&mut self, size: usize, align: usize, len: usize) {
+        assert!(
+            size % align == 0,
+            "Size must be a multiple of the alignment."
+        );
+        self.push_size_align(size * len, align);
+    }
     /// Push a scalar or a slice to the layout.
     pub fn push<T>(&mut self, len: usize) {
         let align = mem::align_of::<T>();
-        let size = len * mem::size_of::<T>();
-        self.push_size_align(size, align);
+        let size = mem::size_of::<T>();
+        self.push_size_align_len(size, align, len);
     }
     /// Push a sub-layout to the layout.
     pub fn push_sub(&mut self, layout: &ConcatLayout, len: usize) {
-        let align = layout.align;
-        let size = layout.size * len;
-        self.push_size_align(size, align);
+        assert!(layout.finished, "Sub-layout must be finished.");
+        self.push_size_align_len(layout.size, layout.align, len);
     }
     /// Allocate memory for the layout.
     ///
