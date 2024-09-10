@@ -23,6 +23,7 @@ pub struct IVFConfig {
     pub k_means_tol: f32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IVFIndex<T> {
     /// The distance algorithm.
     pub dist: DistanceAlgorithm,

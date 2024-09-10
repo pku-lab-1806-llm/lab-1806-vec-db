@@ -1,4 +1,5 @@
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     distance::{DistanceAdapter, DistanceAlgorithm},
@@ -15,7 +16,7 @@ use super::{IndexFromVecSet, IndexIter, IndexKNN};
 /// The distance algorithm is configurable.
 ///
 /// Holds a reference to the `VecSet`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinearIndex<T> {
     /// The distance algorithm.
     pub dist: DistanceAlgorithm,

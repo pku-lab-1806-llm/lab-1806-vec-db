@@ -51,8 +51,9 @@ pub trait IndexIter<T: Scalar>: Index<usize, Output = [T]> {
 pub trait IndexBuilder<T: Scalar>: IndexIter<T> {
     /// The configuration of the index.
     type Config;
+    fn dim(&self) -> usize;
     /// Create a new index.
-    fn new(dist: DistanceAlgorithm, config: Self::Config) -> Self;
+    fn new(dim: usize, dist: DistanceAlgorithm, config: Self::Config) -> Self;
     /// Add a vector to the index.
     fn add(&mut self, vec: &[T], rng: &mut impl Rng) -> usize;
 }

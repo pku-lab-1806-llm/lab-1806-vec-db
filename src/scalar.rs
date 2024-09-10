@@ -7,6 +7,7 @@ use std::{
 };
 
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 
 /// Trait for scalar types.
 /// Scalar types are used in the vector set.
@@ -95,3 +96,45 @@ pub trait BinaryScalar: Scalar {
 }
 impl BinaryScalar for u8 {}
 impl BinaryScalar for f32 {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConcatLayout {
+    pub size: usize,
+    pub align: usize,
+    pub offsets: Vec<usize>,
+}
+impl ConcatLayout {
+    pub fn new() -> Self {
+        Self {
+            size: 0,
+            align: 1,
+            offsets: vec![],
+        }
+    }
+    pub fn push_size_align(&mut self, size: usize, align: usize) {
+        let offset = self.size.div_ceil(align) * align;
+        self.size = offset + size;
+        self.align = self.align.max(align);
+        self.offsets.push(offset);
+    }
+    pub fn push<T>(&mut self, len: usize) {
+        let align = mem::align_of::<T>();
+        let size = len * mem::size_of::<T>();
+        self.push_size_align(size, align);
+    }
+    pub fn alloc(&self) -> Box<[u8]> {
+        let layout = std::alloc::Layout::from_size_align(self.size, self.align).unwrap();
+        unsafe {
+            let ptr = std::alloc::alloc_zeroed(layout);
+            if ptr.is_null() {
+                std::alloc::handle_alloc_error(layout);
+            }
+            Box::from_raw(std::slice::from_raw_parts_mut(ptr, self.size))
+        }
+    }
+    pub fn push_sub(&mut self, layout: &ConcatLayout, len: usize) {
+        let align = layout.align;
+        let size = layout.size * len;
+        self.push_size_align(size, align);
+    }
+}

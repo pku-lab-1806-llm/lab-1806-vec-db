@@ -23,7 +23,7 @@ pub struct KMeansConfig {
     pub selected: Option<Range<usize>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KMeans<T> {
     pub config: KMeansConfig,
     pub centroids: VecSet<T>,
