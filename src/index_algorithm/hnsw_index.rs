@@ -2,10 +2,7 @@ use std::ops::Index;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    distance::DistanceAlgorithm,
-    scalar::{ConcatLayout, Scalar},
-};
+use crate::{distance::DistanceAlgorithm, scalar::Scalar, vec_set::VecSet};
 
 use super::{IndexBuilder, IndexIter};
 
@@ -18,6 +15,8 @@ pub struct HNSWConfig {
     pub M: usize,
 }
 
+/// The inner configuration of the HNSW algorithm.
+/// Contains more computed values.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct HNSWInnerConfig {
@@ -28,77 +27,81 @@ pub struct HNSWInnerConfig {
     pub M: usize,
     pub max_M0: usize,
     pub ef: usize,
-    /// element_level0: (links_len, links, data, index): (u32, [u32; max_M0], [T; dim], u32)
-    pub element_level0_layout: ConcatLayout,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HNSWIndex<T> {
-    pub t_phantom: std::marker::PhantomData<T>,
+    /// The configuration of the HNSW algorithm.
+    ///
+    /// Inner configuration contains more computed values.
     pub config: HNSWInnerConfig,
-    pub level0_data: Box<[u8]>,
-    pub len: usize,
+    /// The vector set. (capacity = max_elements)
+    pub vec_set: VecSet<T>,
+    /// The level 0 links.
+    /// Dims: (vec_idx, neighbor_idx) flattened.
+    /// Size: len * max_M0.
+    /// Capacity: max_elements * max_M0.
+    pub level0_links: Vec<u32>,
+    /// The other links.
+    /// Dims: (vec_idx, (level_idx - 1, neighbor_idx) flattened).
+    /// Size: (len, level * M).
+    /// Capacity: (max_elements, _).
+    pub other_links: Vec<Vec<u32>>,
+    /// The length of links.
+    /// Dims: (vec_idx, level_idx).
+    /// Size: (len, level).
+    /// Capacity: (max_elements, _).
+    pub links_len: Vec<Vec<u32>>,
+    /// The level of each vector. level is 0-indexed.
+    pub vec_level: Vec<u32>,
     pub max_level: Option<usize>,
     pub enter_point: Option<usize>,
 }
 impl<T: Scalar> HNSWIndex<T> {
-    /// Parse an element from the memory.
-    ///
-    /// Returns links_len, &links, &data, index.
-    pub unsafe fn parse_element(&self, ptr: *const u8) -> (u32, &[u32], &[T], u32) {
-        let offsets = &self.config.element_level0_layout.offsets;
-        let links_len = *(ptr.add(offsets[0]) as *const u32);
-        let links =
-            std::slice::from_raw_parts(ptr.add(offsets[1]) as *const u32, links_len as usize);
-        let data = std::slice::from_raw_parts(ptr.add(offsets[2]) as *const T, self.config.dim);
-        let index = *(ptr.add(offsets[3]) as *const u32);
-        (links_len, links, data, index)
+    fn _get_links(&self, vec_idx: usize, level_idx: usize) -> &[u32] {
+        let len = self.links_len[vec_idx][level_idx] as usize;
+        if level_idx == 0 {
+            let start = vec_idx * self.config.max_M0;
+            &self.level0_links[start..start + len]
+        } else {
+            let vec_links = &self.other_links[vec_idx];
+            let start = self.config.M * (level_idx - 1);
+            &vec_links[start..start + len]
+        }
     }
-    /// Parse an element from the memory.
-    ///
-    /// Returns &mut links_len, &mut links, &mut data, &mut index.
-    pub unsafe fn parse_element_mut(
-        &mut self,
-        ptr: *mut u8,
-    ) -> (&mut u32, &mut [u32], &mut [T], &mut u32) {
-        let offsets = &self.config.element_level0_layout.offsets;
-        let links_len = &mut *(ptr.add(offsets[0]) as *mut u32);
-        let links =
-            std::slice::from_raw_parts_mut(ptr.add(offsets[1]) as *mut u32, self.config.max_M0);
-        let data = std::slice::from_raw_parts_mut(ptr.add(offsets[2]) as *mut T, self.config.dim);
-        let index = &mut *(ptr.add(offsets[3]) as *mut u32);
-        (links_len, links, data, index)
+    fn _put_links(&mut self, vec_idx: usize, level_idx: usize, links: &[u32]) {
+        let len = links.len() as u32;
+        self.links_len[vec_idx][level_idx] = len;
+        if level_idx == 0 {
+            let start = vec_idx * self.config.max_M0;
+            self.level0_links[start..start + len as usize].clone_from_slice(links);
+        } else {
+            let vec_links = &mut self.other_links[vec_idx];
+            let start = self.config.M * (level_idx - 1);
+            vec_links[start..start + len as usize].clone_from_slice(links);
+        }
     }
+    fn _push_only(&mut self, vec: &[T], level: usize) -> usize {
+        let idx = self.vec_set.push(vec);
+        self.level0_links
+            .extend_from_slice(&vec![0; self.config.max_M0]);
+        let links = vec![0; self.config.M * level];
+        self.other_links.push(links);
+        self.vec_level.push(level as u32);
 
-    /// Get an element from the index.
-    ///
-    /// Returns links_len, &links, &data, index.
-    pub fn get_element(&self, index: usize) -> (u32, &[u32], &[T], u32) {
-        assert!(index < self.len, "Index out of bounds in HNSWIndex.");
-        let ptr = self.level0_data.as_ptr();
-        unsafe { self.parse_element(ptr.add(index * self.config.element_level0_layout.size)) }
-    }
-
-    /// Get an element from the index. Mutable version.
-    ///
-    /// Returns &mut links_len, &mut links, &mut data, &mut index.
-    pub fn get_element_mut(&mut self, index: usize) -> (&mut u32, &mut [u32], &mut [T], &mut u32) {
-        assert!(index < self.len, "Index out of bounds in HNSWIndex.");
-        let ptr = self.level0_data.as_mut_ptr();
-        unsafe { self.parse_element_mut(ptr.add(index * self.config.element_level0_layout.size)) }
+        idx
     }
 }
 impl<T: Scalar> Index<usize> for HNSWIndex<T> {
     type Output = [T];
 
     fn index(&self, index: usize) -> &Self::Output {
-        assert!(index < self.len, "Index out of bounds in HNSWIndex.");
-        let (_, _, data, _) = self.get_element(index);
-        data
+        &self.vec_set[index]
     }
 }
 impl<T: Scalar> IndexIter<T> for HNSWIndex<T> {
     fn len(&self) -> usize {
-        self.len
+        self.vec_set.len()
     }
 }
 
@@ -121,34 +124,27 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         let ef = 10;
         let ef_construction = config.ef_construction.max(config.M);
 
-        let mut element_level0_layout = ConcatLayout::new();
-        element_level0_layout.push::<u32>(1);
-        element_level0_layout.push::<u32>(max_M0);
-        element_level0_layout.push::<T>(dim);
-        element_level0_layout.push::<u32>(1);
-        element_level0_layout.finish_sub();
-
-        let mut level0_layout = ConcatLayout::new();
-        level0_layout.push_sub(&element_level0_layout, max_elements);
-
-        let level0_data = level0_layout.alloc();
-
-        let config = HNSWInnerConfig {
-            dim,
-            dist,
-            max_elements,
-            ef_construction,
-            M,
-            max_M0,
-            ef,
-            element_level0_layout,
-        };
+        let vec_set = VecSet::<T>::with_capacity(max_elements, dim);
+        let level0_links = Vec::with_capacity(max_elements);
+        let vec_level = Vec::with_capacity(max_elements);
+        let other_links = Vec::with_capacity(max_elements);
+        let links_len = Vec::with_capacity(max_elements);
 
         Self {
-            t_phantom: std::marker::PhantomData,
-            config,
-            level0_data,
-            len: 0,
+            config: HNSWInnerConfig {
+                dim,
+                dist,
+                max_elements,
+                ef_construction,
+                M,
+                max_M0,
+                ef,
+            },
+            vec_set,
+            level0_links,
+            other_links,
+            links_len,
+            vec_level,
             max_level: None,
             enter_point: None,
         }

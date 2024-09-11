@@ -48,6 +48,13 @@ impl<T: Scalar> VecSet<T> {
         Self::new(dim, vec![T::default(); dim * len])
     }
 
+    pub fn with_capacity(dim: usize, capacity: usize) -> Self {
+        Self {
+            dim,
+            data: Vec::with_capacity(dim * capacity),
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.data.len() / self.dim
     }
@@ -71,9 +78,14 @@ impl<T: Scalar> VecSet<T> {
         self.data.chunks_exact_mut(self.dim)
     }
 
-    pub fn push(&mut self, vector: &[T]) {
+    /// Push a vector to the `VecSet`.
+    ///
+    /// Make sure you have created the `VecSet` with `with_capacity`.
+    pub fn push(&mut self, vector: &[T]) -> usize {
+        let index = self.len();
         assert_eq!(vector.len(), self.dim);
         self.data.extend_from_slice(vector);
+        index
     }
 
     pub fn pop_last(&mut self) -> Option<Vec<T>> {
