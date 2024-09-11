@@ -77,6 +77,8 @@ pub trait BinaryScalar: Scalar {
     /// Load data from a binary file.
     /// The layout of the binary file is assumed to be a sequence of scalar values.
     /// The number of scalar values to be loaded is limited by `limit`.
+    ///
+    /// Safety: The caller must ensure that the scalar in the file is valid.
     fn from_binary_file(file_path: impl AsRef<Path>, limit: Option<usize>) -> Result<Vec<Self>> {
         let limit = Self::file_size_limit(&file_path, limit)?;
         let mut buffer = vec![Self::default(); limit];
@@ -87,6 +89,8 @@ pub trait BinaryScalar: Scalar {
 
     /// Serialize data to a binary file.
     /// The layout of the binary file is a sequence of scalar values.
+    ///
+    /// Safety: This should be safe in most cases.
     fn to_binary_file(data: &[Self], file_path: impl AsRef<Path>) -> Result<()> {
         let mut file = std::fs::File::create(&file_path)?;
         std::io::Write::write_all(&mut file, unsafe { data.align_to::<u8>() }.1)?;
