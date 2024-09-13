@@ -182,6 +182,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
     }
     fn add(&mut self, vec: &[T], rng: &mut impl Rng) -> usize {
         let level = self.rand_level(rng);
-        self.add_to_level(vec, level)
+        let _idx = self.add_to_level(vec, level);
+        unimplemented!("HNSWIndex::add")
     }
 }
