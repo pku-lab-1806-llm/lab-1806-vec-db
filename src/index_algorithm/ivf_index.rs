@@ -47,6 +47,9 @@ impl<T: Scalar> Index<usize> for IVFIndex<T> {
     }
 }
 impl<T: Scalar> IndexIter<T> for IVFIndex<T> {
+    fn dim(&self) -> usize {
+        self.k_means.centroids.dim()
+    }
     fn len(&self) -> usize {
         self.num_vec
     }

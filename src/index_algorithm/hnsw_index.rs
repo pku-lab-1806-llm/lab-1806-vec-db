@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{distance::DistanceAlgorithm, scalar::Scalar, vec_set::VecSet};
 
-use super::{IndexBuilder, IndexIter, IndexKNN, ResponsePair};
+use super::{CandidatePair, IndexBuilder, IndexIter, IndexKNN};
 
 /// The configuration of the HNSW (Hierarchical Navigable Small World) algorithm.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,6 +18,9 @@ pub struct HNSWConfig {
     /// The number of neighbors to keep for each vector. (M)
     pub M: usize,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ResultSet {}
 
 /// The inner configuration of the HNSW algorithm.
 /// Contains more computed values.
@@ -147,7 +150,7 @@ impl<T: Scalar> HNSWIndex<T> {
         self.deleted_mark[idx]
     }
     /// Search the specified layer.
-    fn _search_layer(_layer: usize, _enter_point: usize, _query: &[T]) -> Vec<usize> {
+    fn _search_layer(_layer: usize, _enter_point: usize, _query: &[T], _ef: usize) -> Vec<usize> {
         unimplemented!("HNSWIndex::search_base_layer")
     }
     /// Add a vector to the index with a specific level.
@@ -167,6 +170,9 @@ impl<T: Scalar> Index<usize> for HNSWIndex<T> {
     }
 }
 impl<T: Scalar> IndexIter<T> for HNSWIndex<T> {
+    fn dim(&self) -> usize {
+        self.config.dim
+    }
     fn len(&self) -> usize {
         self.vec_set.len()
     }
@@ -174,9 +180,6 @@ impl<T: Scalar> IndexIter<T> for HNSWIndex<T> {
 
 impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
     type Config = HNSWConfig;
-    fn dim(&self) -> usize {
-        self.config.dim
-    }
     fn new(dim: usize, dist: DistanceAlgorithm, config: Self::Config) -> Self {
         let max_elements = config.max_elements;
         let m = config.M;
@@ -229,7 +232,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
 }
 
 impl<T: Scalar> IndexKNN<T> for HNSWIndex<T> {
-    fn knn(&self, _query: &[T], _k: usize) -> Vec<ResponsePair> {
+    fn knn(&self, _query: &[T], _k: usize) -> Vec<CandidatePair> {
         unimplemented!("HNSWIndex::knn")
     }
 }

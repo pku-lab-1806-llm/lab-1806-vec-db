@@ -3,14 +3,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     distance::{DistanceAdapter, DistanceAlgorithm},
-    index_algorithm::ResponsePair,
+    index_algorithm::CandidatePair,
     scalar::Scalar,
     vec_set::VecSet,
 };
-use std::collections::BTreeSet;
 use std::ops::Index;
 
-use super::{IndexFromVecSet, IndexIter, IndexKNN};
+use super::{IndexFromVecSet, IndexIter, IndexKNN, ResultSet};
 
 /// Linear index for the k-nearest neighbors search.
 /// The distance algorithm is configurable.
@@ -31,26 +30,22 @@ impl<T: Scalar> Index<usize> for LinearIndex<T> {
     }
 }
 impl<T: Scalar> IndexIter<T> for LinearIndex<T> {
+    fn dim(&self) -> usize {
+        self.vec_set.dim()
+    }
     fn len(&self) -> usize {
         self.vec_set.len()
     }
 }
 
 impl<T: Scalar> IndexKNN<T> for LinearIndex<T> {
-    fn knn(&self, query: &[T], k: usize) -> Vec<ResponsePair> {
-        let mut result = BTreeSet::new();
+    fn knn(&self, query: &[T], k: usize) -> Vec<CandidatePair> {
+        let mut result = ResultSet::new(k);
         for (i, v) in self.vec_set.iter().enumerate() {
             let dist = self.dist.d(query, v);
-            if result.len() < k {
-                result.insert(ResponsePair::new(i, dist));
-            } else if let Some(max) = result.last() {
-                if dist < max.distance {
-                    result.insert(ResponsePair::new(i, dist));
-                    result.pop_last();
-                }
-            }
+            result.add(CandidatePair::new(i, dist));
         }
-        result.into_iter().collect()
+        result.into_sorted_vec()
     }
 }
 

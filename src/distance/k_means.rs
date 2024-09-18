@@ -28,6 +28,26 @@ pub struct KMeans<T> {
     pub config: KMeansConfig,
     pub centroids: VecSet<T>,
 }
+/// Find the nearest centroid to the given vector.
+/// The number of centroids should be greater than 0.
+pub fn find_nearest_base<T: Scalar>(
+    v: &[T],
+    centroids: &VecSet<T>,
+    dist: &DistanceAlgorithm,
+) -> usize {
+    assert!(
+        centroids.len() > 0,
+        "The number of centroids should be greater than 0."
+    );
+    use crate::index_algorithm::CandidatePair;
+    centroids
+        .iter()
+        .enumerate()
+        .map(|(i, c)| CandidatePair::new(i, dist.d(v, c)))
+        .min()
+        .unwrap()
+        .index
+}
 impl<T: Scalar> KMeans<T> {
     /// Initialize the centroids using the k-means++ algorithm.
     /// Returns the initialized centroids.
@@ -64,10 +84,8 @@ impl<T: Scalar> KMeans<T> {
     /// Perform the k-means clustering on the given vector set.
     /// The initial centroids are initialized by the k-means++ algorithm.
     ///
-    /// *May panic* when:
-    /// - NaN or Inf exists since `f32` is partially ordered.
-    /// - The selected range is out of the dimension range.
-    /// - The number of clusters is 0.
+    /// The number of clusters should be greater than 0.
+    /// The selected range should be in the range [0, vec_set.dim()).
     pub fn from_vec_set(vec_set: &VecSet<T>, config: KMeansConfig, rng: &mut impl Rng) -> Self {
         assert!(
             config.k > 0,
@@ -90,14 +108,7 @@ impl<T: Scalar> KMeans<T> {
 
             for v in vec_set.iter() {
                 let v = &v[selected.clone()];
-                // Find the nearest centroid.
-                // *May panic* since f32 is not Ord.
-                let (_, min_idx) = centroids
-                    .iter()
-                    .enumerate()
-                    .map(|(i, c)| (config.dist.d(v, c), i))
-                    .min_by(|(d0, _), (d1, _)| d0.partial_cmp(d1).unwrap())
-                    .unwrap();
+                let min_idx = find_nearest_base(v, &centroids, &config.dist);
 
                 count[min_idx] += 1;
                 let c = new_centroids.get_mut(min_idx);
@@ -133,18 +144,10 @@ impl<T: Scalar> KMeans<T> {
 
     /// Find the nearest centroid to the given vector.
     /// This will use the selected range if it is specified in the config.
-    ///
-    /// *May panic* since f32 is not Ord or k is accidentally set to 0.
     pub fn find_nearest(&self, v: &[T]) -> usize {
         let dim = self.centroids.dim();
         let v = &v[self.config.selected.clone().unwrap_or(0..dim)];
-        self.centroids
-            .iter()
-            .enumerate()
-            .map(|(i, c)| (self.config.dist.d(v, c), i))
-            .min_by(|(d0, _), (d1, _)| d0.partial_cmp(d1).unwrap())
-            .unwrap()
-            .1
+        find_nearest_base(v, &self.centroids, &self.config.dist)
     }
 }
 
