@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{distance::DistanceAlgorithm, scalar::Scalar, vec_set::VecSet};
 
-use super::{IndexBuilder, IndexIter};
+use super::{IndexBuilder, IndexIter, IndexKNN, ResponsePair};
 
 /// The configuration of the HNSW (Hierarchical Navigable Small World) algorithm.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +58,8 @@ pub struct HNSWIndex<T> {
     pub links_len: Vec<Vec<u32>>,
     /// The level of each vector. level is 0-indexed.
     pub vec_level: Vec<u32>,
+    /// The deleted mark of each vector.
+    pub deleted_mark: Vec<bool>,
     /// The maximum level of the index.
     pub max_level: Option<usize>,
     /// The enter point of the search.
@@ -107,6 +109,7 @@ impl<T: Scalar> HNSWIndex<T> {
         self.other_links.push(vec![0; self.config.m * level]);
         self.links_len.push(vec![0; level]);
         self.vec_level.push(level as u32);
+        self.deleted_mark.push(false);
 
         if self.max_level.map_or(true, |max_level| level > max_level) {
             self.max_level = Some(level);
@@ -114,6 +117,18 @@ impl<T: Scalar> HNSWIndex<T> {
         }
 
         idx
+    }
+    /// Delete a vector from the index.
+    pub fn delete(&mut self, idx: usize) {
+        self.deleted_mark[idx] = true;
+    }
+    /// Check if a vector is deleted.
+    pub fn is_deleted(&self, idx: usize) -> bool {
+        self.deleted_mark[idx]
+    }
+    /// Search the specified layer.
+    fn _search_layer(_layer: usize, _enter_point: usize, _query: &[T]) -> Vec<usize> {
+        unimplemented!("HNSWIndex::search_base_layer")
     }
     /// Add a vector to the index with a specific level.
     pub fn add_to_level(&mut self, vec: &[T], level: usize) -> usize {
@@ -159,6 +174,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         let vec_level = Vec::with_capacity(max_elements);
         let other_links = Vec::with_capacity(max_elements);
         let links_len = Vec::with_capacity(max_elements);
+        let deleted_mark = Vec::with_capacity(max_elements);
 
         Self {
             config: HNSWInnerConfig {
@@ -176,6 +192,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
             other_links,
             links_len,
             vec_level,
+            deleted_mark,
             max_level: None,
             enter_point: None,
         }
@@ -184,5 +201,11 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         let level = self.rand_level(rng);
         let _idx = self.add_to_level(vec, level);
         unimplemented!("HNSWIndex::add")
+    }
+}
+
+impl<T: Scalar> IndexKNN<T> for HNSWIndex<T> {
+    fn knn(&self, _query: &[T], _k: usize) -> Vec<ResponsePair> {
+        unimplemented!("HNSWIndex::knn")
     }
 }
