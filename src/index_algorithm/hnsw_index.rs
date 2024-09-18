@@ -11,8 +11,11 @@ use super::{IndexBuilder, IndexIter, IndexKNN, ResponsePair};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct HNSWConfig {
+    /// The dimension of the vectors.
     pub max_elements: usize,
+    /// The number of neighbors to search during construction.
     pub ef_construction: usize,
+    /// The number of neighbors to keep for each vector. (M)
     pub M: usize,
 }
 
@@ -20,12 +23,19 @@ pub struct HNSWConfig {
 /// Contains more computed values.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HNSWInnerConfig {
+    /// The dimension of the vectors.
     pub dim: usize,
+    /// The distance algorithm.
     pub dist: DistanceAlgorithm,
+    /// The maximum number of elements in the index.
     pub max_elements: usize,
+    /// The number of neighbors to keep for each vector. (M)
     pub m: usize,
+    /// The number of neighbors to keep for each vector at level 0. (2 * M)
     pub max_m0: usize,
+    /// The number of neighbors to search during construction.
     pub ef_construction: usize,
+    /// The number of neighbors to check during search.
     pub ef: usize,
     /// inv_log_m = 1 / ln(M)$.
     ///
@@ -60,6 +70,8 @@ pub struct HNSWIndex<T> {
     pub vec_level: Vec<u32>,
     /// The deleted mark of each vector.
     pub deleted_mark: Vec<bool>,
+    /// The number of vectors marked as deleted.
+    pub num_deleted: usize,
     /// The maximum level of the index.
     pub max_level: Option<usize>,
     /// The enter point of the search.
@@ -118,12 +130,16 @@ impl<T: Scalar> HNSWIndex<T> {
 
         idx
     }
-    /// Delete a vector from the index.
-    pub fn delete(&mut self, idx: usize) {
+    /// Mark a vector as deleted.
+    pub fn mark_deleted(&mut self, idx: usize) {
+        if self.is_marked_deleted(idx) {
+            return;
+        }
         self.deleted_mark[idx] = true;
+        self.num_deleted += 1;
     }
-    /// Check if a vector is deleted.
-    pub fn is_deleted(&self, idx: usize) -> bool {
+    /// Check if a vector is marked as deleted.
+    pub fn is_marked_deleted(&self, idx: usize) -> bool {
         self.deleted_mark[idx]
     }
     /// Search the specified layer.
@@ -193,11 +209,15 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
             links_len,
             vec_level,
             deleted_mark,
+            num_deleted: 0,
             max_level: None,
             enter_point: None,
         }
     }
     fn add(&mut self, vec: &[T], rng: &mut impl Rng) -> usize {
+        if self.vec_set.len() >= self.config.max_elements {
+            panic!("The index is full.");
+        }
         let level = self.rand_level(rng);
         let _idx = self.add_to_level(vec, level);
         unimplemented!("HNSWIndex::add")
