@@ -7,6 +7,7 @@ use std::{
 };
 
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 
 /// Trait for scalar types.
 /// Scalar types are used in the vector set.
@@ -32,6 +33,8 @@ pub trait Scalar:
     // Comparison
     + PartialEq
     + PartialOrd
+    + Serialize
+    + for <'de> Deserialize<'de>
 {
     /// Cast a float value to the scalar type. *Alias for `as`.*
     ///

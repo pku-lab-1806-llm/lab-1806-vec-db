@@ -1,5 +1,6 @@
-use std::{collections::BTreeSet, ops::Index};
+use std::{collections::BTreeSet, fs::File, io::BufWriter, ops::Index};
 
+use anyhow::Result;
 use ordered_float::OrderedFloat;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -130,4 +131,25 @@ pub trait IndexFromVecSet<T: Scalar>: IndexIter<T> {
         config: Self::Config,
         rng: &mut impl Rng,
     ) -> Self;
+}
+
+pub trait IndexSerde: Serialize + for<'de> Deserialize<'de> {
+    /// Save the index to the file.
+    ///
+    /// Some Index may have different Implementations.
+    fn save(&self, path: &str) -> Result<()> {
+        let file = File::create(path)?;
+        let writer = BufWriter::new(file);
+        bincode::serialize_into(writer, self)?;
+        Ok(())
+    }
+    /// Load the index from the file.
+    ///
+    /// Some Index may have different Implementations.
+    fn load(path: &str) -> Result<Self> {
+        let file = File::open(path)?;
+        let reader = std::io::BufReader::new(file);
+        let index = bincode::deserialize_from(reader)?;
+        Ok(index)
+    }
 }

@@ -12,7 +12,7 @@ use crate::{
     vec_set::VecSet,
 };
 
-use super::{IndexFromVecSet, IndexIter};
+use super::{IndexFromVecSet, IndexIter, IndexSerde};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IVFConfig {
     /// The number of clusters.
@@ -101,7 +101,7 @@ impl<T: Scalar> IndexFromVecSet<T> for IVFIndex<T> {
         }
     }
 }
-
+impl<T: Scalar> IndexSerde for IVFIndex<T> {}
 #[cfg(test)]
 mod test {
     use crate::config::DBConfig;
@@ -138,6 +138,14 @@ mod test {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
 
         let index = IVFIndex::from_vec_set(vec_set, dist, ivf_config, &mut rng);
+
+        // Save and load the index. >>>>
+        let path = "config/example/ivf_index.test.bin";
+        index.save(path)?;
+
+        let index = IVFIndex::<f32>::load(path)?;
+        // <<<< Save and load the index.
+
         for (id, cluster) in index.clusters.iter().enumerate() {
             println!("cluster id: {}, cluster size: {}", id, cluster.len());
         }

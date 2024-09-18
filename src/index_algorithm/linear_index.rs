@@ -9,7 +9,7 @@ use crate::{
 };
 use std::ops::Index;
 
-use super::{IndexFromVecSet, IndexIter, IndexKNN, ResultSet};
+use super::{IndexFromVecSet, IndexIter, IndexKNN, IndexSerde, ResultSet};
 
 /// Linear index for the k-nearest neighbors search.
 /// The distance algorithm is configurable.
@@ -61,6 +61,7 @@ impl<T: Scalar> IndexFromVecSet<T> for LinearIndex<T> {
         Self { dist, vec_set }
     }
 }
+impl<T: Scalar> IndexSerde for LinearIndex<T> {}
 
 #[cfg(test)]
 mod test {
@@ -88,6 +89,13 @@ mod test {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
 
         let index = LinearIndex::from_vec_set(vec_set, dist, (), &mut rng);
+
+        // Save and load the index. >>>>
+        let path = "config/example/linear_index.test.bin";
+        index.save(path)?;
+
+        let index = LinearIndex::<f32>::load(path)?;
+        // <<<< Save and load the index.
 
         let k = 4;
         let query_index = 200;
