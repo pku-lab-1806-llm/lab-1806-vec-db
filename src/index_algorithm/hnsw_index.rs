@@ -3,7 +3,11 @@ use std::ops::Index;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
-use crate::{distance::DistanceAlgorithm, scalar::Scalar, vec_set::VecSet};
+use crate::{
+    distance::{DistanceAdapter, DistanceAlgorithm},
+    scalar::Scalar,
+    vec_set::VecSet,
+};
 
 use super::{CandidatePair, IndexBuilder, IndexIter, IndexKNN};
 
@@ -89,7 +93,11 @@ impl<T: Scalar> HNSWIndex<T> {
         let rand_uniform: f32 = rng.gen_range(0.0..1.0);
         (-rand_uniform.ln() * self.config.inv_log_m).floor() as usize
     }
-    fn _get_links(&self, vec_idx: usize, level_idx: usize) -> &[u32] {
+    fn get_links(&self, vec_idx: usize, level_idx: usize) -> &[u32] {
+        assert!(
+            level_idx <= self.vec_level[vec_idx] as usize,
+            "Index out of bounds."
+        );
         let len = self.links_len[vec_idx][level_idx] as usize;
         if level_idx == 0 {
             let start = vec_idx * self.config.max_m0;
@@ -149,9 +157,45 @@ impl<T: Scalar> HNSWIndex<T> {
     pub fn is_marked_deleted(&self, idx: usize) -> bool {
         self.deleted_mark[idx]
     }
-    /// Search the specified layer.
-    fn _search_layer(_layer: usize, _enter_point: usize, _query: &[T], _ef: usize) -> Vec<usize> {
+    /// Search the base layer (level 0).
+    fn _search_level0(&self, _enter_point: usize, _query: &[T], _ef: usize) -> Vec<usize> {
         unimplemented!("HNSWIndex::search_base_layer")
+    }
+    /// Greedy search on a specific level.
+    fn greedy_search_on_level(&self, level_idx: usize, enter_point: usize, query: &[T]) -> usize {
+        let dist = self.config.dist;
+        let mut cur_p = enter_point;
+        let mut cur_d = dist.d(&self.vec_set[cur_p], query);
+        loop {
+            let mut flag = false;
+            for &neighbor in self.get_links(cur_p, level_idx) {
+                let new_p = neighbor as usize;
+                let new_d = dist.d(&self.vec_set[new_p], query);
+                if new_d < cur_d {
+                    cur_d = new_d;
+                    cur_p = new_p;
+                    flag = true;
+                }
+            }
+            if !flag {
+                break;
+            }
+        }
+        cur_p
+    }
+    /// Greedy search until reaching the base layer.
+    ///
+    /// Note: This does *NOT* search on level 0. So the result is *NOT* the final result.
+    pub fn greedy_search_until_level0(&self, query: &[T]) -> usize {
+        let (mut level_idx, mut cur_p) = match (self.max_level, self.enter_point) {
+            (Some(max_level), Some(enter_point)) => (max_level, enter_point),
+            _ => panic!("The index is empty."),
+        };
+        while level_idx > 0 {
+            cur_p = self.greedy_search_on_level(level_idx, cur_p, query);
+            level_idx -= 1;
+        }
+        cur_p
     }
     /// Add a vector to the index with a specific level.
     pub fn add_to_level(&mut self, vec: &[T], level: usize) -> usize {
@@ -160,6 +204,35 @@ impl<T: Scalar> HNSWIndex<T> {
             unimplemented!("HNSWIndex::add_to_level")
         }
         unimplemented!("HNSWIndex::add_to_level")
+    }
+    /// Reset the capacity of the index.
+    /// `exact` is true if the capacity should be exactly `new_max_elements`.
+    ///
+    /// This should reset vec_set, level0_links, vec_level, other_links, links_len, deleted_mark.
+    /// Commonly used after loading the index from a file.
+    pub fn reset_max_elements(&mut self, new_max_elements: usize, exact: bool) {
+        assert!(
+            new_max_elements >= self.config.max_elements,
+            "The new capacity should be larger than the current capacity."
+        );
+        self.config.max_elements = new_max_elements;
+        let num_reserve = new_max_elements - self.vec_set.len();
+        if exact {
+            self.vec_set.reserve_exact(num_reserve);
+            self.level0_links
+                .reserve_exact(num_reserve * self.config.max_m0);
+            self.vec_level.reserve_exact(num_reserve);
+            self.other_links.reserve_exact(num_reserve);
+            self.links_len.reserve_exact(num_reserve);
+            self.deleted_mark.reserve_exact(num_reserve);
+        } else {
+            self.vec_set.reserve(num_reserve);
+            self.level0_links.reserve(num_reserve * self.config.max_m0);
+            self.vec_level.reserve(num_reserve);
+            self.other_links.reserve(num_reserve);
+            self.links_len.reserve(num_reserve);
+            self.deleted_mark.reserve(num_reserve);
+        }
     }
 }
 impl<T: Scalar> Index<usize> for HNSWIndex<T> {

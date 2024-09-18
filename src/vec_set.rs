@@ -29,6 +29,7 @@ impl<T> Index<usize> for VecSet<T> {
 }
 
 impl<T: Scalar> VecSet<T> {
+    /// Create a `VecSet` with the specified dimension and data.
     pub fn new(dim: usize, data: Vec<T>) -> Self {
         assert!(
             data.len() % dim == 0,
@@ -37,10 +38,15 @@ impl<T: Scalar> VecSet<T> {
         Self { dim, data }
     }
 
+    /// Get the dimension of the vectors.
     pub fn dim(&self) -> usize {
         self.dim
     }
 
+    /// Create a `VecSet` with the specified length and fill with zeros.
+    ///
+    /// Tf the scalar type has non-zero default value,
+    /// this may not work as expected.
     pub fn zeros(dim: usize, len: usize) -> Self
     where
         T: Default + Clone,
@@ -48,32 +54,58 @@ impl<T: Scalar> VecSet<T> {
         Self::new(dim, vec![T::default(); dim * len])
     }
 
+    /// Create a `VecSet` with the specified capacity.
     pub fn with_capacity(dim: usize, capacity: usize) -> Self {
         Self {
             dim,
             data: Vec::with_capacity(dim * capacity),
         }
     }
+    /// Reserve additional capacity for the `VecSet`.
+    ///
+    /// May reserve more space to avoid frequent reallocations.
+    pub fn reserve(&mut self, additional: usize) {
+        self.data.reserve(additional * self.dim);
+    }
+    /// Reserve EXACT additional capacity for the `VecSet`.
+    ///
+    /// May cause more reallocations.
+    pub fn reserve_exact(&mut self, additional: usize) {
+        self.data.reserve_exact(additional * self.dim);
+    }
+    /// Get the capacity of the `VecSet`.
+    pub fn capacity(&self) -> usize {
+        self.data.capacity() / self.dim
+    }
+    /// Shrink the capacity of the `VecSet` to fit the data.
+    pub fn shrink_to_fit(&mut self) {
+        self.data.shrink_to_fit();
+    }
 
+    /// Get the number of vectors in the `VecSet`.
     pub fn len(&self) -> usize {
         self.data.len() / self.dim
     }
 
+    /// Set the vector at the specified index.
     pub fn put(&mut self, index: usize, vector: &[T]) {
         assert_eq!(vector.len(), self.dim);
         self.get_mut(index).clone_from_slice(vector);
     }
 
+    /// Get a mutable reference to the vector at the specified index.
     pub fn get_mut(&mut self, index: usize) -> &mut [T] {
         let start = index * self.dim;
         let end = start + self.dim;
         &mut self.data[start..end]
     }
 
+    /// Get an iterator of the vectors.
     pub fn iter(&self) -> impl Iterator<Item = &[T]> {
         self.data.chunks_exact(self.dim)
     }
 
+    /// Get a mutable iterator of the vectors.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut [T]> {
         self.data.chunks_exact_mut(self.dim)
     }
@@ -81,6 +113,8 @@ impl<T: Scalar> VecSet<T> {
     /// Push a vector to the `VecSet`.
     ///
     /// Make sure you have created the `VecSet` with `with_capacity`.
+    ///
+    /// Or use `reserve` or `reserve_exact` to reserve additional capacity.
     pub fn push(&mut self, vector: &[T]) -> usize {
         let index = self.len();
         assert_eq!(vector.len(), self.dim);
@@ -88,6 +122,7 @@ impl<T: Scalar> VecSet<T> {
         index
     }
 
+    /// Pop the last vector from the `VecSet`.
     pub fn pop_last(&mut self) -> Option<Vec<T>> {
         if self.data.len() >= self.dim {
             let start = self.data.len() - self.dim;
