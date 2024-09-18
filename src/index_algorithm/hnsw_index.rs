@@ -9,7 +9,7 @@ use crate::{
     vec_set::VecSet,
 };
 
-use super::{CandidatePair, IndexBuilder, IndexIter, IndexKNN};
+use super::{CandidatePair, IndexBuilder, IndexIter, IndexKNN, IndexSerde};
 
 /// The configuration of the HNSW (Hierarchical Navigable Small World) algorithm.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -307,5 +307,24 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
 impl<T: Scalar> IndexKNN<T> for HNSWIndex<T> {
     fn knn(&self, _query: &[T], _k: usize) -> Vec<CandidatePair> {
         unimplemented!("HNSWIndex::knn")
+    }
+}
+
+impl<T: Scalar> IndexSerde for HNSWIndex<T> {
+    /// Save the index to the file.
+    ///
+    /// For HNSWIndex, the capacity should be reset after loading.
+    fn load(path: &str) -> anyhow::Result<Self> {
+        let file = std::fs::File::open(path)?;
+        let reader = std::io::BufReader::new(file);
+        let mut index: Self = bincode::deserialize_from(reader)?;
+
+        // The capacity is not as expected after deserialization.
+        let new_max_elements = index.config.max_elements;
+        index.config.max_elements = index.len();
+        // Reset the capacity.
+        index.reset_max_elements(new_max_elements, true);
+
+        Ok(index)
     }
 }
