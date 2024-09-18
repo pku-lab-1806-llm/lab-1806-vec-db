@@ -67,8 +67,12 @@ pub struct HNSWIndex<T> {
     /// Capacity: (max_elements, _).
     pub links_len: Vec<Vec<u32>>,
     /// The level of each vector. level is 0-indexed.
+    ///
+    /// Capacity: max_elements.
     pub vec_level: Vec<u32>,
     /// The deleted mark of each vector.
+    ///
+    /// Capacity: max_elements.
     pub deleted_mark: Vec<bool>,
     /// The number of vectors marked as deleted.
     pub num_deleted: usize,
