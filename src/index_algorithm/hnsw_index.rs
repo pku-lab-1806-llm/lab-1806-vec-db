@@ -200,16 +200,24 @@ impl<T: Scalar> HNSWIndex<T> {
 
         idx
     }
-    /// Mark a vector as deleted.
-    pub fn mark_deleted(&mut self, idx: usize) {
-        if self.is_marked_deleted(idx) {
+    /// Delete a vector from the index by setting a deleted mark.
+    pub fn soft_delete(&mut self, idx: usize) {
+        if self.is_soft_deleted(idx) {
             return;
         }
         self.deleted_mark[idx] = true;
         self.num_deleted += 1;
     }
-    /// Check if a vector is marked as deleted.
-    pub fn is_marked_deleted(&self, idx: usize) -> bool {
+    /// Restore a vector from deleted by clearing the deleted mark.
+    pub fn restore_soft_deleted(&mut self, idx: usize) {
+        if !self.is_soft_deleted(idx) {
+            return;
+        }
+        self.deleted_mark[idx] = false;
+        self.num_deleted -= 1;
+    }
+    /// Check if a vector has deleted mark.
+    pub fn is_soft_deleted(&self, idx: usize) -> bool {
         self.deleted_mark[idx]
     }
     /// Search the base layer (level 0).
