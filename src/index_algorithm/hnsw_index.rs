@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     distance::{DistanceAdapter, DistanceAlgorithm},
+    index_algorithm::ResultSet,
     scalar::Scalar,
     vec_set::VecSet,
 };
@@ -22,9 +23,6 @@ pub struct HNSWConfig {
     /// The number of neighbors to keep for each vector. (M)
     pub M: usize,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct ResultSet {}
 
 /// The inner configuration of the HNSW algorithm.
 /// Contains more computed values.
@@ -62,21 +60,25 @@ pub struct HNSWIndex<T> {
     /// Dims: (vec_idx, neighbor_idx) flattened.
     /// Size: len * max_M0.
     /// Capacity: max_elements * max_M0.
+    ///
+    /// `u32`: This is expensive. We can use a smaller integer type.
     pub level0_links: Vec<u32>,
     /// The other links.
     /// Dims: (vec_idx, (level_idx - 1, neighbor_idx) flattened).
     /// Size: (len, level * M).
     /// Capacity: (max_elements, _).
+    ///
+    /// `u32`: This is expensive. We can use a smaller integer type.
     pub other_links: Vec<Vec<u32>>,
     /// The length of links.
     /// Dims: (vec_idx, level_idx).
     /// Size: (len, level).
     /// Capacity: (max_elements, _).
-    pub links_len: Vec<Vec<u32>>,
+    pub links_len: Vec<Vec<usize>>,
     /// The level of each vector. level is 0-indexed.
     ///
     /// Capacity: max_elements.
-    pub vec_level: Vec<u32>,
+    pub vec_level: Vec<usize>,
     /// The deleted mark of each vector.
     ///
     /// Capacity: max_elements.
@@ -89,16 +91,38 @@ pub struct HNSWIndex<T> {
     pub enter_point: Option<usize>,
 }
 impl<T: Scalar> HNSWIndex<T> {
+    /// Generate a random level.
     fn rand_level(&self, rng: &mut impl Rng) -> usize {
         let rand_uniform: f32 = rng.gen_range(0.0..1.0);
         (-rand_uniform.ln() * self.config.inv_log_m).floor() as usize
     }
-    fn get_links(&self, vec_idx: usize, level_idx: usize) -> &[u32] {
+    /// Get the limit of the number of links at a specific level.
+    fn get_links_limit(&self, level_idx: usize) -> usize {
+        if level_idx == 0 {
+            self.config.max_m0
+        } else {
+            self.config.m
+        }
+    }
+    /// Get the length of the links of a vector at a specific level.
+    ///
+    /// Check if the level index is within the bounds.
+    fn get_links_len_checked(&self, vec_idx: usize, level_idx: usize) -> usize {
+        assert!(level_idx <= self.vec_level[vec_idx], "Index out of bounds.");
+        let len = self.links_len[vec_idx][level_idx];
+        let limit = self.get_links_limit(level_idx);
         assert!(
-            level_idx <= self.vec_level[vec_idx] as usize,
-            "Index out of bounds."
+            len <= limit,
+            "links_len[{}][{}] exceeds limit {}.",
+            vec_idx,
+            level_idx,
+            limit
         );
-        let len = self.links_len[vec_idx][level_idx] as usize;
+        len
+    }
+    /// Get the links of a vector at a specific level.
+    fn get_links(&self, vec_idx: usize, level_idx: usize) -> &[u32] {
+        let len = self.get_links_len_checked(vec_idx, level_idx);
         if level_idx == 0 {
             let start = vec_idx * self.config.max_m0;
             &self.level0_links[start..start + len]
@@ -108,20 +132,51 @@ impl<T: Scalar> HNSWIndex<T> {
             &vec_links[start..start + len]
         }
     }
-    fn _put_links(&mut self, vec_idx: usize, level_idx: usize, links: &[u32]) {
-        self.max_level = self
-            .max_level
-            .map_or(Some(level_idx), |level| Some(level.max(level_idx)));
-        let len = links.len() as u32;
-        self.links_len[vec_idx][level_idx] = len;
+    /// Get the links of a vector at a specific level mutably.
+    fn _get_links_mut(&mut self, vec_idx: usize, level_idx: usize) -> &mut [u32] {
+        let len = self.get_links_len_checked(vec_idx, level_idx);
         if level_idx == 0 {
             let start = vec_idx * self.config.max_m0;
-            self.level0_links[start..start + len as usize].clone_from_slice(links);
+            &mut self.level0_links[start..start + len]
         } else {
             let vec_links = &mut self.other_links[vec_idx];
             let start = self.config.m * (level_idx - 1);
-            vec_links[start..start + len as usize].clone_from_slice(links);
+            &mut vec_links[start..start + len]
         }
+    }
+    /// Put the links of a vector at a specific level.
+    fn _put_links(&mut self, vec_idx: usize, level_idx: usize, links: &[u32]) {
+        assert!(level_idx <= self.vec_level[vec_idx], "Index out of bounds.");
+        self.links_len[vec_idx][level_idx] = links.len();
+        self._get_links_mut(vec_idx, level_idx)
+            .clone_from_slice(links);
+    }
+    /// Try to push a link to a vector at a specific level.
+    ///
+    /// Or re-arrange the links heuristically if the links are full.
+    fn _push_link_or_heuristic(&mut self, vec_idx: usize, level_idx: usize, new_vec_idx: usize) {
+        let len = self.get_links_len_checked(vec_idx, level_idx);
+        let limit = self.get_links_limit(level_idx);
+        if len < limit {
+            // Enough space to push the new link.
+            self.links_len[vec_idx][level_idx] += 1;
+            *self._get_links_mut(vec_idx, level_idx).last_mut().unwrap() = new_vec_idx as u32;
+            return;
+        }
+        let v = &self[vec_idx];
+        let dist = self.config.dist;
+        let mut set = ResultSet::new(limit + 1);
+        let mut add = |idx: usize| {
+            let d = dist.d(v, &self[idx]);
+            set.add(CandidatePair::new(idx, d));
+        };
+        add(new_vec_idx);
+        for &neighbor in self.get_links(vec_idx, level_idx) {
+            add(neighbor as usize);
+        }
+        let links = set.heuristic(limit, &self.vec_set, dist);
+        let links = links.iter().map(|p| p.index as u32).collect::<Vec<_>>();
+        self._put_links(vec_idx, level_idx, &links);
     }
     /// Push a vector to the index and initialize:
     ///
@@ -135,7 +190,7 @@ impl<T: Scalar> HNSWIndex<T> {
             .extend_from_slice(&vec![0; self.config.max_m0]);
         self.other_links.push(vec![0; self.config.m * level]);
         self.links_len.push(vec![0; level]);
-        self.vec_level.push(level as u32);
+        self.vec_level.push(level);
         self.deleted_mark.push(false);
 
         if self.max_level.map_or(true, |max_level| level > max_level) {
