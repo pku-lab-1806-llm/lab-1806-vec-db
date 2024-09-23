@@ -5,7 +5,11 @@ use ordered_float::OrderedFloat;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
-use crate::{distance::DistanceAlgorithm, scalar::Scalar, vec_set::VecSet};
+use crate::{
+    distance::{DistanceAdapter, DistanceAlgorithm},
+    scalar::Scalar,
+    vec_set::VecSet,
+};
 
 pub mod hnsw_index;
 pub mod ivf_index;
@@ -47,7 +51,7 @@ impl Ord for CandidatePair {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct ResultSet {
+pub struct ResultSet {
     pub k: usize,
     pub results: BTreeSet<CandidatePair>,
 }
@@ -78,6 +82,28 @@ impl ResultSet {
     /// Convert the result set into a sorted vector.
     pub fn into_sorted_vec(self) -> Vec<CandidatePair> {
         self.results.into_iter().collect()
+    }
+
+    /// Pick at most m candidates as new neighbors heuristically.
+    pub fn heuristic<T: Scalar>(
+        self,
+        m: usize,
+        vec_set: &VecSet<T>,
+        dist: DistanceAlgorithm,
+    ) -> Vec<CandidatePair> {
+        let mut neighbors: Vec<CandidatePair> = Vec::with_capacity(m);
+
+        for pair in self.results {
+            if neighbors.len() >= m {
+                break;
+            }
+            let d = pair.distance();
+            let v = &vec_set[pair.index];
+            if neighbors.iter().all(|p| dist.d(v, &vec_set[p.index]) >= d) {
+                neighbors.push(pair);
+            }
+        }
+        neighbors
     }
 }
 
