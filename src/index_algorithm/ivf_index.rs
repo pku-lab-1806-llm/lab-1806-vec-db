@@ -116,7 +116,7 @@ mod test {
     pub fn ivf_index_test() -> Result<()> {
         // The `dim` and `limit` has been limited for debug mode performance.
 
-        let file_path = "config/example/db_config.toml";
+        let file_path = "config/db_config.toml";
         let mut config = DBConfig::load_from_toml_file(file_path)?;
 
         config.vec_data.limit = Some(64);
@@ -140,7 +140,7 @@ mod test {
         let index = IVFIndex::from_vec_set(vec_set, dist, ivf_config, &mut rng);
 
         // Save and load the index. >>>>
-        let path = "data/example/ivf_index.test.bin";
+        let path = "data/ivf_index.test.bin";
         index.save(path)?;
 
         let index = IVFIndex::<f32>::load(path)?;

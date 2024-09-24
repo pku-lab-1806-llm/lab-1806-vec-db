@@ -17,7 +17,7 @@ fn clip_msg(s: &str) -> String {
     }
 }
 fn main() -> Result<()> {
-    let file_path = "config/example/db_config.toml";
+    let file_path = "config/db_config.toml";
     let config = DBConfig::load_from_toml_file(file_path)?;
     println!("Loaded config: {:#?}", config);
     let vec_set = VecSet::<f32>::load_with(&config.vec_data)?;

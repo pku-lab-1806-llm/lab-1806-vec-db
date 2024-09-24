@@ -83,7 +83,7 @@ mod test {
                 s.to_string()
             }
         }
-        let file_path = "config/example/db_config.toml";
+        let file_path = "config/db_config.toml";
         let config = DBConfig::load_from_toml_file(file_path)?;
         println!("Loaded config: {:#?}", config);
         let raw_vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
@@ -99,7 +99,7 @@ mod test {
         let index = LinearIndex::from_vec_set(vec_set, dist, (), &mut rng);
 
         // Save and load the index. >>>>
-        let path = "data/example/linear_index.test.bin";
+        let path = "data/linear_index.test.bin";
         index.save(path)?;
 
         let index = LinearIndex::<f32>::load(path)?;
