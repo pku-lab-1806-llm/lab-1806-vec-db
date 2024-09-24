@@ -84,9 +84,15 @@ mod test {
         let file_path = "config/example/db_config.toml";
         let config = DBConfig::load_from_toml_file(file_path)?;
         println!("Loaded config: {:#?}", config);
-        let vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
+        let raw_vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
         let dist = DistanceAlgorithm::L2Sqr;
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+
+        let clipped_dim = raw_vec_set.dim().min(12);
+        let mut vec_set = VecSet::with_capacity(clipped_dim, raw_vec_set.len());
+        for vec in raw_vec_set.iter() {
+            vec_set.push(&vec[..clipped_dim]);
+        }
 
         let index = LinearIndex::from_vec_set(vec_set, dist, (), &mut rng);
 

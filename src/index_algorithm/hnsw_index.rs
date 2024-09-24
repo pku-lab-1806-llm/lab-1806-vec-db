@@ -205,7 +205,7 @@ impl<T: Scalar> HNSWIndex<T> {
         self.level0_links
             .extend_from_slice(&vec![0; self.config.max_m0]);
         self.other_links.push(vec![0; self.config.m * level]);
-        self.links_len.push(vec![0; level]);
+        self.links_len.push(vec![0; level + 1]);
         self.vec_level.push(level);
         self.deleted_mark.push(false);
 
@@ -368,7 +368,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         let ef = 10;
         let inv_log_m = 1.0 / (m as f32).ln();
 
-        let vec_set = VecSet::<T>::with_capacity(max_elements, dim);
+        let vec_set = VecSet::<T>::with_capacity(dim, max_elements);
         let level0_links = Vec::with_capacity(max_elements);
         let vec_level = Vec::with_capacity(max_elements);
         let other_links = Vec::with_capacity(max_elements);
@@ -466,5 +466,86 @@ impl<T: Scalar> IndexSerde for HNSWIndex<T> {
         index.reset_max_elements(new_max_elements, true);
 
         Ok(index)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use anyhow::Result;
+    use rand::SeedableRng;
+
+    use crate::{
+        config::{DBConfig, IndexAlgorithmConfig},
+        index_algorithm::{linear_index, IndexFromVecSet},
+    };
+
+    use super::*;
+
+    #[test]
+    pub fn hnsw_index_test() -> Result<()> {
+        fn clip_msg(s: &str) -> String {
+            if s.len() > 100 {
+                format!("{}...", &s[..100])
+            } else {
+                s.to_string()
+            }
+        }
+        let file_path = "config/example/db_config.toml";
+        let config = DBConfig::load_from_toml_file(file_path)?;
+        println!("Loaded config: {:#?}", config);
+        let raw_vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
+        let dist = DistanceAlgorithm::L2Sqr;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+
+        let config = match config.algorithm {
+            IndexAlgorithmConfig::HNSW(config) => config,
+            _ => panic!("Testing HNSWIndex with non-HNSW config."),
+        };
+
+        // Limit the dimension for testing.
+        let clipped_dim = raw_vec_set.dim().min(12);
+
+        let mut index = HNSWIndex::<f32>::new(clipped_dim, dist, config);
+
+        // Clipped vector set.
+        let mut vec_set = VecSet::with_capacity(clipped_dim, raw_vec_set.len());
+        for vec in raw_vec_set.iter() {
+            index.add(&vec[..clipped_dim], &mut rng);
+            vec_set.push(&vec[..clipped_dim]);
+        }
+
+        // Test the HNSWIndex by comparing with LinearIndex.
+        let linear_index = linear_index::LinearIndex::from_vec_set(vec_set, dist, (), &mut rng);
+
+        // Save and load the index. >>>>
+        println!("Saving the index...");
+        let path = "config/example/linear_index.test.bin";
+        index.save(path)?;
+
+        let index = HNSWIndex::<f32>::load(path)?;
+        println!("Loaded the index.");
+        // <<<< Save and load the index.
+
+        let k = 6;
+        let query_index = 200;
+
+        println!("Query Index: {}", query_index);
+        println!(
+            "Query Vector: {}",
+            clip_msg(&format!("{:?}", &index[query_index]))
+        );
+
+        let result = index.knn(&index[query_index], k);
+        let linear_result = linear_index.knn(&linear_index[query_index], k);
+
+        for (res, l_res) in result.iter().zip(linear_result.iter()) {
+            println!("Index: {}, Distance: {}", res.index, res.distance);
+            println!("Vector: {}", clip_msg(&format!("{:?}", &index[res.index])));
+            assert_eq!(res.index, l_res.index, "Index mismatch");
+        }
+        assert_eq!(result.len(), k.min(index.len()));
+
+        assert!(result.windows(2).all(|w| w[0].distance <= w[1].distance));
+        Ok(())
     }
 }
