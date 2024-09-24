@@ -1,4 +1,7 @@
-use std::ops::Index;
+use std::{
+    collections::{BTreeSet, HashSet},
+    ops::Index,
+};
 
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -65,7 +68,7 @@ pub struct HNSWIndex<T> {
     pub level0_links: Vec<u32>,
     /// The other links.
     /// Dims: (vec_idx, (level_idx - 1, neighbor_idx) flattened).
-    /// Size: (len, level * M).
+    /// Size: (len, vec_level * M).
     /// Capacity: (max_elements, _).
     ///
     /// `u32`: This is expensive. We can use a smaller integer type.
@@ -97,8 +100,8 @@ impl<T: Scalar> HNSWIndex<T> {
         (-rand_uniform.ln() * self.config.inv_log_m).floor() as usize
     }
     /// Get the limit of the number of links at a specific level.
-    fn get_links_limit(&self, level_idx: usize) -> usize {
-        if level_idx == 0 {
+    fn get_links_limit(&self, level: usize) -> usize {
+        if level == 0 {
             self.config.max_m0
         } else {
             self.config.m
@@ -107,60 +110,59 @@ impl<T: Scalar> HNSWIndex<T> {
     /// Get the length of the links of a vector at a specific level.
     /// - Check if the level index is within the bounds.
     /// - Check if the length does not exceed the limit.
-    fn get_links_len_checked(&self, vec_idx: usize, level_idx: usize) -> usize {
-        assert!(level_idx <= self.vec_level[vec_idx], "Index out of bounds.");
-        let len = self.links_len[vec_idx][level_idx];
-        let limit = self.get_links_limit(level_idx);
+    fn get_links_len_checked(&self, vec_idx: usize, level: usize) -> usize {
+        assert!(level <= self.vec_level[vec_idx], "Index out of bounds.");
+        let len = self.links_len[vec_idx][level];
+        let limit = self.get_links_limit(level);
         assert!(
             len <= limit,
             "links_len[{}][{}] exceeds limit {}.",
             vec_idx,
-            level_idx,
+            level,
             limit
         );
         len
     }
     /// Get the links of a vector at a specific level.
-    fn get_links(&self, vec_idx: usize, level_idx: usize) -> &[u32] {
-        let len = self.get_links_len_checked(vec_idx, level_idx);
-        if level_idx == 0 {
+    fn get_links(&self, vec_idx: usize, level: usize) -> &[u32] {
+        let len = self.get_links_len_checked(vec_idx, level);
+        if level == 0 {
             let start = vec_idx * self.config.max_m0;
             &self.level0_links[start..start + len]
         } else {
             let vec_links = &self.other_links[vec_idx];
-            let start = self.config.m * (level_idx - 1);
+            let start = self.config.m * (level - 1);
             &vec_links[start..start + len]
         }
     }
     /// Get the links of a vector at a specific level mutably.
-    fn _get_links_mut(&mut self, vec_idx: usize, level_idx: usize) -> &mut [u32] {
-        let len = self.get_links_len_checked(vec_idx, level_idx);
-        if level_idx == 0 {
+    fn get_links_mut(&mut self, vec_idx: usize, level: usize) -> &mut [u32] {
+        let len = self.get_links_len_checked(vec_idx, level);
+        if level == 0 {
             let start = vec_idx * self.config.max_m0;
             &mut self.level0_links[start..start + len]
         } else {
             let vec_links = &mut self.other_links[vec_idx];
-            let start = self.config.m * (level_idx - 1);
+            let start = self.config.m * (level - 1);
             &mut vec_links[start..start + len]
         }
     }
     /// Put the links of a vector at a specific level.
-    fn _put_links(&mut self, vec_idx: usize, level_idx: usize, links: &[u32]) {
-        assert!(level_idx <= self.vec_level[vec_idx], "Index out of bounds.");
-        self.links_len[vec_idx][level_idx] = links.len();
-        self._get_links_mut(vec_idx, level_idx)
-            .clone_from_slice(links);
+    fn put_links(&mut self, vec_idx: usize, level: usize, links: &[u32]) {
+        assert!(level <= self.vec_level[vec_idx], "Index out of bounds.");
+        self.links_len[vec_idx][level] = links.len();
+        self.get_links_mut(vec_idx, level).clone_from_slice(links);
     }
     /// Try to push a link to a vector at a specific level.
     ///
     /// Or re-arrange the links heuristically if the links are full.
-    fn _push_link_or_heuristic(&mut self, vec_idx: usize, level_idx: usize, new_vec_idx: usize) {
-        let len = self.get_links_len_checked(vec_idx, level_idx);
-        let limit = self.get_links_limit(level_idx);
+    fn push_link_or_heuristic(&mut self, vec_idx: usize, level: usize, new_vec_idx: usize) {
+        let len = self.get_links_len_checked(vec_idx, level);
+        let limit = self.get_links_limit(level);
         if len < limit {
             // Enough space to push the new link.
-            self.links_len[vec_idx][level_idx] += 1;
-            *self._get_links_mut(vec_idx, level_idx).last_mut().unwrap() = new_vec_idx as u32;
+            self.links_len[vec_idx][level] += 1;
+            *self.get_links_mut(vec_idx, level).last_mut().unwrap() = new_vec_idx as u32;
             return;
         }
         let v = &self[vec_idx];
@@ -171,17 +173,17 @@ impl<T: Scalar> HNSWIndex<T> {
             set.add(CandidatePair::new(idx, d));
         };
         add(new_vec_idx);
-        for &neighbor in self.get_links(vec_idx, level_idx) {
+        for &neighbor in self.get_links(vec_idx, level) {
             add(neighbor as usize);
         }
         let links = set.heuristic(limit, &self.vec_set, dist);
         let links = links.iter().map(|p| p.index as u32).collect::<Vec<_>>();
-        self._put_links(vec_idx, level_idx, &links);
+        self.put_links(vec_idx, level, &links);
     }
     /// Connect new links to a vector at a specific level. (Used during adding a vector)
-    fn _connect_new_links(&mut self, vec_idx: usize, level_idx: usize, candidates: ResultSet) {
+    fn connect_new_links(&mut self, vec_idx: usize, level: usize, candidates: ResultSet) {
         assert!(
-            self.get_links_len_checked(vec_idx, level_idx) == 0,
+            self.get_links_len_checked(vec_idx, level) == 0,
             "Links are not empty."
         );
         let dist = self.config.dist;
@@ -189,9 +191,9 @@ impl<T: Scalar> HNSWIndex<T> {
         let m = self.config.m;
         let neighbors = candidates.heuristic(m, &self.vec_set, dist);
         let neighbors = neighbors.iter().map(|p| p.index as u32).collect::<Vec<_>>();
-        self._put_links(vec_idx, level_idx, &neighbors);
+        self.put_links(vec_idx, level, &neighbors);
         for neighbor in neighbors {
-            self._push_link_or_heuristic(neighbor as usize, level_idx, vec_idx);
+            self.push_link_or_heuristic(neighbor as usize, level, vec_idx);
         }
     }
     /// Push a vector to the index and initialize:
@@ -208,19 +210,6 @@ impl<T: Scalar> HNSWIndex<T> {
         self.deleted_mark.push(false);
 
         idx
-    }
-    /// Update the enter point and the enter level.
-    /// Called after adding a vector to the index.
-    fn _update_enter_point(&mut self, vec_idx: usize) {
-        let level = self.vec_level[vec_idx];
-
-        if self
-            .enter_level
-            .map_or(true, |enter_level| level > enter_level)
-        {
-            self.enter_level = Some(level);
-            self.enter_point = Some(vec_idx);
-        }
     }
     /// Delete a vector from the index by setting a deleted mark.
     pub fn soft_delete(&mut self, idx: usize) {
@@ -242,18 +231,49 @@ impl<T: Scalar> HNSWIndex<T> {
     pub fn is_soft_deleted(&self, idx: usize) -> bool {
         self.deleted_mark[idx]
     }
-    /// Search the base layer (level 0).
-    fn _search_level0(&self, _enter_point: usize, _query: &[T], _ef: usize) -> Vec<usize> {
-        unimplemented!("HNSWIndex::search_base_layer")
+    /// Search on specific level for adding a vector.
+    fn construction_search(&self, enter_point: usize, level: usize, query: &[T]) -> ResultSet {
+        let ef = self.config.ef_construction;
+        let dist = self.config.dist;
+        let mut visited = HashSet::new();
+        let mut queue = BTreeSet::new();
+        let mut result = ResultSet::new(ef);
+
+        // Insert the enter point.
+        visited.insert(enter_point);
+        let enter_pair = CandidatePair::new(enter_point, dist.d(&self[enter_point], query));
+        if !self.is_soft_deleted(enter_point) {
+            result.add(enter_pair.clone());
+        }
+        queue.insert(enter_pair);
+        while let Some(pair) = queue.pop_first() {
+            if !result.check_candidate(&pair) {
+                break;
+            }
+            for &neighbor in self.get_links(pair.index, level) {
+                let new_p = neighbor as usize;
+                if visited.contains(&new_p) {
+                    continue;
+                }
+                visited.insert(new_p);
+                let new_d = dist.d(&self[new_p], query);
+                let new_pair = CandidatePair::new(new_p, new_d);
+                if !self.is_soft_deleted(new_p) {
+                    result.add(new_pair.clone());
+                }
+                queue.insert(new_pair);
+            }
+        }
+        result
     }
     /// Greedy search on a specific level.
-    fn greedy_search_on_level(&self, level_idx: usize, enter_point: usize, query: &[T]) -> usize {
+    fn greedy_search_on_level(&self, level: usize, enter_point: usize, query: &[T]) -> usize {
         let dist = self.config.dist;
         let mut cur_p = enter_point;
         let mut cur_d = dist.d(&self.vec_set[cur_p], query);
         loop {
             let mut flag = false;
-            for &neighbor in self.get_links(cur_p, level_idx) {
+            for &neighbor in self.get_links(cur_p, level) {
                 let new_p = neighbor as usize;
                 let new_d = dist.d(&self.vec_set[new_p], query);
                 if new_d < cur_d {
@@ -270,25 +290,18 @@ impl<T: Scalar> HNSWIndex<T> {
     }
     /// Greedy search until reaching the base layer.
     ///
-    /// Note: This does *NOT* search on level 0. So the result is *NOT* the final result.
-    pub fn greedy_search_until_level0(&self, query: &[T]) -> usize {
-        let (mut level_idx, mut cur_p) = match (self.enter_level, self.enter_point) {
+    /// - This does *NOT* search nearest vector on `target_level`.
+    /// - Starts at enter_point. NEVER call this when adding a vector higher than enter_level.
+    fn greedy_search_until_level(&self, target_level: usize, query: &[T]) -> usize {
+        let (mut level, mut cur_p) = match (self.enter_level, self.enter_point) {
             (Some(enter_level), Some(enter_point)) => (enter_level, enter_point),
             _ => panic!("The index is empty."),
         };
-        while level_idx > 0 {
-            cur_p = self.greedy_search_on_level(level_idx, cur_p, query);
-            level_idx -= 1;
+        while level > target_level {
+            cur_p = self.greedy_search_on_level(level, cur_p, query);
+            level -= 1;
         }
         cur_p
-    }
-    /// Add a vector to the index with a specific level.
-    pub fn add_to_level(&mut self, vec: &[T], level: usize) -> usize {
-        let idx = self.push_init(vec, level);
-        if self.enter_point != Some(idx) {
-            unimplemented!("HNSWIndex::add_to_level")
-        }
-        unimplemented!("HNSWIndex::add_to_level")
     }
     /// Reset the capacity of the index.
     /// `exact` is true if the capacity should be exactly `new_max_elements`.
@@ -384,8 +397,37 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
             panic!("The index is full.");
         }
         let level = self.rand_level(rng);
-        let _idx = self.add_to_level(vec, level);
-        unimplemented!("HNSWIndex::add")
+
+        let idx = self.push_init(vec, level);
+        let (enter_level, enter_point) = match (self.enter_level, self.enter_point) {
+            (Some(enter_level), Some(enter_point)) => (enter_level, enter_point),
+            _ => {
+                // Initialize the enter point if the index is empty.
+                self.enter_level = Some(level);
+                self.enter_point = Some(idx);
+                // No links to connect, so we can return early.
+                return idx;
+            }
+        };
+
+        let mut cur_p = if level < enter_level {
+            self.greedy_search_until_level(level, vec)
+        } else {
+            enter_point
+        };
+        for level in (0..=level.min(enter_level)).rev() {
+            let candidates = self.construction_search(cur_p, level, vec);
+            // Choose the nearest neighbor as the enter point of the next level.
+            cur_p = candidates.results.first().unwrap().index;
+            self.connect_new_links(idx, level, candidates);
+        }
+
+        // Update the enter point if the new vector is closer to the query.
+        if level > enter_level {
+            self.enter_level = Some(level);
+            self.enter_point = Some(idx);
+        }
+        idx
     }
 }
 

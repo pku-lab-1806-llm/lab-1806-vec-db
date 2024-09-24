@@ -62,6 +62,10 @@ impl ResultSet {
             results: BTreeSet::new(),
         }
     }
+    /// Check if a candidate with distance `d` is worth searching its neighbors.
+    pub fn check_candidate(&self, pair: &CandidatePair) -> bool {
+        self.results.len() < self.k || pair < self.results.iter().last().unwrap()
+    }
     /// Add a candidate pair to the result set.
     ///
     /// Returns true if the pair is added.
