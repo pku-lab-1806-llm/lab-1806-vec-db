@@ -165,9 +165,9 @@ impl<T: Scalar> PQTable<T> {
     /// Encode the given vector set.
     pub fn encode_batch(&self, vec_set: &VecSet<T>) -> VecSet<u8> {
         let dim = self.encoded_dim();
-        let mut target_set = VecSet::zeros(dim, vec_set.len());
-        for (i, v) in vec_set.iter().enumerate() {
-            target_set.put(i, &self.encode(v));
+        let mut target_set = VecSet::with_capacity(dim, vec_set.len());
+        for v in vec_set.iter() {
+            target_set.push(&self.encode(v));
         }
         target_set
     }
@@ -294,12 +294,12 @@ mod test {
         let m = 2;
         let num_vec = 5;
 
-        let mut src_set = VecSet::<f32>::zeros(dim, num_vec);
-        for i in 0..num_vec {
-            let v = src_set.get_mut(i);
-            for v in v.iter_mut() {
-                *v = rng.gen_range(-1.0..1.0);
-            }
+        let mut src_set = VecSet::<f32>::with_capacity(dim, num_vec);
+        for _ in 0..num_vec {
+            let v = (0..dim)
+                .map(|_| rng.gen_range(-1.0..1.0))
+                .collect::<Vec<_>>();
+            src_set.push(&v);
         }
         let pq_config = PQConfig {
             n_bits,
@@ -395,11 +395,9 @@ mod test {
 
         let clipped_dim = raw_vec_set.dim().min(12);
 
-        let mut vec_set = VecSet::zeros(clipped_dim, raw_vec_set.len());
-        for i in 0..raw_vec_set.len() {
-            let src = &raw_vec_set[i];
-            let dst = vec_set.get_mut(i);
-            dst.copy_from_slice(&src[..clipped_dim]);
+        let mut vec_set = VecSet::with_capacity(clipped_dim, raw_vec_set.len());
+        for vec in raw_vec_set.iter() {
+            vec_set.push(&vec[..clipped_dim]);
         }
 
         pq_table_test_base(&vec_set, L2Sqr)?;

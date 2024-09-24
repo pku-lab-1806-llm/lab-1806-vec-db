@@ -43,17 +43,6 @@ impl<T: Scalar> VecSet<T> {
         self.dim
     }
 
-    /// Create a `VecSet` with the specified length and fill with zeros.
-    ///
-    /// Tf the scalar type has non-zero default value,
-    /// this may not work as expected.
-    pub fn zeros(dim: usize, len: usize) -> Self
-    where
-        T: Default + Clone,
-    {
-        Self::new(dim, vec![T::default(); dim * len])
-    }
-
     /// Create a `VecSet` with the specified capacity.
     pub fn with_capacity(dim: usize, capacity: usize) -> Self {
         Self {

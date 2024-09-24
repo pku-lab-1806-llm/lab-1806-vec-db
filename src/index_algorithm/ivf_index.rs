@@ -84,9 +84,9 @@ impl<T: Scalar> IndexFromVecSet<T> for IVFIndex<T> {
         let clusters = clusters
             .into_iter()
             .map(|ids| {
-                let mut cluster = VecSet::zeros(vec_set.dim(), ids.len());
-                for (i, vec_id) in ids.iter().enumerate() {
-                    cluster.put(i, &vec_set[*vec_id]);
+                let mut cluster = VecSet::with_capacity(vec_set.dim(), ids.len());
+                for id in ids {
+                    cluster.push(&vec_set[id]);
                 }
                 cluster
             })
@@ -123,11 +123,9 @@ mod test {
 
         let clipped_dim = raw_vec_set.dim().min(12);
 
-        let mut vec_set = VecSet::zeros(clipped_dim, raw_vec_set.len());
-        for i in 0..raw_vec_set.len() {
-            let src = &raw_vec_set[i];
-            let dst = vec_set.get_mut(i);
-            dst.copy_from_slice(&src[..clipped_dim]);
+        let mut vec_set = VecSet::with_capacity(clipped_dim, raw_vec_set.len());
+        for vec in raw_vec_set.iter() {
+            vec_set.push(&vec[..clipped_dim]);
         }
         let dist = DistanceAlgorithm::L2Sqr;
         let ivf_config = IVFConfig {

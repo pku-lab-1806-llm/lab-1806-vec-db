@@ -1,3 +1,4 @@
+use core::f32;
 use std::ops::Range;
 
 use crate::{
@@ -54,22 +55,16 @@ impl<T: Scalar> KMeans<T> {
     fn k_means_init(vec_set: &VecSet<T>, config: &KMeansConfig, rng: &mut impl Rng) -> VecSet<T> {
         let k = config.k;
         let dist = config.dist;
-        let selected = match &config.selected {
-            Some(selected) => selected.clone(),
-            None => 0..vec_set.dim(),
+        let (l, r, dim) = match &config.selected {
+            Some(selected) => (selected.start, selected.end, selected.len()),
+            None => (0, vec_set.dim(), vec_set.dim()),
         };
-        let mut centroids = VecSet::zeros(selected.len(), k);
-        centroids.put(
-            0,
-            &vec_set[rng.gen_range(0..vec_set.len())][selected.clone()],
-        );
-        let mut weight = vec![0_f32; vec_set.len()];
-        for (v, w) in vec_set.iter().zip(weight.iter_mut()) {
-            *w = dist.d(&centroids[0], &v[selected.clone()]);
-        }
+        let mut centroids = VecSet::with_capacity(dim, k);
+        centroids.push(&vec_set[rng.gen_range(0..vec_set.len())][l..r]);
+        let mut weight = vec![f32::INFINITY; vec_set.len()];
         for idx in 1..k {
             for (v, w) in vec_set.iter().zip(weight.iter_mut()) {
-                *w = w.min(dist.d(&centroids[idx - 1], &v[selected.clone()]));
+                *w = w.min(dist.d(&centroids[idx - 1], &v[l..r]));
             }
             // Randomly choose the next centroid with probability proportional to the distance.
             // If all weights are zero, choose randomly.
@@ -77,7 +72,7 @@ impl<T: Scalar> KMeans<T> {
                 .map(|d| d.sample(rng))
                 .unwrap_or(rng.gen_range(0..vec_set.len()));
 
-            centroids.put(idx, &vec_set[c][selected.clone()]);
+            centroids.push(&vec_set[c][l..r]);
         }
         centroids
     }
@@ -96,28 +91,28 @@ impl<T: Scalar> KMeans<T> {
             "The selected range should be in the range [0, vec_set.dim())"
         );
         let mut centroids = Self::k_means_init(vec_set, &config, rng);
-        let selected = match &config.selected {
-            Some(selected) => selected.clone(),
-            None => 0..vec_set.dim(),
+        let (l, r, dim) = match &config.selected {
+            Some(selected) => (selected.start, selected.end, selected.len()),
+            None => (0, vec_set.dim(), vec_set.dim()),
         };
 
         for _ in 0..config.max_iter {
             // Use f32 to avoid overflow when summing up.
-            let mut new_centroids = VecSet::<f32>::zeros(selected.len(), config.k);
+            let mut new_centroid_sums = VecSet::<f32>::new(dim, vec![0.0; config.k * dim]);
             let mut count = vec![0; config.k];
 
             for v in vec_set.iter() {
-                let v = &v[selected.clone()];
+                let v = &v[l..r];
                 let min_idx = find_nearest_base(v, &centroids, &config.dist);
 
                 count[min_idx] += 1;
-                let c = new_centroids.get_mut(min_idx);
+                let c = new_centroid_sums.get_mut(min_idx);
                 for (c, v) in c.iter_mut().zip(v.iter()) {
                     *c += v.cast_to_f32();
                 }
             }
             for i in 0..config.k {
-                let c = new_centroids.get_mut(i);
+                let c = new_centroid_sums.get_mut(i);
                 if count[i] == 0 {
                     // If there is no vector assigned to the centroid, keep the centroid unchanged.
                     for (nc, c) in c.iter_mut().zip(centroids[i].iter()) {
@@ -128,7 +123,7 @@ impl<T: Scalar> KMeans<T> {
                 let n = count[i] as f32;
                 c.iter_mut().for_each(|v| *v /= n);
             }
-            let new_centroids = new_centroids.to_type::<T>();
+            let new_centroids = new_centroid_sums.to_type::<T>();
             let mut max_diff = 0_f32;
             for (c, nc) in centroids.iter().zip(new_centroids.iter()) {
                 max_diff = max_diff.max(config.dist.d(c, nc));
