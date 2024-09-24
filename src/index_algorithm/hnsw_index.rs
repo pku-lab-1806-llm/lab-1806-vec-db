@@ -86,7 +86,7 @@ pub struct HNSWIndex<T> {
     /// The number of vectors marked as deleted.
     pub num_deleted: usize,
     /// The maximum level of the index.
-    pub max_level: Option<usize>,
+    pub enter_level: Option<usize>,
     /// The enter point of the search.
     pub enter_point: Option<usize>,
 }
@@ -195,9 +195,7 @@ impl<T: Scalar> HNSWIndex<T> {
         }
     }
     /// Push a vector to the index and initialize:
-    ///
-    /// vec_set, level0_links, other_links, links_len,
-    /// vec_level, max_level, enter_point.
+    /// vec_set, level0_links, other_links, links_len, vec_level.
     ///
     /// Returns the index of the vector. The links are initialized to empty.
     fn push_init(&mut self, vec: &[T], level: usize) -> usize {
@@ -211,11 +209,16 @@ impl<T: Scalar> HNSWIndex<T> {
 
         idx
     }
+    /// Update the enter point and the enter level.
+    /// Called after adding a vector to the index.
     fn _update_enter_point(&mut self, vec_idx: usize) {
         let level = self.vec_level[vec_idx];
 
-        if self.max_level.map_or(true, |max_level| level > max_level) {
-            self.max_level = Some(level);
+        if self
+            .enter_level
+            .map_or(true, |enter_level| level > enter_level)
+        {
+            self.enter_level = Some(level);
             self.enter_point = Some(vec_idx);
         }
     }
@@ -269,8 +272,8 @@ impl<T: Scalar> HNSWIndex<T> {
     ///
     /// Note: This does *NOT* search on level 0. So the result is *NOT* the final result.
     pub fn greedy_search_until_level0(&self, query: &[T]) -> usize {
-        let (mut level_idx, mut cur_p) = match (self.max_level, self.enter_point) {
-            (Some(max_level), Some(enter_point)) => (max_level, enter_point),
+        let (mut level_idx, mut cur_p) = match (self.enter_level, self.enter_point) {
+            (Some(enter_level), Some(enter_point)) => (enter_level, enter_point),
             _ => panic!("The index is empty."),
         };
         while level_idx > 0 {
@@ -372,7 +375,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
             vec_level,
             deleted_mark,
             num_deleted: 0,
-            max_level: None,
+            enter_level: None,
             enter_point: None,
         }
     }
