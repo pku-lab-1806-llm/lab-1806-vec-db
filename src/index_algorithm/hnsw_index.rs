@@ -105,8 +105,8 @@ impl<T: Scalar> HNSWIndex<T> {
         }
     }
     /// Get the length of the links of a vector at a specific level.
-    ///
-    /// Check if the level index is within the bounds.
+    /// - Check if the level index is within the bounds.
+    /// - Check if the length does not exceed the limit.
     fn get_links_len_checked(&self, vec_idx: usize, level_idx: usize) -> usize {
         assert!(level_idx <= self.vec_level[vec_idx], "Index out of bounds.");
         let len = self.links_len[vec_idx][level_idx];
@@ -178,6 +178,22 @@ impl<T: Scalar> HNSWIndex<T> {
         let links = links.iter().map(|p| p.index as u32).collect::<Vec<_>>();
         self._put_links(vec_idx, level_idx, &links);
     }
+    /// Connect new links to a vector at a specific level. (Used during adding a vector)
+    fn _connect_new_links(&mut self, vec_idx: usize, level_idx: usize, candidates: ResultSet) {
+        assert!(
+            self.get_links_len_checked(vec_idx, level_idx) == 0,
+            "Links are not empty."
+        );
+        let dist = self.config.dist;
+        // Initial number of neighbors is limited to M, not max_M0 even at level 0.
+        let m = self.config.m;
+        let neighbors = candidates.heuristic(m, &self.vec_set, dist);
+        let neighbors = neighbors.iter().map(|p| p.index as u32).collect::<Vec<_>>();
+        self._put_links(vec_idx, level_idx, &neighbors);
+        for neighbor in neighbors {
+            self._push_link_or_heuristic(neighbor as usize, level_idx, vec_idx);
+        }
+    }
     /// Push a vector to the index and initialize:
     ///
     /// vec_set, level0_links, other_links, links_len,
@@ -193,12 +209,15 @@ impl<T: Scalar> HNSWIndex<T> {
         self.vec_level.push(level);
         self.deleted_mark.push(false);
 
+        idx
+    }
+    fn _update_enter_point(&mut self, vec_idx: usize) {
+        let level = self.vec_level[vec_idx];
+
         if self.max_level.map_or(true, |max_level| level > max_level) {
             self.max_level = Some(level);
-            self.enter_point = Some(idx);
+            self.enter_point = Some(vec_idx);
         }
-
-        idx
     }
     /// Delete a vector from the index by setting a deleted mark.
     pub fn soft_delete(&mut self, idx: usize) {
