@@ -51,5 +51,5 @@ fn main() -> Result<()> {
 }
 
 // GIST_DIR=/path/to/gist
-// cargo r -r --bin convert_fvecs -- $GIST_DIR/train.fvecs -o data/gist_train_10000.local.bin -l 10000
-// cargo r -r --bin convert_fvecs -- $GIST_DIR/test.fvecs -o data/gist_test.local.bin
+// cargo r -r --bin convert_fvecs -- $GIST_DIR/train.fvecs -o data/gist_10000.local.bin -l 10000
+// cargo r -r --bin convert_fvecs -- $GIST_DIR/test.fvecs -o data/gist_test.bin

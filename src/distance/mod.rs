@@ -4,6 +4,11 @@ use crate::scalar::Scalar;
 
 use serde::{Deserialize, Serialize};
 
+pub mod prelude {
+    // All Distance Traits & Algorithms
+    pub use super::{DistanceAdapter, DistanceAlgorithm, SliceDistance};
+}
+
 /// Distance algorithm to be used in the vector database.
 ///
 /// See also `DistanceAlgorithm::d()`.

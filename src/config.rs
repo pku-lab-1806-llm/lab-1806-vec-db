@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crate::{
     distance::DistanceAlgorithm,
     index_algorithm::{hnsw_index::HNSWConfig, ivf_index::IVFConfig},
@@ -39,6 +41,18 @@ pub struct VecDataConfig {
     /// *Optional:* The maximum number of vectors to be loaded.
     pub limit: Option<usize>,
 }
+impl VecDataConfig {
+    pub fn load_from_toml_file(file_path: impl AsRef<Path>) -> Result<Self> {
+        let content = std::fs::read_to_string(file_path.as_ref()).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to read the TOML file at {}: {}",
+                file_path.as_ref().display(),
+                e.to_string()
+            )
+        })?;
+        Ok(toml::from_str(&content)?)
+    }
+}
 
 /// The configuration of the vector database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,11 +66,11 @@ pub struct DBConfig {
 }
 
 impl DBConfig {
-    pub fn load_from_toml_file(file_path: &str) -> Result<Self> {
-        let content = std::fs::read_to_string(file_path).map_err(|e| {
+    pub fn load_from_toml_file(file_path: impl AsRef<Path>) -> Result<Self> {
+        let content = std::fs::read_to_string(file_path.as_ref()).map_err(|e| {
             anyhow::anyhow!(
                 "Failed to read the TOML file at {}: {}",
-                file_path,
+                file_path.as_ref().display(),
                 e.to_string()
             )
         })?;
@@ -71,6 +85,9 @@ mod tests {
     #[test]
     fn test_load_from_toml_file() {
         let config = DBConfig::load_from_toml_file("config/db_config.toml").unwrap();
+        println!("{:#?}", config);
+
+        let config = VecDataConfig::load_from_toml_file("config/gist_test.toml").unwrap();
         println!("{:#?}", config);
     }
 }
