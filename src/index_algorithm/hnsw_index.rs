@@ -471,6 +471,8 @@ impl<T: Scalar> IndexSerde for HNSWIndex<T> {
 
 #[cfg(test)]
 mod test {
+    use std::fs;
+
     use anyhow::Result;
     use rand::SeedableRng;
 
@@ -546,6 +548,8 @@ mod test {
         assert_eq!(result.len(), k.min(index.len()));
 
         assert!(result.windows(2).all(|w| w[0].distance <= w[1].distance));
+
+        fs::remove_file(path)?;
         Ok(())
     }
 }

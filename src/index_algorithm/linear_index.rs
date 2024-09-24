@@ -65,6 +65,8 @@ impl<T: Scalar> IndexSerde for LinearIndex<T> {}
 
 #[cfg(test)]
 mod test {
+    use std::fs;
+
     use anyhow::Result;
     use rand::SeedableRng;
 
@@ -123,6 +125,7 @@ mod test {
         assert!(result[0].distance.abs() < 1e-6);
 
         assert!(result.windows(2).all(|w| w[0].distance <= w[1].distance));
+        fs::remove_file(path)?;
         Ok(())
     }
 }

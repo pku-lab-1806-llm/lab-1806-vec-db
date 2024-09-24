@@ -256,7 +256,10 @@ impl TryFrom<DynamicVecSet> for VecSet<u8> {
 
 #[cfg(test)]
 mod test {
-    use std::{fs::create_dir_all, path::PathBuf};
+    use std::{
+        fs::{self, create_dir_all},
+        path::PathBuf,
+    };
 
     use anyhow::anyhow;
 
@@ -314,6 +317,7 @@ mod test {
         let loaded_vec_set = VecSet::<f32>::load_raw_file(2, None, &file_path)?;
 
         assert_eq!(loaded_vec_set.data, vec_set.data);
+        fs::remove_file(&file_path)?;
         Ok(())
     }
 }

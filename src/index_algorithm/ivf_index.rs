@@ -104,6 +104,8 @@ impl<T: Scalar> IndexFromVecSet<T> for IVFIndex<T> {
 impl<T: Scalar> IndexSerde for IVFIndex<T> {}
 #[cfg(test)]
 mod test {
+    use std::fs;
+
     use crate::config::DBConfig;
     use anyhow::{Ok, Result};
     use rand::prelude::*;
@@ -147,6 +149,7 @@ mod test {
         for (id, cluster) in index.clusters.iter().enumerate() {
             println!("cluster id: {}, cluster size: {}", id, cluster.len());
         }
+        fs::remove_file(path)?;
         Ok(())
     }
 }
