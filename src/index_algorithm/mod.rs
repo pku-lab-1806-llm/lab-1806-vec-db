@@ -10,6 +10,10 @@ use crate::{
     scalar::Scalar,
     vec_set::VecSet,
 };
+pub mod prelude {
+    // All Index Traits
+    pub use super::{IndexBuilder, IndexFromVecSet, IndexIter, IndexKNN, IndexSerde};
+}
 
 pub mod hnsw_index;
 pub mod ivf_index;

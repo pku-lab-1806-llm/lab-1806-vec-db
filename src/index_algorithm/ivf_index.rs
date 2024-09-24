@@ -12,7 +12,7 @@ use crate::{
     vec_set::VecSet,
 };
 
-use super::{IndexFromVecSet, IndexIter, IndexSerde};
+use super::prelude::*;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IVFConfig {
     /// The number of clusters.
@@ -138,7 +138,7 @@ mod test {
         let index = IVFIndex::from_vec_set(vec_set, dist, ivf_config, &mut rng);
 
         // Save and load the index. >>>>
-        let path = "config/example/ivf_index.test.bin";
+        let path = "data/example/ivf_index.test.bin";
         index.save(path)?;
 
         let index = IVFIndex::<f32>::load(path)?;

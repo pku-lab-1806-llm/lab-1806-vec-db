@@ -4,7 +4,7 @@ use lab_1806_vec_db::{
     distance::DistanceAlgorithm,
     index_algorithm::{
         hnsw_index::HNSWIndex, linear_index::LinearIndex, IndexBuilder, IndexFromVecSet, IndexIter,
-        IndexKNN, IndexSerde,
+        IndexKNN,
     },
     vec_set::VecSet,
 };
@@ -41,15 +41,6 @@ fn main() -> Result<()> {
 
     // Test the HNSWIndex by comparing with LinearIndex.
     let linear_index = LinearIndex::from_vec_set(vec_set, dist, (), &mut rng);
-
-    // Save and load the index. >>>>
-    println!("Saving the index...");
-    let path = "config/example/linear_index.test.bin";
-    index.save(path)?;
-
-    let index = HNSWIndex::<f32>::load(path)?;
-    println!("Loaded the index.");
-    // <<<< Save and load the index.
 
     let k = 6;
     let query_index = 200;

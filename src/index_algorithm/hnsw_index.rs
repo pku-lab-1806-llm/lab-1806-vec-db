@@ -13,7 +13,7 @@ use crate::{
     vec_set::VecSet,
 };
 
-use super::{CandidatePair, IndexBuilder, IndexIter, IndexKNN, IndexSerde};
+use super::{prelude::*, CandidatePair};
 
 /// The configuration of the HNSW (Hierarchical Navigable Small World) algorithm.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -519,7 +519,7 @@ mod test {
 
         // Save and load the index. >>>>
         println!("Saving the index...");
-        let path = "config/example/linear_index.test.bin";
+        let path = "data/example/hnsw_index.test.bin";
         index.save(path)?;
 
         let index = HNSWIndex::<f32>::load(path)?;
