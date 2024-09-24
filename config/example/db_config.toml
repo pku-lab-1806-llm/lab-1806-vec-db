@@ -1,8 +1,8 @@
 distance = "L2Sqr"
 
 [algorithm.HNSW]
-num_elements = 1000000
-max_elements = 1000000
+# max_elements = 1000000
+max_elements = 1000
 ef_construction = 200
 M = 16
 

@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{collections::HashMap, ops::Index};
 
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,7 @@ use crate::{
     vec_set::VecSet,
 };
 
-use super::{IndexAlgorithmTrait, ResponsePair};
+use super::{IndexFromVecSet, IndexIter, IndexSerde};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IVFConfig {
     /// The number of clusters.
@@ -23,46 +23,70 @@ pub struct IVFConfig {
     pub k_means_tol: f32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IVFIndex<T> {
     /// The distance algorithm.
     pub dist: DistanceAlgorithm,
     /// The configuration of the index.
-    pub config: Rc<IVFConfig>,
+    pub config: IVFConfig,
     /// The vector sets of the clusters. Length: k.
     pub clusters: Vec<VecSet<T>>,
     /// K-means struct for the centroids.
     pub k_means: KMeans<T>,
+    /// The number of vectors in the index.
+    pub num_vec: usize,
+    /// Map index -> (cluster_id, cluster_index).
+    pub index_map: HashMap<usize, (usize, usize)>,
+}
+impl<T: Scalar> Index<usize> for IVFIndex<T> {
+    type Output = [T];
+
+    fn index(&self, index: usize) -> &Self::Output {
+        let (cluster_id, cluster_index) = self.index_map[&index];
+        &self.clusters[cluster_id][cluster_index]
+    }
+}
+impl<T: Scalar> IndexIter<T> for IVFIndex<T> {
+    fn dim(&self) -> usize {
+        self.k_means.centroids.dim()
+    }
+    fn len(&self) -> usize {
+        self.num_vec
+    }
 }
 
-impl<T: Scalar> IndexAlgorithmTrait<T> for IVFIndex<T> {
+impl<T: Scalar> IndexFromVecSet<T> for IVFIndex<T> {
     type Config = IVFConfig;
 
     fn from_vec_set(
-        vec_set: Rc<VecSet<T>>,
+        vec_set: VecSet<T>,
         dist: DistanceAlgorithm,
-        config: Rc<Self::Config>,
+        config: Self::Config,
         rng: &mut impl Rng,
     ) -> Self {
+        let num_vec = vec_set.len();
         let k = config.k;
-        let k_means_config = Rc::new(KMeansConfig {
+        let k_means_config = KMeansConfig {
             k,
             max_iter: config.k_means_max_iter,
             tol: config.k_means_tol,
             dist,
             selected: None,
-        });
+        };
         let k_means = KMeans::from_vec_set(&vec_set, k_means_config, rng);
         let mut clusters = vec![vec![]; k];
+        let mut index_map = HashMap::new();
         for (i, v) in vec_set.iter().enumerate() {
             let idx = k_means.find_nearest(v);
+            index_map.insert(i, (idx, clusters[idx].len()));
             clusters[idx].push(i);
         }
         let clusters = clusters
             .into_iter()
             .map(|ids| {
-                let mut cluster = VecSet::zeros(vec_set.dim(), ids.len());
-                for (i, vec_id) in ids.iter().enumerate() {
-                    cluster.put(i, &vec_set[*vec_id]);
+                let mut cluster = VecSet::with_capacity(vec_set.dim(), ids.len());
+                for id in ids {
+                    cluster.push(&vec_set[id]);
                 }
                 cluster
             })
@@ -72,14 +96,12 @@ impl<T: Scalar> IndexAlgorithmTrait<T> for IVFIndex<T> {
             config,
             clusters,
             k_means,
+            num_vec,
+            index_map,
         }
     }
-
-    fn knn(&self, _: &[T], _: usize) -> Vec<ResponsePair> {
-        unimplemented!("IVFIndex::knn is not implemented yet.");
-    }
 }
-
+impl<T: Scalar> IndexSerde for IVFIndex<T> {}
 #[cfg(test)]
 mod test {
     use crate::config::DBConfig;
@@ -101,22 +123,27 @@ mod test {
 
         let clipped_dim = raw_vec_set.dim().min(12);
 
-        let mut vec_set = VecSet::zeros(clipped_dim, raw_vec_set.len());
-        for i in 0..raw_vec_set.len() {
-            let src = &raw_vec_set[i];
-            let dst = vec_set.get_mut(i);
-            dst.copy_from_slice(&src[..clipped_dim]);
+        let mut vec_set = VecSet::with_capacity(clipped_dim, raw_vec_set.len());
+        for vec in raw_vec_set.iter() {
+            vec_set.push(&vec[..clipped_dim]);
         }
         let dist = DistanceAlgorithm::L2Sqr;
-        let ivf_config = Rc::new(IVFConfig {
+        let ivf_config = IVFConfig {
             k: 3,
             k_means_max_iter: 20,
             k_means_tol: 1e-6,
-        });
+        };
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let vec_set = Rc::new(vec_set);
 
         let index = IVFIndex::from_vec_set(vec_set, dist, ivf_config, &mut rng);
+
+        // Save and load the index. >>>>
+        let path = "config/example/ivf_index.test.bin";
+        index.save(path)?;
+
+        let index = IVFIndex::<f32>::load(path)?;
+        // <<<< Save and load the index.
+
         for (id, cluster) in index.clusters.iter().enumerate() {
             println!("cluster id: {}, cluster size: {}", id, cluster.len());
         }
