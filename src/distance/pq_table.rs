@@ -386,7 +386,7 @@ mod test {
         // Try `cargo r -r --example pq_table_test` for release mode testing,
         // which provides more accurate results.
 
-        let file_path = "config/example/db_config.toml";
+        let file_path = "config/db_config.toml";
         let mut config = DBConfig::load_from_toml_file(file_path)?;
 
         config.vec_data.limit = Some(64);

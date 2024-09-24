@@ -187,7 +187,7 @@ impl VecSet<u8> {
 ///     scalar::Scalar,
 /// };
 ///
-/// let file_path = "config/example/db_config.toml";
+/// let file_path = "config/db_config.toml";
 /// let config = DBConfig::load_from_toml_file(file_path).unwrap();
 /// let vec_set = DynamicVecSet::load_with(&config.vec_data).unwrap();
 /// // Or directly determine the data type at compile time.
@@ -278,7 +278,7 @@ mod test {
     #[test]
     #[should_panic(expected = "Failed to convert to VecSet<u8>.")]
     fn data_type_mismatched_test() {
-        let file_path = "config/example/db_config.toml";
+        let file_path = "config/db_config.toml";
         let config = DBConfig::load_from_toml_file(file_path).unwrap();
         println!("Loaded config: {:#?}", config);
         VecSet::<u8>::load_with(&config.vec_data).unwrap();
@@ -288,7 +288,7 @@ mod test {
     fn load_vec_set_test() -> Result<()> {
         // See also the `match` usage in the doc test of `DynamicVecSet`.
 
-        let file_path = "config/example/db_config.toml";
+        let file_path = "config/db_config.toml";
         let config = DBConfig::load_from_toml_file(file_path)?;
         println!("Loaded config: {:#?}", config);
         let vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
@@ -305,7 +305,7 @@ mod test {
 
     #[test]
     fn save_vec_set_test() -> Result<()> {
-        let file_path = PathBuf::from("data/example/test_vec_set.test.bin");
+        let file_path = PathBuf::from("data/test_vec_set.tmp.bin");
         let dir = file_path.parent().ok_or_else(|| anyhow!("Invalid path."))?;
         create_dir_all(dir)?;
 

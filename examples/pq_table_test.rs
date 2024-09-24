@@ -66,7 +66,7 @@ fn pq_table_test_on_real_set_base<T: Scalar>(
 }
 
 fn main() -> Result<()> {
-    let file_path = "config/example/db_config.toml";
+    let file_path = "config/db_config.toml";
     let config = DBConfig::load_from_toml_file(file_path)?;
 
     let vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
