@@ -87,6 +87,10 @@ impl ResultSet {
     pub fn into_sorted_vec(self) -> Vec<CandidatePair> {
         self.results.into_iter().collect()
     }
+    /// Convert the result set into a sorted vector with a limit.
+    pub fn into_sorted_vec_limit(self, limit: usize) -> Vec<CandidatePair> {
+        self.results.into_iter().take(limit).collect()
+    }
 
     /// Pick at most m candidates as new neighbors heuristically.
     pub fn heuristic<T: Scalar>(

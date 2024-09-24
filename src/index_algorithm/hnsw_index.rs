@@ -232,8 +232,13 @@ impl<T: Scalar> HNSWIndex<T> {
         self.deleted_mark[idx]
     }
     /// Search on specific level for adding a vector.
-    fn construction_search(&self, enter_point: usize, level: usize, query: &[T]) -> ResultSet {
-        let ef = self.config.ef_construction;
+    fn search_on_level(
+        &self,
+        enter_point: usize,
+        level: usize,
+        ef: usize,
+        query: &[T],
+    ) -> ResultSet {
         let dist = self.config.dist;
         let mut visited = HashSet::new();
         let mut queue = BTreeSet::new();
@@ -415,8 +420,9 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         } else {
             enter_point
         };
+        let ef = self.config.ef_construction;
         for level in (0..=level.min(enter_level)).rev() {
-            let candidates = self.construction_search(cur_p, level, vec);
+            let candidates = self.search_on_level(cur_p, level, ef, vec);
             // Choose the nearest neighbor as the enter point of the next level.
             cur_p = candidates.results.first().unwrap().index;
             self.connect_new_links(idx, level, candidates);
@@ -432,8 +438,15 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
 }
 
 impl<T: Scalar> IndexKNN<T> for HNSWIndex<T> {
-    fn knn(&self, _query: &[T], _k: usize) -> Vec<CandidatePair> {
-        unimplemented!("HNSWIndex::knn")
+    fn knn(&self, query: &[T], k: usize) -> Vec<CandidatePair> {
+        if self.len() == 0 {
+            return Vec::new();
+        }
+        let ef = self.config.ef.max(k);
+        let level = 0;
+        let enter_point = self.greedy_search_until_level(level, query);
+        let result = self.search_on_level(enter_point, level, ef, query);
+        result.into_sorted_vec_limit(k)
     }
 }
 
