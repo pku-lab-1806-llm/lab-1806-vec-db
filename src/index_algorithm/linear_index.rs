@@ -99,7 +99,7 @@ mod test {
         let index = LinearIndex::from_vec_set(vec_set, dist, (), &mut rng);
 
         // Save and load the index. >>>>
-        let path = "data/linear_index.test.bin";
+        let path = "data/linear_index.tmp.bin";
         index.save(path)?;
 
         let index = LinearIndex::<f32>::load(path)?;

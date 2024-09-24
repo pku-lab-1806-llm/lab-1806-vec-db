@@ -140,7 +140,7 @@ mod test {
         let index = IVFIndex::from_vec_set(vec_set, dist, ivf_config, &mut rng);
 
         // Save and load the index. >>>>
-        let path = "data/ivf_index.test.bin";
+        let path = "data/ivf_index.tmp.bin";
         index.save(path)?;
 
         let index = IVFIndex::<f32>::load(path)?;

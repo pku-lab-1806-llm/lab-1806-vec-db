@@ -521,7 +521,7 @@ mod test {
 
         // Save and load the index. >>>>
         println!("Saving the index...");
-        let path = "data/hnsw_index.test.bin";
+        let path = "data/hnsw_index.tmp.bin";
         index.save(path)?;
 
         let index = HNSWIndex::<f32>::load(path)?;

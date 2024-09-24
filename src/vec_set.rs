@@ -305,7 +305,7 @@ mod test {
 
     #[test]
     fn save_vec_set_test() -> Result<()> {
-        let file_path = PathBuf::from("data/test_vec_set.test.bin");
+        let file_path = PathBuf::from("data/test_vec_set.tmp.bin");
         let dir = file_path.parent().ok_or_else(|| anyhow!("Invalid path."))?;
         create_dir_all(dir)?;
 
