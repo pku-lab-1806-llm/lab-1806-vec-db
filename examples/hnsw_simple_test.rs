@@ -3,8 +3,7 @@ use lab_1806_vec_db::{
     config::{DBConfig, IndexAlgorithmConfig},
     distance::DistanceAlgorithm,
     index_algorithm::{
-        hnsw_index::HNSWIndex, linear_index::LinearIndex, IndexBuilder, IndexFromVecSet, IndexIter,
-        IndexKNN,
+        hnsw_index::HNSWIndex, linear_index::LinearIndex, IndexFromVecSet, IndexIter, IndexKNN,
     },
     vec_set::VecSet,
 };
@@ -30,10 +29,7 @@ fn main() -> Result<()> {
     };
 
     let construction_start = std::time::Instant::now();
-    let mut index = HNSWIndex::<f32>::new(vec_set.dim(), dist, config);
-    for vec in vec_set.iter() {
-        index.add(vec, &mut rng);
-    }
+    let index = HNSWIndex::from_vec_set(vec_set.clone(), dist, config, &mut rng);
     println!(
         "Construction time: {:.2} seconds",
         construction_start.elapsed().as_secs_f64()
@@ -64,3 +60,4 @@ fn main() -> Result<()> {
     assert!(result.windows(2).all(|w| w[0].distance <= w[1].distance));
     Ok(())
 }
+// cargo r -r --example hnsw_simple_test

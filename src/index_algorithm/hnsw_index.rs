@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeSet, HashSet},
     ops::Index,
+    thread, vec,
 };
 
 use rand::Rng;
@@ -44,11 +45,15 @@ pub struct HNSWInnerConfig {
     /// The number of neighbors to search during construction.
     pub ef_construction: usize,
     /// The number of neighbors to check during search.
-    pub ef: usize,
+    pub default_ef: usize,
     /// inv_log_m = 1 / ln(M)$.
     ///
     /// rand_level = floor(-ln(rand_uniform(0.0,1.0)) * inv_log_m)
     pub inv_log_m: f32,
+    /// The threshold to start batch operations.
+    pub start_batch_since: usize,
+    /// The inner batch size for batch operations.
+    pub inner_batch_size: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -337,6 +342,70 @@ impl<T: Scalar> HNSWIndex<T> {
             self.deleted_mark.reserve(num_reserve);
         }
     }
+    /// Batch add vectors to the index.
+    fn inner_batch_add(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize> {
+        let n = vec_list.len();
+        if self.len() < self.config.start_batch_since || n < 3 {
+            // At the beginning, we choose to add vectors one by one.
+            // Or if vec_list is too small, batch add is not efficient.
+            return vec_list.iter().map(|vec| self.add(vec, rng)).collect();
+        }
+        let mut indices = Vec::with_capacity(n);
+        let dist = self.config.dist;
+        for &vec in vec_list.iter() {
+            let level = self.rand_level(rng);
+            let idx = self.push_init(vec, level);
+            indices.push(idx);
+        }
+        let (sender, receiver) = std::sync::mpsc::channel();
+        thread::scope(|s| {
+            for idx in indices.iter() {
+                s.spawn(|| {
+                    let idx = *idx;
+                    let level = self.vec_level[idx];
+                    let vec = &self[idx];
+                    // Index is not null, so unwrap is safe.
+                    let enter_point = self.enter_point.unwrap();
+                    let enter_level = self.enter_level.unwrap();
+                    let mut cached_dist = Vec::new();
+                    for (&rhs_idx, &rhs_vec) in indices.iter().zip(vec_list.iter()) {
+                        if rhs_idx < idx {
+                            cached_dist.push((rhs_idx, dist.d(vec, rhs_vec)));
+                        }
+                    }
+
+                    let mut cur_p = if level < enter_level {
+                        self.greedy_search_until_level(level, vec)
+                    } else {
+                        enter_point
+                    };
+                    let ef = self.config.ef_construction;
+                    for level in (0..=level.min(enter_level)).rev() {
+                        let mut candidates = self.search_on_level(cur_p, level, ef, vec);
+                        // Choose the nearest neighbor as the enter point of the next level.
+                        cur_p = candidates.results.first().unwrap().index;
+                        for &(rhs_idx, rhs_dist) in cached_dist.iter() {
+                            if self.vec_level[rhs_idx] < level {
+                                continue;
+                            }
+                            // Consider the new vector as a candidate.
+                            let new_pair = CandidatePair::new(rhs_idx, rhs_dist);
+                            candidates.add(new_pair);
+                        }
+                        sender.send((idx, level, candidates)).unwrap();
+                    }
+                });
+            }
+        });
+        // Drop the sender to close the channel.
+        drop(sender);
+        let mut candidates = receiver.iter().collect::<Vec<_>>();
+        candidates.sort_by_key(|&(idx, level, _)| (idx, level));
+        for (idx, level, candidates) in candidates {
+            self.connect_new_links(idx, level, candidates);
+        }
+        indices
+    }
 }
 impl<T: Scalar> Index<usize> for HNSWIndex<T> {
     type Output = [T];
@@ -365,8 +434,10 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         );
         let max_m0 = m * 2;
         let ef_construction = config.ef_construction.max(m);
-        let ef = 10;
+        let default_ef = 10;
         let inv_log_m = 1.0 / (m as f32).ln();
+        let start_batch_since = 1000;
+        let inner_batch_size = 20;
 
         let vec_set = VecSet::<T>::with_capacity(dim, max_elements);
         let level0_links = Vec::with_capacity(max_elements);
@@ -383,8 +454,10 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
                 ef_construction,
                 m,
                 max_m0,
-                ef,
+                default_ef,
                 inv_log_m,
+                start_batch_since,
+                inner_batch_size,
             },
             vec_set,
             level0_links,
@@ -435,21 +508,31 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         }
         idx
     }
+    fn batch_add(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize> {
+        vec_list
+            .chunks(self.config.inner_batch_size)
+            .flat_map(|chunk| self.inner_batch_add(chunk, rng))
+            .collect()
+    }
 }
 
 impl<T: Scalar> IndexKNN<T> for HNSWIndex<T> {
     fn knn(&self, query: &[T], k: usize) -> Vec<CandidatePair> {
+        self.knn_with_ef(query, k, self.config.default_ef)
+    }
+}
+impl<T: Scalar> IndexKNNWithEf<T> for HNSWIndex<T> {
+    fn knn_with_ef(&self, query: &[T], k: usize, ef: usize) -> Vec<CandidatePair> {
         if self.len() == 0 {
             return Vec::new();
         }
-        let ef = self.config.ef.max(k);
+        let ef = ef.max(k);
         let level = 0;
         let enter_point = self.greedy_search_until_level(level, query);
         let result = self.search_on_level(enter_point, level, ef, query);
         result.into_sorted_vec_limit(k)
     }
 }
-
 impl<T: Scalar> IndexSerde for HNSWIndex<T> {
     /// Save the index to the file.
     ///
@@ -466,6 +549,22 @@ impl<T: Scalar> IndexSerde for HNSWIndex<T> {
         index.reset_max_elements(new_max_elements, true);
 
         Ok(index)
+    }
+}
+impl<T: Scalar> IndexFromVecSet<T> for HNSWIndex<T> {
+    type Config = HNSWConfig;
+
+    /// Create an index from a vector set.
+    fn from_vec_set(
+        vec_set: VecSet<T>,
+        dist: DistanceAlgorithm,
+        config: Self::Config,
+        rng: &mut impl Rng,
+    ) -> Self {
+        let mut index = Self::new(vec_set.dim(), dist, config);
+        let vec_refs: Vec<&[T]> = vec_set.iter().collect();
+        index.batch_add(&vec_refs, rng);
+        index
     }
 }
 
@@ -507,16 +606,14 @@ mod test {
         // Limit the dimension for testing.
         let clipped_dim = raw_vec_set.dim().min(12);
 
-        let mut index = HNSWIndex::<f32>::new(clipped_dim, dist, config);
-
         // Clipped vector set.
         let mut vec_set = VecSet::with_capacity(clipped_dim, raw_vec_set.len());
         for vec in raw_vec_set.iter() {
-            index.add(&vec[..clipped_dim], &mut rng);
             vec_set.push(&vec[..clipped_dim]);
         }
 
         // Test the HNSWIndex by comparing with LinearIndex.
+        let index = HNSWIndex::<f32>::from_vec_set(vec_set.clone(), dist, config, &mut rng);
         let linear_index = linear_index::LinearIndex::from_vec_set(vec_set, dist, (), &mut rng);
 
         // Save and load the index. >>>>

@@ -11,3 +11,7 @@ ordered-float = { version = "4.2.2", features = ["serde"] }
 rand = "0.8.5"
 serde = { version = "1.0.206", features = ["derive"] }
 toml = "0.8.19"
+
+
+[dev-dependencies]
+plotly = "0.10.0"

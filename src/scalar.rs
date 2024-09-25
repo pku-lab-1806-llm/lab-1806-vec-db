@@ -9,6 +9,10 @@ use std::{
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+pub mod prelude {
+    pub use super::{BinaryScalar, Scalar};
+}
+
 /// Trait for scalar types.
 /// Scalar types are used in the vector set.
 /// Scalar trait contains the basic operations for scalar types.
@@ -34,6 +38,8 @@ pub trait Scalar:
     + PartialEq
     + PartialOrd
     + Serialize
+    + Send
+    + Sync
     + for <'de> Deserialize<'de>
 {
     /// Cast a float value to the scalar type. *Alias for `as`.*
