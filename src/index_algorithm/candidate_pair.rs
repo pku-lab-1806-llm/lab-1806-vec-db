@@ -125,9 +125,8 @@ impl GroundTruthRow {
     /// Recall of the result set.
     ///
     /// Correctly recalled / Total number of ground truth.
-    pub fn recall(&self, result_set: &ResultSet) -> f32 {
-        let pred = result_set
-            .results
+    pub fn recall(&self, result: &Vec<CandidatePair>) -> f32 {
+        let pred = result
             .iter()
             .map(|pair| pair.index)
             .collect::<BTreeSet<_>>();
@@ -155,6 +154,12 @@ impl GroundTruth {
     pub fn new() -> Self {
         Self { rows: Vec::new() }
     }
+    pub fn len(&self) -> usize {
+        self.rows.len()
+    }
+    pub fn iter(&self) -> std::slice::Iter<GroundTruthRow> {
+        self.rows.iter()
+    }
     /// Push a row to the ground truth.
     pub fn push(&mut self, result: Vec<CandidatePair>) {
         let indices = result.iter().map(|pair| pair.index).collect();
@@ -174,5 +179,13 @@ impl GroundTruth {
         let reader = std::io::BufReader::new(file);
         let ground_truth = bincode::deserialize_from(reader)?;
         Ok(ground_truth)
+    }
+}
+
+impl std::ops::Index<usize> for GroundTruth {
+    type Output = GroundTruthRow;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.rows[index]
     }
 }

@@ -59,6 +59,14 @@ pub trait IndexKNN<T: Scalar>: IndexIter<T> {
     /// Returns a vector of pairs of the index and the distance.
     /// The vector is sorted by the distance in ascending order.
     fn knn(&self, query: &[T], k: usize) -> Vec<CandidatePair>;
+
+    /// Same as `knn`, but with a search radius `ef`.
+    ///
+    /// Not available for all indexes.
+    /// when ef < k, ef will be set to k.
+    fn knn_with_ef(&self, _query: &[T], _k: usize, _ef: usize) -> Vec<CandidatePair> {
+        panic!("knn_with_ef is not available.");
+    }
 }
 
 /// The trait for index that can be built from a `VecSet`.

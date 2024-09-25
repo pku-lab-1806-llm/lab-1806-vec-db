@@ -44,7 +44,7 @@ pub struct HNSWInnerConfig {
     /// The number of neighbors to search during construction.
     pub ef_construction: usize,
     /// The number of neighbors to check during search.
-    pub ef: usize,
+    pub default_ef: usize,
     /// inv_log_m = 1 / ln(M)$.
     ///
     /// rand_level = floor(-ln(rand_uniform(0.0,1.0)) * inv_log_m)
@@ -365,7 +365,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         );
         let max_m0 = m * 2;
         let ef_construction = config.ef_construction.max(m);
-        let ef = 10;
+        let default_ef = 10;
         let inv_log_m = 1.0 / (m as f32).ln();
 
         let vec_set = VecSet::<T>::with_capacity(dim, max_elements);
@@ -383,7 +383,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
                 ef_construction,
                 m,
                 max_m0,
-                ef,
+                default_ef,
                 inv_log_m,
             },
             vec_set,
@@ -439,10 +439,13 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
 
 impl<T: Scalar> IndexKNN<T> for HNSWIndex<T> {
     fn knn(&self, query: &[T], k: usize) -> Vec<CandidatePair> {
+        self.knn_with_ef(query, k, self.config.default_ef)
+    }
+    fn knn_with_ef(&self, query: &[T], k: usize, ef: usize) -> Vec<CandidatePair> {
         if self.len() == 0 {
             return Vec::new();
         }
-        let ef = self.config.ef.max(k);
+        let ef = ef.max(k);
         let level = 0;
         let enter_point = self.greedy_search_until_level(level, query);
         let result = self.search_on_level(enter_point, level, ef, query);
