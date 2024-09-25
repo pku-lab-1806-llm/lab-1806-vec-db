@@ -153,6 +153,7 @@ fn main() -> Result<()> {
     let test_set = VecSet::<f32>::load_with(&test_config)?;
     println!("Loaded test set (size: {}).", test_set.len());
 
+    let title = format!("HNSW Bench ({} elements)", train_set.len());
     let dist = DistanceAlgorithm::L2Sqr;
     let mut rng = rand::rngs::StdRng::seed_from_u64(42);
     let config = HNSWConfig {
@@ -166,10 +167,7 @@ fn main() -> Result<()> {
         Some(index) => index,
         None => {
             println!("Building index...");
-            let mut index = HNSWIndex::<f32>::new(train_set.dim(), dist, config);
-            for vec in train_set.iter() {
-                index.add(vec, &mut rng);
-            }
+            let index = HNSWIndex::from_vec_set(train_set, dist, config, &mut rng);
             println!("Indexing time: {:.3}s", start.elapsed().as_secs_f32());
             index.save(&args.index_cache)?;
             index
@@ -202,7 +200,6 @@ fn main() -> Result<()> {
         bench_result.push(ef, search_time, recall);
     }
     println!("Finished benchmarking.");
-    let title = format!("HNSW Bench ({} elements)", train_set.len());
     bench_result.plot(title, args.output.as_ref())?;
     Ok(())
 }
