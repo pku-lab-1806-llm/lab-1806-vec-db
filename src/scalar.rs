@@ -38,6 +38,8 @@ pub trait Scalar:
     + PartialEq
     + PartialOrd
     + Serialize
+    + Send
+    + Sync
     + for <'de> Deserialize<'de>
 {
     /// Cast a float value to the scalar type. *Alias for `as`.*

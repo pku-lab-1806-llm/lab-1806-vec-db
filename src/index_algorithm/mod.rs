@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 use crate::{distance::DistanceAlgorithm, scalar::Scalar, vec_set::VecSet};
 pub mod prelude {
     // All Index Traits
-    pub use super::{IndexBuilder, IndexFromVecSet, IndexIter, IndexKNN, IndexSerde};
+    pub use super::{
+        IndexBuilder, IndexFromVecSet, IndexIter, IndexKNN, IndexKNNWithEf, IndexSerde,
+    };
 }
 
 pub mod candidate_pair;
@@ -51,6 +53,13 @@ pub trait IndexBuilder<T: Scalar>: IndexIter<T> {
     ///
     /// Returns the index of the vector.
     fn add(&mut self, vec: &[T], rng: &mut impl Rng) -> usize;
+
+    /// Add multiple vectors to the index.
+    ///
+    /// Returns a vector of the indices of the vectors.
+    ///
+    /// May lead to better performance than adding vectors one by one.
+    fn batch_add(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize>;
 }
 
 /// The trait for index that can search the k-nearest neighbors.
@@ -59,14 +68,13 @@ pub trait IndexKNN<T: Scalar>: IndexIter<T> {
     /// Returns a vector of pairs of the index and the distance.
     /// The vector is sorted by the distance in ascending order.
     fn knn(&self, query: &[T], k: usize) -> Vec<CandidatePair>;
+}
 
+/// The trait for index that can search the k-nearest neighbors with a search radius `ef`.
+pub trait IndexKNNWithEf<T: Scalar>: IndexKNN<T> {
     /// Same as `knn`, but with a search radius `ef`.
-    ///
-    /// Not available for all indexes.
-    /// when ef < k, ef will be set to k.
-    fn knn_with_ef(&self, _query: &[T], _k: usize, _ef: usize) -> Vec<CandidatePair> {
-        panic!("knn_with_ef is not available.");
-    }
+    /// When ef < k, ef will be set to k.
+    fn knn_with_ef(&self, _query: &[T], _k: usize, _ef: usize) -> Vec<CandidatePair>;
 }
 
 /// The trait for index that can be built from a `VecSet`.

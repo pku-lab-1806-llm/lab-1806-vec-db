@@ -1,4 +1,4 @@
-use std::{sync::Arc, thread};
+use std::thread;
 
 use anyhow::Result;
 use clap::Parser;
@@ -49,26 +49,21 @@ fn main() -> Result<()> {
         args.threads > 0,
         "The number of threads must be greater than 0."
     );
-    let (tx, rx) = std::sync::mpsc::channel();
-    let test_set = Arc::new(test_set);
-    let index = Arc::new(index);
-    for t_idx in 0..args.threads {
-        let tx = tx.clone();
-        let test_set = test_set.clone();
-        let index = index.clone();
-        thread::spawn(move || {
-            let mut results = Vec::new();
-            for i in (t_idx..test_set.len()).step_by(args.threads) {
-                results.push((i, index.knn(&test_set[i], k)));
-            }
-            tx.send(results).unwrap();
-        });
-    }
-    let mut result = Vec::new();
-    for msg in rx.iter().take(args.threads) {
-        result.extend(msg);
-    }
-    result.sort_by_key(|x| x.0);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let threads_ids: Vec<_> = (0..args.threads).collect();
+    thread::scope(|s| {
+        for t_idx in threads_ids.iter() {
+            s.spawn(|| {
+                let mut results = Vec::new();
+                for i in (*t_idx..test_set.len()).step_by(args.threads) {
+                    results.push((i, index.knn(&test_set[i], k)));
+                }
+                sender.send(results).unwrap();
+            });
+        }
+    });
+    let mut result: Vec<_> = receiver.iter().take(args.threads).flatten().collect();
+    result.sort_by_key(|(i, _)| *i);
     for (_, knn) in result {
         ground_truth.push(knn);
     }

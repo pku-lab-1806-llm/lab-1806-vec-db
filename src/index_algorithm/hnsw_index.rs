@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeSet, HashSet},
     ops::Index,
+    thread, vec,
 };
 
 use rand::Rng;
@@ -49,6 +50,8 @@ pub struct HNSWInnerConfig {
     ///
     /// rand_level = floor(-ln(rand_uniform(0.0,1.0)) * inv_log_m)
     pub inv_log_m: f32,
+    /// The inner batch size for batch operations.
+    pub inner_batch_size: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -337,6 +340,29 @@ impl<T: Scalar> HNSWIndex<T> {
             self.deleted_mark.reserve(num_reserve);
         }
     }
+    fn inner_batch_add(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize> {
+        let n = vec_list.len();
+        if self.len() < self.config.ef_construction || n < 3 {
+            // At the beginning, we choose to add vectors one by one.
+            // Or if vec_list is too small, batch add is not efficient.
+            return vec_list.iter().map(|vec| self.add(vec, rng)).collect();
+        }
+        let mut indices = Vec::with_capacity(n);
+        let _dist = self.config.dist;
+        for &vec in vec_list.iter() {
+            let level = self.rand_level(rng);
+            let idx = self.push_init(vec, level);
+            indices.push(idx);
+        }
+        thread::scope(|s| {
+            for &_idx in indices.iter() {
+                s.spawn(|| {
+                    unimplemented!("inner_batch_add is not implemented for HNSWIndex.");
+                });
+            }
+        });
+        unimplemented!("inner_batch_add is not implemented for HNSWIndex.");
+    }
 }
 impl<T: Scalar> Index<usize> for HNSWIndex<T> {
     type Output = [T];
@@ -367,6 +393,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         let ef_construction = config.ef_construction.max(m);
         let default_ef = 10;
         let inv_log_m = 1.0 / (m as f32).ln();
+        let inner_batch_size = 20;
 
         let vec_set = VecSet::<T>::with_capacity(dim, max_elements);
         let level0_links = Vec::with_capacity(max_elements);
@@ -385,6 +412,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
                 max_m0,
                 default_ef,
                 inv_log_m,
+                inner_batch_size,
             },
             vec_set,
             level0_links,
@@ -435,12 +463,20 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         }
         idx
     }
+    fn batch_add(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize> {
+        vec_list
+            .chunks(self.config.inner_batch_size)
+            .flat_map(|chunk| self.inner_batch_add(chunk, rng))
+            .collect()
+    }
 }
 
 impl<T: Scalar> IndexKNN<T> for HNSWIndex<T> {
     fn knn(&self, query: &[T], k: usize) -> Vec<CandidatePair> {
         self.knn_with_ef(query, k, self.config.default_ef)
     }
+}
+impl<T: Scalar> IndexKNNWithEf<T> for HNSWIndex<T> {
     fn knn_with_ef(&self, query: &[T], k: usize, ef: usize) -> Vec<CandidatePair> {
         if self.len() == 0 {
             return Vec::new();
@@ -452,7 +488,6 @@ impl<T: Scalar> IndexKNN<T> for HNSWIndex<T> {
         result.into_sorted_vec_limit(k)
     }
 }
-
 impl<T: Scalar> IndexSerde for HNSWIndex<T> {
     /// Save the index to the file.
     ///
