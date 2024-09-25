@@ -1,3 +1,5 @@
+use std::{sync::Arc, thread};
+
 use anyhow::Result;
 use clap::Parser;
 use lab_1806_vec_db::{
@@ -20,6 +22,9 @@ struct Args {
     /// Path to the output ground truth file
     #[clap(short, long)]
     output_file: String,
+    /// The number of threads
+    #[clap(long, default_value = "20")]
+    threads: usize,
 }
 fn main() -> Result<()> {
     let args = Args::parse();
@@ -38,8 +43,34 @@ fn main() -> Result<()> {
 
     let mut ground_truth = GroundTruth::new();
     println!("Generating ground truth...");
-    for vec in test_set.iter() {
-        ground_truth.push(index.knn(vec, k));
+    println!("Using {} threads.", args.threads);
+
+    assert!(
+        args.threads > 0,
+        "The number of threads must be greater than 0."
+    );
+    let (tx, rx) = std::sync::mpsc::channel();
+    let test_set = Arc::new(test_set);
+    let index = Arc::new(index);
+    for t_idx in 0..args.threads {
+        let tx = tx.clone();
+        let test_set = test_set.clone();
+        let index = index.clone();
+        thread::spawn(move || {
+            let mut results = Vec::new();
+            for i in (t_idx..test_set.len()).step_by(args.threads) {
+                results.push((i, index.knn(&test_set[i], k)));
+            }
+            tx.send(results).unwrap();
+        });
+    }
+    let mut result = Vec::new();
+    for msg in rx.iter().take(args.threads) {
+        result.extend(msg);
+    }
+    result.sort_by_key(|x| x.0);
+    for (_, knn) in result {
+        ground_truth.push(knn);
     }
     println!("Saving ground truth to {}...", args.output_file);
     ground_truth.save(&args.output_file)?;
