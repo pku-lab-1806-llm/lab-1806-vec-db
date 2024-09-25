@@ -62,7 +62,9 @@ fn main() -> Result<()> {
             });
         }
     });
-    let mut result: Vec<_> = receiver.iter().take(args.threads).flatten().collect();
+    // Drop the sender to close the channel.
+    drop(sender);
+    let mut result: Vec<_> = receiver.iter().flatten().collect();
     result.sort_by_key(|(i, _)| *i);
     for (_, knn) in result {
         ground_truth.push(knn);

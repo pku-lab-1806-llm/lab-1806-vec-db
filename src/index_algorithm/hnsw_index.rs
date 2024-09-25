@@ -50,6 +50,8 @@ pub struct HNSWInnerConfig {
     ///
     /// rand_level = floor(-ln(rand_uniform(0.0,1.0)) * inv_log_m)
     pub inv_log_m: f32,
+    /// The threshold to start batch operations.
+    pub start_batch_since: usize,
     /// The inner batch size for batch operations.
     pub inner_batch_size: usize,
 }
@@ -340,9 +342,10 @@ impl<T: Scalar> HNSWIndex<T> {
             self.deleted_mark.reserve(num_reserve);
         }
     }
+    /// Batch add vectors to the index.
     fn inner_batch_add(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize> {
         let n = vec_list.len();
-        if self.len() < self.config.ef_construction || n < 3 {
+        if self.len() < self.config.start_batch_since || n < 3 {
             // At the beginning, we choose to add vectors one by one.
             // Or if vec_list is too small, batch add is not efficient.
             return vec_list.iter().map(|vec| self.add(vec, rng)).collect();
@@ -433,7 +436,8 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         let ef_construction = config.ef_construction.max(m);
         let default_ef = 10;
         let inv_log_m = 1.0 / (m as f32).ln();
-        let inner_batch_size = 32;
+        let start_batch_since = 1000;
+        let inner_batch_size = 20;
 
         let vec_set = VecSet::<T>::with_capacity(dim, max_elements);
         let level0_links = Vec::with_capacity(max_elements);
@@ -452,6 +456,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
                 max_m0,
                 default_ef,
                 inv_log_m,
+                start_batch_since,
                 inner_batch_size,
             },
             vec_set,
