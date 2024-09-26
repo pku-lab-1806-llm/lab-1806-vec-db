@@ -39,13 +39,13 @@ struct Args {
     m: usize,
 
     /// The start value of ef for benchmarking
-    #[clap(long, default_value = "30")]
+    #[clap(long, default_value = "120")]
     ef_start: usize,
     /// The end value of ef for benchmarking
-    #[clap(long, default_value = "200")]
+    #[clap(long, default_value = "360")]
     ef_end: usize,
     /// The step value of ef for benchmarking
-    #[clap(long, default_value = "10")]
+    #[clap(long, default_value = "20")]
     ef_step: usize,
 }
 
@@ -202,5 +202,5 @@ fn main() -> Result<()> {
     bench_result.plot(title, args.output.as_ref())?;
     Ok(())
 }
-// cargo r -r --example hnsw_bench -- config/gist_10000.local.toml -g data/gnd_10000.local.bin --index-cache data/gist_10000_hnsw.local.bin -o data/bench_10000.local.html
-// cargo r -r --example hnsw_bench -- config/gist.local.toml -g data/gnd.local.bin -o data/hnsw_bench.html
+// cargo r -r --example hnsw_bench -- config/gist_10000.local.toml -g data/gnd_10000.local.bin --index-cache data/gist_10000_hnsw.local.bin
+// cargo r -r --example hnsw_bench -- config/gist.local.toml -g data/gnd.local.bin
