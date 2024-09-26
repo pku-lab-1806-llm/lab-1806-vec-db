@@ -1,4 +1,5 @@
 use std::{
+    borrow::Borrow,
     collections::{BTreeSet, HashSet},
     ops::Index,
     path::Path,
@@ -446,7 +447,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         let default_ef = 10;
         let inv_log_m = 1.0 / (m as f32).ln();
         let start_batch_since = 1000;
-        let inner_batch_size = 20;
+        let inner_batch_size = 64;
 
         let vec_set = VecSet::<T>::with_capacity(dim, max_elements);
         let level0_links = Vec::with_capacity(max_elements);
@@ -522,6 +523,37 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
             .chunks(self.config.inner_batch_size)
             .flat_map(|chunk| self.inner_batch_add(chunk, rng))
             .collect()
+    }
+    fn batch_add_process(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize> {
+        use indicatif::{ProgressIterator, ProgressStyle};
+
+        let style = ProgressStyle::default_bar()
+                    .template("[{elapsed}|ETA {eta_precise}] {bar:40.cyan/blue} {pos:>7}/{len} batches, {per_sec:2}")
+                    .unwrap()
+                    .progress_chars("##-");
+
+        vec_list
+            .chunks(self.config.inner_batch_size)
+            .progress_with_style(style)
+            .flat_map(|chunk| self.inner_batch_add(chunk, rng))
+            .collect()
+    }
+    fn build_on_vec_set(
+        vec_set: impl Borrow<VecSet<T>>,
+        dist: DistanceAlgorithm,
+        config: Self::Config,
+        process_bar: bool,
+        rng: &mut impl Rng,
+    ) -> Self {
+        let vec_set = vec_set.borrow();
+        let mut index = Self::new(vec_set.dim(), dist, config);
+        let vec_refs: Vec<&[T]> = vec_set.iter().collect();
+        if process_bar {
+            index.batch_add_process(&vec_refs, rng);
+        } else {
+            index.batch_add(&vec_refs, rng);
+        }
+        index
     }
 }
 
@@ -604,22 +636,6 @@ impl<T: Scalar> IndexSerdeExternalVecSet<T> for HNSWIndex<T> {
         Ok(index)
     }
 }
-impl<T: Scalar> IndexFromVecSet<T> for HNSWIndex<T> {
-    type Config = HNSWConfig;
-
-    /// Create an index from a vector set.
-    fn from_vec_set(
-        vec_set: VecSet<T>,
-        dist: DistanceAlgorithm,
-        config: Self::Config,
-        rng: &mut impl Rng,
-    ) -> Self {
-        let mut index = Self::new(vec_set.dim(), dist, config);
-        let vec_refs: Vec<&[T]> = vec_set.iter().collect();
-        index.batch_add(&vec_refs, rng);
-        index
-    }
-}
 
 #[cfg(test)]
 mod test {
@@ -666,7 +682,7 @@ mod test {
         }
 
         // Test the HNSWIndex by comparing with LinearIndex.
-        let index = HNSWIndex::<f32>::from_vec_set(vec_set.clone(), dist, config, &mut rng);
+        let index = HNSWIndex::<f32>::build_on_vec_set(&vec_set, dist, config, false, &mut rng);
         let linear_index = linear_index::LinearIndex::from_vec_set(vec_set, dist, (), &mut rng);
 
         // Save and load the index. >>>>

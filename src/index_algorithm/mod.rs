@@ -1,4 +1,4 @@
-use std::{fs::File, io::BufWriter, ops::Index, path::Path};
+use std::{borrow::Borrow, fs::File, io::BufWriter, ops::Index, path::Path};
 
 use anyhow::Result;
 use rand::Rng;
@@ -61,6 +61,18 @@ pub trait IndexBuilder<T: Scalar>: IndexIter<T> {
     ///
     /// May lead to better performance than adding vectors one by one.
     fn batch_add(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize>;
+
+    /// Same as `batch_add`, but show a progress bar.
+    fn batch_add_process(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize>;
+
+    /// Build the index from a `VecSet`.
+    fn build_on_vec_set(
+        vec_set: impl Borrow<VecSet<T>>,
+        dist: DistanceAlgorithm,
+        config: Self::Config,
+        process_bar: bool,
+        rng: &mut impl Rng,
+    ) -> Self;
 }
 
 /// The trait for index that can search the k-nearest neighbors.

@@ -88,7 +88,7 @@ fn load_or_build<T: Scalar>(args: &Args, base_set: VecSet<T>) -> Result<HNSWInde
             M: args.m,
         };
         let start = std::time::Instant::now();
-        let index = HNSWIndex::from_vec_set(base_set, dist, config, &mut rng);
+        let index = HNSWIndex::build_on_vec_set(base_set, dist, config, true, &mut rng);
         let elapsed = start.elapsed().as_secs_f32();
         println!("Index built in {:.2} seconds.", elapsed);
         println!("Saving index to {}...", path.display());
