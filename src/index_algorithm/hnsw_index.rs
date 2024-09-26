@@ -528,7 +528,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         use indicatif::{ProgressIterator, ProgressStyle};
 
         let style = ProgressStyle::default_bar()
-                    .template("[{elapsed}|ETA {eta_precise}] {bar:40.cyan/blue} {pos:>7}/{len} batches, {per_sec:2}")
+                    .template("[{elapsed_precise} ~ ETA {eta_precise}] {bar:40.cyan/blue} {pos:>7}/{len} batches, {per_sec:2}")
                     .unwrap()
                     .progress_chars("##-");
 
