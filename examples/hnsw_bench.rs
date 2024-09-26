@@ -17,8 +17,8 @@ use serde::{Deserialize, Serialize};
 /// Generate ground truth for the test set by LinearIndex
 #[derive(Parser)]
 struct Args {
-    /// Path to the train set config file
-    train: String,
+    /// Path to the base set config file
+    base: String,
     /// Path to the test set config file
     #[clap(short, long, default_value = "config/gist_test.toml")]
     test: String,
@@ -39,13 +39,13 @@ struct Args {
     m: usize,
 
     /// The start value of ef for benchmarking
-    #[clap(long, default_value = "30")]
+    #[clap(long, default_value = "120")]
     ef_start: usize,
     /// The end value of ef for benchmarking
-    #[clap(long, default_value = "200")]
+    #[clap(long, default_value = "360")]
     ef_end: usize,
     /// The step value of ef for benchmarking
-    #[clap(long, default_value = "10")]
+    #[clap(long, default_value = "20")]
     ef_step: usize,
 }
 
@@ -68,22 +68,33 @@ impl AvgRecorder {
         self.sum / self.count as f32
     }
 }
-fn try_load<T: Scalar>(args: &Args, train_set: &VecSet<T>) -> Option<HNSWIndex<T>> {
+fn load_or_build<T: Scalar>(args: &Args, base_set: VecSet<T>) -> Result<HNSWIndex<T>> {
     let path = Path::new(&args.index_cache);
-    println!("Trying to load index from {}...", path.display());
-    match HNSWIndex::<T>::load(&args.index_cache) {
-        Ok(index) => {
-            if index.len() == train_set.len() {
-                println!("Index loaded successfully.");
-                return Some(index);
-            }
-            println!("Index file is outdated, need to rebuild.");
-            None
-        }
-        Err(err) => {
-            println!("Failed to load index: {}", err);
-            None
-        }
+
+    if path.exists() {
+        println!("Trying to load index from {}...", path.display());
+        let start = std::time::Instant::now();
+        let index = HNSWIndex::load_with_external_vec_set(&args.index_cache, base_set)?;
+        let elapsed = start.elapsed().as_secs_f32();
+        println!("Index loaded in {:.2} seconds.", elapsed);
+        Ok(index)
+    } else {
+        println!("Index file not found. Building index...");
+        let dist = DistanceAlgorithm::L2Sqr;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let config = HNSWConfig {
+            max_elements: base_set.len(),
+            ef_construction: args.ef_construction,
+            M: args.m,
+        };
+        let start = std::time::Instant::now();
+        let index = HNSWIndex::build_on_vec_set(base_set, dist, config, true, &mut rng);
+        let elapsed = start.elapsed().as_secs_f32();
+        println!("Index built in {:.2} seconds.", elapsed);
+        println!("Saving index to {}...", path.display());
+        let index = index.save_without_vec_set(&path)?;
+        println!("Index saved.");
+        Ok(index)
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -148,34 +159,18 @@ impl BenchResult {
 }
 fn main() -> Result<()> {
     let args = Args::parse();
-    let train_config = VecDataConfig::load_from_toml_file(&args.train)?;
+    let load_start = std::time::Instant::now();
+    let base_config = VecDataConfig::load_from_toml_file(&args.base)?;
     let test_config = VecDataConfig::load_from_toml_file(&args.test)?;
-    let train_set = VecSet::<f32>::load_with(&train_config)?;
-    println!("Loaded train set (size: {}).", train_set.len());
+    let base_set = VecSet::<f32>::load_with(&base_config)?;
+    println!("Loaded base set (size: {}).", base_set.len());
 
     let test_set = VecSet::<f32>::load_with(&test_config)?;
     println!("Loaded test set (size: {}).", test_set.len());
+    let elapsed = load_start.elapsed().as_secs_f32();
+    println!("VecSet loaded in {:.2} seconds.", elapsed);
 
-    let title = format!("HNSW Bench ({} elements)", train_set.len());
-    let dist = DistanceAlgorithm::L2Sqr;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-    let config = HNSWConfig {
-        max_elements: train_set.len(),
-        ef_construction: args.ef_construction,
-        M: args.m,
-    };
-
-    let start = std::time::Instant::now();
-    let index = match try_load(&args, &train_set) {
-        Some(index) => index,
-        None => {
-            println!("Building index...");
-            let index = HNSWIndex::from_vec_set(train_set, dist, config, &mut rng);
-            println!("Indexing time: {:.3}s", start.elapsed().as_secs_f32());
-            index.save(&args.index_cache)?;
-            index
-        }
-    };
+    let index = load_or_build(&args, base_set)?;
     let gnd = GroundTruth::load(&args.gnd)?;
     let k = gnd[0].knn_indices.len(); // default 10
     println!("Loaded ground truth (size: {}).", gnd.len());
@@ -203,8 +198,9 @@ fn main() -> Result<()> {
         bench_result.push(ef, search_time, recall);
     }
     println!("Finished benchmarking.");
+    let title = format!("HNSW Bench ({} elements)", index.len());
     bench_result.plot(title, args.output.as_ref())?;
     Ok(())
 }
-// cargo r -r --example hnsw_bench -- config/gist_10000.local.toml -g data/gnd_10000.local.bin --index-cache data/gist_10000_hnsw.local.bin -o data/bench_10000.local.html
-// cargo r -r --example hnsw_bench -- config/gist.local.toml -g data/gnd.local.bin -o data/hnsw_bench.html
+// cargo r -r --example hnsw_bench -- config/gist_10000.local.toml -g data/gnd_10000.local.bin --index-cache data/gist_10000_hnsw.local.bin
+// cargo r -r --example hnsw_bench -- config/gist.local.toml -g data/gnd.local.bin

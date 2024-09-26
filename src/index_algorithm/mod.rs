@@ -1,4 +1,4 @@
-use std::{fs::File, io::BufWriter, ops::Index};
+use std::{borrow::Borrow, fs::File, io::BufWriter, ops::Index, path::Path};
 
 use anyhow::Result;
 use rand::Rng;
@@ -9,6 +9,7 @@ pub mod prelude {
     // All Index Traits
     pub use super::{
         IndexBuilder, IndexFromVecSet, IndexIter, IndexKNN, IndexKNNWithEf, IndexSerde,
+        IndexSerdeExternalVecSet,
     };
 }
 
@@ -60,6 +61,18 @@ pub trait IndexBuilder<T: Scalar>: IndexIter<T> {
     ///
     /// May lead to better performance than adding vectors one by one.
     fn batch_add(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize>;
+
+    /// Same as `batch_add`, but show a progress bar.
+    fn batch_add_process(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize>;
+
+    /// Build the index from a `VecSet`.
+    fn build_on_vec_set(
+        vec_set: impl Borrow<VecSet<T>>,
+        dist: DistanceAlgorithm,
+        config: Self::Config,
+        process_bar: bool,
+        rng: &mut impl Rng,
+    ) -> Self;
 }
 
 /// The trait for index that can search the k-nearest neighbors.
@@ -95,7 +108,7 @@ pub trait IndexSerde: Serialize + for<'de> Deserialize<'de> {
     /// Save the index to the file.
     ///
     /// Some Index may have different Implementations.
-    fn save(&self, path: &str) -> Result<()> {
+    fn save(&self, path: impl AsRef<Path>) -> Result<()> {
         let file = File::create(path)?;
         let writer = BufWriter::new(file);
         bincode::serialize_into(writer, self)?;
@@ -104,10 +117,17 @@ pub trait IndexSerde: Serialize + for<'de> Deserialize<'de> {
     /// Load the index from the file.
     ///
     /// Some Index may have different Implementations.
-    fn load(path: &str) -> Result<Self> {
+    fn load(path: impl AsRef<Path>) -> Result<Self> {
         let file = File::open(path)?;
         let reader = std::io::BufReader::new(file);
         let index = bincode::deserialize_from(reader)?;
         Ok(index)
     }
+}
+
+pub trait IndexSerdeExternalVecSet<T: Scalar>: IndexSerde {
+    /// Save the index to the file without original VecSet.
+    fn save_without_vec_set(self, path: impl AsRef<Path>) -> Result<Self>;
+    /// Load the index saved by `save_without_vec_set`.
+    fn load_with_external_vec_set(path: impl AsRef<Path>, vec_set: VecSet<T>) -> Result<Self>;
 }

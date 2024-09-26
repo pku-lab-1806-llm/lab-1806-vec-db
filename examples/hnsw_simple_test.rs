@@ -5,6 +5,7 @@ use lab_1806_vec_db::{
     index_algorithm::{
         hnsw_index::HNSWIndex, linear_index::LinearIndex, IndexFromVecSet, IndexIter, IndexKNN,
     },
+    prelude::IndexBuilder,
     vec_set::VecSet,
 };
 use rand::SeedableRng;
@@ -29,7 +30,7 @@ fn main() -> Result<()> {
     };
 
     let construction_start = std::time::Instant::now();
-    let index = HNSWIndex::from_vec_set(vec_set.clone(), dist, config, &mut rng);
+    let index = HNSWIndex::build_on_vec_set(&vec_set, dist, config, true, &mut rng);
     println!(
         "Construction time: {:.2} seconds",
         construction_start.elapsed().as_secs_f64()

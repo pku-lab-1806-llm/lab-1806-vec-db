@@ -1,6 +1,8 @@
 use std::{
+    borrow::Borrow,
     collections::{BTreeSet, HashSet},
     ops::Index,
+    path::Path,
     thread, vec,
 };
 
@@ -445,7 +447,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         let default_ef = 10;
         let inv_log_m = 1.0 / (m as f32).ln();
         let start_batch_since = 1000;
-        let inner_batch_size = 20;
+        let inner_batch_size = 64;
 
         let vec_set = VecSet::<T>::with_capacity(dim, max_elements);
         let level0_links = Vec::with_capacity(max_elements);
@@ -522,6 +524,37 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
             .flat_map(|chunk| self.inner_batch_add(chunk, rng))
             .collect()
     }
+    fn batch_add_process(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize> {
+        use indicatif::{ProgressIterator, ProgressStyle};
+
+        let style = ProgressStyle::default_bar()
+                    .template("[{elapsed_precise} ~ ETA {eta}] {bar:40.cyan/blue} {pos:>7}/{len} batches, {per_sec:2}")
+                    .unwrap()
+                    .progress_chars("##-");
+
+        vec_list
+            .chunks(self.config.inner_batch_size)
+            .progress_with_style(style)
+            .flat_map(|chunk| self.inner_batch_add(chunk, rng))
+            .collect()
+    }
+    fn build_on_vec_set(
+        vec_set: impl Borrow<VecSet<T>>,
+        dist: DistanceAlgorithm,
+        config: Self::Config,
+        process_bar: bool,
+        rng: &mut impl Rng,
+    ) -> Self {
+        let vec_set = vec_set.borrow();
+        let mut index = Self::new(vec_set.dim(), dist, config);
+        let vec_refs: Vec<&[T]> = vec_set.iter().collect();
+        if process_bar {
+            index.batch_add_process(&vec_refs, rng);
+        } else {
+            index.batch_add(&vec_refs, rng);
+        }
+        index
+    }
 }
 
 impl<T: Scalar> IndexKNN<T> for HNSWIndex<T> {
@@ -545,10 +578,22 @@ impl<T: Scalar> IndexSerde for HNSWIndex<T> {
     /// Save the index to the file.
     ///
     /// For HNSWIndex, the capacity should be reset after loading.
-    fn load(path: &str) -> anyhow::Result<Self> {
+    fn load(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let file = std::fs::File::open(path)?;
         let reader = std::io::BufReader::new(file);
         let mut index: Self = bincode::deserialize_from(reader)?;
+
+        let all_len = [
+            index.vec_set.len(),
+            index.level0_links.len(),
+            index.vec_level.len(),
+            index.other_links.len(),
+            index.links_len.len(),
+            index.deleted_mark.len(),
+        ];
+        if !all_len.windows(2).all(|w| w[0] == w[1]) {
+            anyhow::bail!("The lengths of the index data are not consistent. See `load_with_external_vec_set` for loading with external vec_set, if you have saved the index without vec_set.");
+        }
 
         // The capacity is not as expected after deserialization.
         let new_max_elements = index.config.max_elements;
@@ -559,20 +604,36 @@ impl<T: Scalar> IndexSerde for HNSWIndex<T> {
         Ok(index)
     }
 }
-impl<T: Scalar> IndexFromVecSet<T> for HNSWIndex<T> {
-    type Config = HNSWConfig;
+impl<T: Scalar> IndexSerdeExternalVecSet<T> for HNSWIndex<T> {
+    fn save_without_vec_set(mut self, path: impl AsRef<Path>) -> anyhow::Result<Self> {
+        // Move the vec_set out of the index.
+        let vec_set = self.vec_set;
+        self.vec_set = VecSet::new(vec_set.dim(), vec![]);
 
-    /// Create an index from a vector set.
-    fn from_vec_set(
+        // Call the original save method.
+        self.save(path)?;
+
+        // Restore the vec_set.
+        self.vec_set = vec_set;
+        Ok(self)
+    }
+    fn load_with_external_vec_set(
+        path: impl AsRef<Path>,
         vec_set: VecSet<T>,
-        dist: DistanceAlgorithm,
-        config: Self::Config,
-        rng: &mut impl Rng,
-    ) -> Self {
-        let mut index = Self::new(vec_set.dim(), dist, config);
-        let vec_refs: Vec<&[T]> = vec_set.iter().collect();
-        index.batch_add(&vec_refs, rng);
-        index
+    ) -> anyhow::Result<Self> {
+        let file = std::fs::File::open(path)?;
+        let reader = std::io::BufReader::new(file);
+        let mut index: Self = bincode::deserialize_from(reader)?;
+
+        // Restore the vec_set at first.
+        index.vec_set = vec_set;
+        // The capacity is not as expected after deserialization.
+        let new_max_elements = index.config.max_elements;
+        index.config.max_elements = index.len();
+        // Reset the capacity.
+        index.reset_max_elements(new_max_elements, true);
+
+        Ok(index)
     }
 }
 
@@ -621,15 +682,15 @@ mod test {
         }
 
         // Test the HNSWIndex by comparing with LinearIndex.
-        let index = HNSWIndex::<f32>::from_vec_set(vec_set.clone(), dist, config, &mut rng);
+        let index = HNSWIndex::<f32>::build_on_vec_set(&vec_set, dist, config, false, &mut rng);
         let linear_index = linear_index::LinearIndex::from_vec_set(vec_set, dist, (), &mut rng);
 
         // Save and load the index. >>>>
         println!("Saving the index...");
         let path = "data/hnsw_index.tmp.bin";
-        index.save(path)?;
+        let vec_set = index.save_without_vec_set(path)?.vec_set;
 
-        let index = HNSWIndex::<f32>::load(path)?;
+        let index = HNSWIndex::<f32>::load_with_external_vec_set(path, vec_set)?;
         println!("Loaded the index.");
         // <<<< Save and load the index.
 
