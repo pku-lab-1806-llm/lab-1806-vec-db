@@ -404,6 +404,14 @@ impl<T: Scalar> HNSWIndex<T> {
         for (idx, level, candidates) in candidates {
             self.connect_new_links(idx, level, candidates);
         }
+        for &idx in indices.iter() {
+            let level = self.vec_level[idx];
+            // Index is not null, so unwrap is safe.
+            if level > self.enter_level.unwrap() {
+                self.enter_level = Some(level);
+                self.enter_point = Some(idx);
+            }
+        }
         indices
     }
 }
