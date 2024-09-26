@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeSet, HashSet},
     ops::Index,
+    path::Path,
     thread, vec,
 };
 
@@ -545,11 +546,55 @@ impl<T: Scalar> IndexSerde for HNSWIndex<T> {
     /// Save the index to the file.
     ///
     /// For HNSWIndex, the capacity should be reset after loading.
-    fn load(path: &str) -> anyhow::Result<Self> {
+    fn load(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let file = std::fs::File::open(path)?;
         let reader = std::io::BufReader::new(file);
         let mut index: Self = bincode::deserialize_from(reader)?;
 
+        let all_len = [
+            index.vec_set.len(),
+            index.level0_links.len(),
+            index.vec_level.len(),
+            index.other_links.len(),
+            index.links_len.len(),
+            index.deleted_mark.len(),
+        ];
+        if !all_len.windows(2).all(|w| w[0] == w[1]) {
+            anyhow::bail!("The lengths of the index data are not consistent. See `load_with_external_vec_set` for loading with external vec_set, if you have saved the index without vec_set.");
+        }
+
+        // The capacity is not as expected after deserialization.
+        let new_max_elements = index.config.max_elements;
+        index.config.max_elements = index.len();
+        // Reset the capacity.
+        index.reset_max_elements(new_max_elements, true);
+
+        Ok(index)
+    }
+}
+impl<T: Scalar> IndexSerdeExternalVecSet<T> for HNSWIndex<T> {
+    fn save_without_vec_set(mut self, path: impl AsRef<Path>) -> anyhow::Result<Self> {
+        // Move the vec_set out of the index.
+        let vec_set = self.vec_set;
+        self.vec_set = VecSet::new(vec_set.dim(), vec![]);
+
+        // Call the original save method.
+        self.save(path)?;
+
+        // Restore the vec_set.
+        self.vec_set = vec_set;
+        Ok(self)
+    }
+    fn load_with_external_vec_set(
+        path: impl AsRef<Path>,
+        vec_set: VecSet<T>,
+    ) -> anyhow::Result<Self> {
+        let file = std::fs::File::open(path)?;
+        let reader = std::io::BufReader::new(file);
+        let mut index: Self = bincode::deserialize_from(reader)?;
+
+        // Restore the vec_set at first.
+        index.vec_set = vec_set;
         // The capacity is not as expected after deserialization.
         let new_max_elements = index.config.max_elements;
         index.config.max_elements = index.len();
@@ -627,9 +672,9 @@ mod test {
         // Save and load the index. >>>>
         println!("Saving the index...");
         let path = "data/hnsw_index.tmp.bin";
-        index.save(path)?;
+        let vec_set = index.save_without_vec_set(path)?.vec_set;
 
-        let index = HNSWIndex::<f32>::load(path)?;
+        let index = HNSWIndex::<f32>::load_with_external_vec_set(path, vec_set)?;
         println!("Loaded the index.");
         // <<<< Save and load the index.
 

@@ -1,3 +1,4 @@
+use anyhow::Result;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -7,7 +8,7 @@ use crate::{
     scalar::Scalar,
     vec_set::VecSet,
 };
-use std::ops::Index;
+use std::{ops::Index, path::Path};
 
 use super::{prelude::*, ResultSet};
 
@@ -62,6 +63,18 @@ impl<T: Scalar> IndexFromVecSet<T> for LinearIndex<T> {
     }
 }
 impl<T: Scalar> IndexSerde for LinearIndex<T> {}
+impl<T: Scalar> IndexSerdeExternalVecSet<T> for LinearIndex<T> {
+    fn save_without_vec_set(self, path: impl AsRef<Path>) -> Result<Self> {
+        let mut file = std::fs::File::create(path)?;
+        bincode::serialize_into(&mut file, &self.dist)?;
+        Ok(self)
+    }
+    fn load_with_external_vec_set(path: impl AsRef<Path>, vec_set: VecSet<T>) -> Result<Self> {
+        let mut file = std::fs::File::open(path)?;
+        let dist: DistanceAlgorithm = bincode::deserialize_from(&mut file)?;
+        Ok(Self { dist, vec_set })
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -100,9 +113,9 @@ mod test {
 
         // Save and load the index. >>>>
         let path = "data/linear_index.tmp.bin";
-        index.save(path)?;
+        let vec_set = index.save_without_vec_set(path)?.vec_set;
 
-        let index = LinearIndex::<f32>::load(path)?;
+        let index = LinearIndex::<f32>::load_with_external_vec_set(path, vec_set)?;
         // <<<< Save and load the index.
 
         let k = 4;
