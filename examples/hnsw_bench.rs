@@ -133,8 +133,11 @@ impl BenchResult {
             println!("Saved plot to {}", path.as_ref().display());
             plot.write_html(path);
         }
-        println!("Try to show the plot...");
-        plot.show_image(plotly::ImageFormat::SVG, 1024, 768);
+        #[cfg(target_os = "windows")]
+        {
+            println!("Try to show the plot...");
+            plot.show_image(plotly::ImageFormat::SVG, 1024, 768);
+        }
         Ok(())
     }
     pub fn push(&mut self, ef: usize, search_time: f32, recall: f32) {
@@ -203,4 +206,5 @@ fn main() -> Result<()> {
     bench_result.plot(title, args.output.as_ref())?;
     Ok(())
 }
-// cargo r -r --example hnsw_bench -- config/gist_10000.local.toml -g data/gnd_10000.local.bin
+// cargo r -r --example hnsw_bench -- config/gist_10000.local.toml -g data/gnd_10000.local.bin --index-cache data/gist_10000_hnsw.local.bin -o data/bench_10000.local.html
+// cargo r -r --example hnsw_bench -- config/gist.local.toml -g data/gnd.local.bin -o data/hnsw_bench.html

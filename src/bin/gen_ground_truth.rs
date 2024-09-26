@@ -74,3 +74,4 @@ fn main() -> Result<()> {
     Ok(())
 }
 // cargo r -r --bin gen_ground_truth -- config/gist_10000.local.toml -o data/gnd_10000.local.bin
+// cargo r -r --bin gen_ground_truth -- config/gist.local.toml -o data/gnd.local.bin
