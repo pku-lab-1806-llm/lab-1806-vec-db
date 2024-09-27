@@ -87,7 +87,7 @@ pub trait IndexKNN<T: Scalar>: IndexIter<T> {
 pub trait IndexKNNWithEf<T: Scalar>: IndexKNN<T> {
     /// Same as `knn`, but with a search radius `ef`.
     /// When ef < k, ef will be set to k.
-    fn knn_with_ef(&self, _query: &[T], _k: usize, _ef: usize) -> Vec<CandidatePair>;
+    fn knn_with_ef(&self, query: &[T], k: usize, ef: usize) -> Vec<CandidatePair>;
 }
 
 /// The trait for index that can be built from a `VecSet`.
