@@ -51,8 +51,10 @@ fn main() -> Result<()> {
 }
 
 // GIST_DIR=/path/to/gist
-// cargo r -r --bin convert_fvecs -- $GIST_DIR/train.fvecs -o data/gist_10000.local.bin -l 10000
-// cargo r -r --bin convert_fvecs -- $GIST_DIR/train.fvecs -o data/gist.local.bin
-// cargo r -r --bin convert_fvecs -- $GIST_DIR/test.fvecs -o data/gist_test.bin
+// cargo r -r --bin convert_fvecs -- $GIST_DIR/gist_base.fvecs -o data/gist_10000.local.bin -l 10000
+// cargo r -r --bin convert_fvecs -- $GIST_DIR/gist_base.fvecs -o data/gist.local.bin
 
-// cargo r -r --bin convert_fvecs -- data/gist_base.local.fvecs -o data/gist.local.bin
+// ** Do not forget to add `config/gist.local.toml`, `config/gist_10000.local.toml`. **
+// ** You can copy `config/gist_test.toml` and modify its `data_path` field. **
+
+// Test file is already in the repo, no need to convert it.
