@@ -444,7 +444,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         );
         let max_m0 = m * 2;
         let ef_construction = config.ef_construction.max(m);
-        let default_ef = 10;
+        let default_ef = 150;
         let inv_log_m = 1.0 / (m as f32).ln();
         let start_batch_since = 1000;
         let inner_batch_size = 64;
@@ -563,6 +563,10 @@ impl<T: Scalar> IndexKNN<T> for HNSWIndex<T> {
     }
 }
 impl<T: Scalar> IndexKNNWithEf<T> for HNSWIndex<T> {
+    fn set_default_ef(&mut self, ef: usize) {
+        assert!(ef > 0, "The search radius should be positive.");
+        self.config.default_ef = ef;
+    }
     fn knn_with_ef(&self, query: &[T], k: usize, ef: usize) -> Vec<CandidatePair> {
         if self.len() == 0 {
             return Vec::new();

@@ -85,6 +85,12 @@ pub trait IndexKNN<T: Scalar>: IndexIter<T> {
 
 /// The trait for index that can search the k-nearest neighbors with a search radius `ef`.
 pub trait IndexKNNWithEf<T: Scalar>: IndexKNN<T> {
+    /// Set the default search radius `ef`.
+    ///
+    /// `knn` will use `ef.max(k)` as the search radius by default.
+    /// `knn_with_ef` will not be affected.
+    fn set_default_ef(&mut self, ef: usize);
+
     /// Same as `knn`, but with a search radius `ef`.
     /// When ef < k, ef will be set to k.
     fn knn_with_ef(&self, query: &[T], k: usize, ef: usize) -> Vec<CandidatePair>;
