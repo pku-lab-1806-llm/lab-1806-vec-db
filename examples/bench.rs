@@ -4,16 +4,19 @@ use anyhow::Result;
 use clap::Parser;
 use lab_1806_vec_db::{
     config::{IndexAlgorithmConfig, VecDataConfig},
-    distance::DistanceAlgorithm,
+    distance::{
+        pq_table::{PQConfig, PQTable},
+        DistanceAlgorithm,
+    },
     index_algorithm::{
-        candidate_pair::GroundTruth, CandidatePair, HNSWIndex, IVFIndex, PQLinearIndex,
+        candidate_pair::GroundTruth, CandidatePair, HNSWIndex, IVFIndex, LinearIndex,
     },
     prelude::*,
     scalar::Scalar,
     vec_set::VecSet,
 };
 use plotly::{Plot, Scatter};
-use rand::SeedableRng;
+use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,8 +46,11 @@ struct BenchConfig {
     dist: DistanceAlgorithm,
     gnd_path: String,
     index_cache: String,
+    pq_cache: Option<String>,
     ef: BenchEf,
     algorithm: IndexAlgorithmConfig,
+    #[serde(rename = "PQ")]
+    pq: Option<PQConfig>,
     base: VecDataConfig,
     test: VecDataConfig,
 }
@@ -89,25 +95,65 @@ impl AvgRecorder {
 enum DynamicIndex<T> {
     HNSW(HNSWIndex<T>),
     IVF(IVFIndex<T>),
-    PQLinear(PQLinearIndex<T>),
+    Linear(LinearIndex<T>),
 }
 impl<T: Scalar> DynamicIndex<T> {
-    pub fn knn_with_ef(&self, query: &[T], k: usize, ef: usize) -> Vec<CandidatePair> {
-        match self {
-            DynamicIndex::HNSW(index) => index.knn_with_ef(query, k, ef),
-            DynamicIndex::IVF(index) => index.knn_with_ef(query, k, ef),
-            DynamicIndex::PQLinear(index) => index.knn_with_ef(query, k, ef),
+    pub fn knn_with_ef(
+        &self,
+        query: &[T],
+        k: usize,
+        ef: usize,
+        pq: &Option<PQTable<T>>,
+    ) -> Vec<CandidatePair> {
+        use DynamicIndex::*;
+        match (self, pq) {
+            (HNSW(index), _) => index.knn_with_ef(query, k, ef),
+            (IVF(index), _) => index.knn_with_ef(query, k, ef),
+            (Linear(index), Some(pq)) => index.knn_pq(query, k, ef, pq),
+            _ => unimplemented!(
+                "({:?}, {:?}) is not implemented.",
+                self.algorithm_name(),
+                pq
+            ),
         }
     }
     pub fn algorithm_name(&self) -> String {
         match self {
             DynamicIndex::HNSW(_) => "HNSW".to_string(),
             DynamicIndex::IVF(_) => "IVF".to_string(),
-            DynamicIndex::PQLinear(_) => "PQLinear".to_string(),
+            DynamicIndex::Linear(_) => "Linear".to_string(),
         }
     }
 }
-fn load_or_build<T: Scalar>(config: BenchConfig, base_set: VecSet<T>) -> Result<DynamicIndex<T>> {
+fn load_or_build_pq<T: Scalar>(
+    config: Option<PQConfig>,
+    pq_cache: Option<String>,
+    base_set: &VecSet<T>,
+    rng: &mut impl Rng,
+) -> Result<Option<PQTable<T>>> {
+    let config = match config {
+        Some(config) => config,
+        None => return Ok(None),
+    };
+    if let Some(pq_cache) = &pq_cache {
+        let path = Path::new(&pq_cache);
+        if path.exists() {
+            println!("Trying to load PQTable from {}...", pq_cache);
+            return Ok(Some(PQTable::load(&path)?));
+        }
+    }
+    let pq = PQTable::from_vec_set(base_set, config, rng);
+    if let Some(pq_cache) = &pq_cache {
+        println!("Saving PQTable to {}...", pq_cache);
+        pq.save(&pq_cache)?;
+    }
+    Ok(Some(pq))
+}
+fn load_or_build_index<T: Scalar>(
+    config: BenchConfig,
+    base_set: VecSet<T>,
+    rng: &mut impl Rng,
+) -> Result<DynamicIndex<T>> {
     let path = Path::new(&config.index_cache);
 
     if path.exists() {
@@ -122,12 +168,10 @@ fn load_or_build<T: Scalar>(config: BenchConfig, base_set: VecSet<T>) -> Result<
                 let index = IVFIndex::load_with_external_vec_set(&config.index_cache, base_set)?;
                 DynamicIndex::IVF(index)
             }
-            IndexAlgorithmConfig::PQLinear(_) => {
-                let index =
-                    PQLinearIndex::load_with_external_vec_set(&config.index_cache, base_set)?;
-                DynamicIndex::PQLinear(index)
+            IndexAlgorithmConfig::Linear => {
+                let index = LinearIndex::load_with_external_vec_set(&config.index_cache, base_set)?;
+                DynamicIndex::Linear(index)
             }
-            _ => unimplemented!("{:?} is not implemented.", config.algorithm),
         };
         let elapsed = start.elapsed().as_secs_f32();
         println!("Index loaded in {:.2} seconds.", elapsed);
@@ -135,29 +179,27 @@ fn load_or_build<T: Scalar>(config: BenchConfig, base_set: VecSet<T>) -> Result<
     } else {
         println!("Index file not found. Building index...");
         let dist = DistanceAlgorithm::L2Sqr;
-        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
 
         let start = std::time::Instant::now();
         let index = match config.algorithm {
             IndexAlgorithmConfig::HNSW(config) => {
-                let index = HNSWIndex::build_on_vec_set(base_set, dist, config, true, &mut rng);
+                let index = HNSWIndex::build_on_vec_set(base_set, dist, config, true, rng);
                 println!("Saving index to {}...", path.display());
                 let index = index.save_without_vec_set(&path)?;
                 DynamicIndex::HNSW(index)
             }
             IndexAlgorithmConfig::IVF(config) => {
-                let index = IVFIndex::from_vec_set(base_set, dist, config, &mut rng);
+                let index = IVFIndex::from_vec_set(base_set, dist, config, rng);
                 println!("Saving index to {}...", path.display());
                 let index = index.save_without_vec_set(&path)?;
                 DynamicIndex::IVF(index)
             }
-            IndexAlgorithmConfig::PQLinear(config) => {
-                let index = PQLinearIndex::from_vec_set(base_set, dist, config, &mut rng);
+            IndexAlgorithmConfig::Linear => {
+                let index = LinearIndex::from_vec_set(base_set, dist, (), rng);
                 println!("Saving index to {}...", path.display());
                 let index = index.save_without_vec_set(&path)?;
-                DynamicIndex::PQLinear(index)
+                DynamicIndex::Linear(index)
             }
-            _ => unimplemented!("{:?} is not implemented.", config.algorithm),
         };
         let elapsed = start.elapsed().as_secs_f32();
         println!("Index built in {:.2} seconds.", elapsed);
@@ -232,8 +274,9 @@ impl BenchResult {
 }
 fn main() -> Result<()> {
     let args = Args::parse();
+    let mut rng = rand::rngs::StdRng::seed_from_u64(42);
     let load_start = std::time::Instant::now();
-    let bench_config = BenchConfig::load_from_toml_file(&args.bench_config_path)?;
+    let mut bench_config = BenchConfig::load_from_toml_file(&args.bench_config_path)?;
     let base_set = VecSet::<f32>::load_with(&bench_config.base)?;
     println!("Loaded base set (size: {}).", base_set.len());
     let test_set = VecSet::<f32>::load_with(&bench_config.test)?;
@@ -249,7 +292,14 @@ fn main() -> Result<()> {
 
     let ef = bench_config.ef.clone();
 
-    let index = load_or_build(bench_config, base_set)?;
+    let pq = load_or_build_pq(
+        bench_config.pq.take(),
+        bench_config.pq_cache.take(),
+        &base_set,
+        &mut rng,
+    )?;
+
+    let index = load_or_build_index(bench_config, base_set, &mut rng)?;
 
     let mut bench_result = BenchResult::new();
 
@@ -259,7 +309,7 @@ fn main() -> Result<()> {
 
         let start = std::time::Instant::now();
         for (query, gnd) in test_set.iter().zip(gnd.iter()) {
-            let result_set = index.knn_with_ef(query, k, ef);
+            let result_set = index.knn_with_ef(query, k, ef, &pq);
             let recall = gnd.recall(&result_set);
             avg_recall.add(recall);
         }

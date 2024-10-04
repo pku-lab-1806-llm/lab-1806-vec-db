@@ -14,8 +14,6 @@ use super::{prelude::*, ResultSet};
 
 /// Linear index for the k-nearest neighbors search.
 /// The distance algorithm is configurable.
-///
-/// Holds a reference to the `VecSet`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinearIndex<T> {
     /// The distance algorithm.
@@ -73,6 +71,27 @@ impl<T: Scalar> IndexSerdeExternalVecSet<T> for LinearIndex<T> {
         let mut file = std::fs::File::open(path)?;
         let dist: DistanceAlgorithm = bincode::deserialize_from(&mut file)?;
         Ok(Self { dist, vec_set })
+    }
+}
+impl<T: Scalar> IndexPQ<T> for LinearIndex<T> {
+    fn knn_pq(
+        &self,
+        query: &[T],
+        k: usize,
+        ef: usize,
+        pq_table: &crate::distance::pq_table::PQTable<T>,
+    ) -> Vec<CandidatePair> {
+        assert_eq!(
+            self.dist, pq_table.config.dist,
+            "Distance algorithm mismatch."
+        );
+        let mut pq_result = ResultSet::new(ef.max(k));
+        let lookup = pq_table.create_lookup(query);
+        for (i, v) in pq_table.encoded_vec_set.iter().enumerate() {
+            let d = self.dist.d(v, &lookup);
+            pq_result.add(CandidatePair::new(i, d));
+        }
+        pq_result.pq_resort(k, query, self, self.dist)
     }
 }
 

@@ -1,3 +1,6 @@
+use std::path::Path;
+
+use anyhow::Result;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +27,8 @@ pub struct PQConfig {
     pub m: usize,
     /// The distance algorithm to use.
     pub dist: DistanceAlgorithm,
+    /// The number of vectors to be sampled for the k-means algorithm.
+    pub k_means_size: Option<usize>,
     /// The number of iterations for the k-means algorithm.
     pub k_means_max_iter: usize,
     /// The tolerance for the k-means algorithm.
@@ -38,6 +43,32 @@ pub fn split_indices(n_bits: usize, m: usize, v: &[u8]) -> Vec<usize> {
             .take(m)
             .collect(),
         8 => v.iter().copied().map(Into::into).collect(),
+        _ => panic!("n_bits must be 4 or 8 in PQTable."),
+    }
+}
+pub fn pq_encode<T: Scalar>(
+    m: usize,
+    n_bits: usize,
+    group_k_means: &Vec<KMeans<T>>,
+    v: &[T],
+) -> Vec<u8> {
+    match n_bits {
+        4 => {
+            let mut encoded = vec![0_u8; m.div_ceil(2)];
+            for i in 0..m / 2 {
+                let v0 = group_k_means[2 * i].find_nearest(v);
+                let v1 = group_k_means[2 * i + 1].find_nearest(v);
+                encoded[i] = (v0 | (v1 << 4)) as u8;
+            }
+            if m % 2 == 1 {
+                encoded[m / 2] = group_k_means[m - 1].find_nearest(v) as u8;
+            }
+            encoded
+        }
+        8 => group_k_means
+            .iter()
+            .map(|g| g.find_nearest(v) as u8)
+            .collect(),
         _ => panic!("n_bits must be 4 or 8 in PQTable."),
     }
 }
@@ -71,6 +102,11 @@ pub struct PQTable<T> {
     /// `k = 2**n_bits` is the number of centroids for each group.
     /// *Cached for convenience.*
     pub k: usize,
+    /// The dimension of each group.
+    /// *Cached for convenience.*
+    pub encoded_dim: usize,
+    /// The k-means centroids for each group.
+    pub encoded_vec_set: VecSet<u8>,
     /// The k-means centroids for each group.
     pub group_k_means: Vec<KMeans<T>>,
     /// The dot product of each centroid with itself (flattened).
@@ -91,6 +127,9 @@ impl<T: Scalar> PQTable<T> {
             vec_set.dim() % m == 0,
             "dim must be a multiple of m in PQTable."
         );
+        let sub_vec_set = config
+            .k_means_size
+            .map(|size| vec_set.random_sample(size, rng));
         let k = 1 << config.n_bits;
         let dim = vec_set.dim();
         let d = dim / m;
@@ -110,7 +149,8 @@ impl<T: Scalar> PQTable<T> {
         for i in 0..m {
             let selected = d * i..d * (i + 1);
             k_means_config.selected = Some(selected);
-            let k_means = KMeans::from_vec_set(vec_set, k_means_config.clone(), rng);
+            let k_means_vec_set = sub_vec_set.as_ref().unwrap_or(vec_set);
+            let k_means = KMeans::from_vec_set(k_means_vec_set, k_means_config.clone(), rng);
             if config.dist == Cosine {
                 for c in k_means.centroids.iter() {
                     dot_product_cache.push(c.dot_product(c));
@@ -118,58 +158,24 @@ impl<T: Scalar> PQTable<T> {
             }
             group_k_means.push(k_means);
         }
+        let encoded_dim = match config.n_bits {
+            4 => m.div_ceil(2),
+            8 => m,
+            _ => panic!("n_bits must be 4 or 8 in PQTable."),
+        };
+        let mut encoded_vec_set = VecSet::with_capacity(encoded_dim, vec_set.len());
+        for v in vec_set.iter() {
+            encoded_vec_set.push(&pq_encode(m, config.n_bits, &group_k_means, v));
+        }
         Self {
             config,
             dim,
             k,
+            encoded_dim,
+            encoded_vec_set,
             group_k_means,
             dot_product_cache,
         }
-    }
-    /// Encode the given vector.
-    pub fn encode(&self, v: &[T]) -> Vec<u8> {
-        let m = self.config.m;
-        let n_bits = self.config.n_bits;
-
-        match n_bits {
-            4 => {
-                let mut encoded = vec![0_u8; m.div_ceil(2)];
-                for i in 0..m / 2 {
-                    let v0 = self.group_k_means[2 * i].find_nearest(v);
-                    let v1 = self.group_k_means[2 * i + 1].find_nearest(v);
-                    encoded[i] = (v0 | (v1 << 4)) as u8;
-                }
-                if m % 2 == 1 {
-                    encoded[m / 2] = self.group_k_means[m - 1].find_nearest(v) as u8;
-                }
-                encoded
-            }
-            8 => self
-                .group_k_means
-                .iter()
-                .map(|g| g.find_nearest(v) as u8)
-                .collect(),
-            _ => panic!("n_bits must be 4 or 8 in PQTable."),
-        }
-    }
-
-    /// Get the dimension of the encoded vector.
-    pub fn encoded_dim(&self) -> usize {
-        match self.config.n_bits {
-            4 => self.config.m.div_ceil(2),
-            8 => self.config.m,
-            _ => panic!("n_bits must be 4 or 8 in PQTable."),
-        }
-    }
-
-    /// Encode the given vector set.
-    pub fn encode_batch(&self, vec_set: &VecSet<T>) -> VecSet<u8> {
-        let dim = self.encoded_dim();
-        let mut target_set = VecSet::with_capacity(dim, vec_set.len());
-        for v in vec_set.iter() {
-            target_set.push(&self.encode(v));
-        }
-        target_set
     }
 
     /// Get indices from a encoded vector.
@@ -234,6 +240,17 @@ impl<T: Scalar> PQTable<T> {
             lookup,
             norm,
         }
+    }
+
+    pub fn save(&self, path: &impl AsRef<Path>) -> Result<()> {
+        let file = std::fs::File::create(path)?;
+        bincode::serialize_into(file, self)?;
+        Ok(())
+    }
+    pub fn load(path: &impl AsRef<Path>) -> Result<Self> {
+        let file = std::fs::File::open(path)?;
+        let pq_table: PQTable<T> = bincode::deserialize_from(file)?;
+        Ok(pq_table)
     }
 }
 impl<T: Scalar> DistanceAdapter<[u8], PQLookupTable<'_, T>> for DistanceAlgorithm {
@@ -305,12 +322,13 @@ mod test {
             n_bits,
             m,
             dist,
+            k_means_size: None,
             k_means_max_iter: 20,
             k_means_tol: 1e-6,
         };
         let pq_table = PQTable::from_vec_set(&src_set, pq_config, &mut rng);
 
-        let encoded_set = pq_table.encode_batch(&src_set);
+        let encoded_set = &pq_table.encoded_vec_set;
         for i in 0..num_vec {
             let src = &src_set[i];
             let decoded = pq_table.decode(&encoded_set[i]);
@@ -346,12 +364,13 @@ mod test {
             n_bits: 4,
             m: dim / 4,
             dist,
+            k_means_size: None,
             k_means_max_iter: 20,
             k_means_tol: 1e-6,
         };
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let pq_table = PQTable::from_vec_set(&vec_set, pq_config, &mut rng);
-        let encoded_set = pq_table.encode_batch(&vec_set);
+        let encoded_set = &pq_table.encoded_vec_set;
 
         println!("Distance Algorithm: {:?}", dist);
         let test_count = 20;

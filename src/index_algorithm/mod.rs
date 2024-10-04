@@ -5,7 +5,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    distance::{pq_table::PQConfig, DistanceAlgorithm},
+    distance::{pq_table::PQTable, DistanceAlgorithm},
     scalar::Scalar,
     vec_set::VecSet,
 };
@@ -21,7 +21,6 @@ pub mod candidate_pair;
 pub mod hnsw_index;
 pub mod ivf_index;
 pub mod linear_index;
-pub mod pq_linear_index;
 pub mod reuseable_visited;
 // All Index Algorithms & Candidate Tools
 pub use self::{
@@ -29,7 +28,6 @@ pub use self::{
     hnsw_index::{HNSWConfig, HNSWIndex},
     ivf_index::{IVFConfig, IVFIndex},
     linear_index::LinearIndex,
-    pq_linear_index::PQLinearIndex,
 };
 
 /// The trait for index that can be accessed by the index.
@@ -144,18 +142,8 @@ pub trait IndexSerdeExternalVecSet<T: Scalar>: IndexSerde {
     fn load_with_external_vec_set(path: impl AsRef<Path>, vec_set: VecSet<T>) -> Result<Self>;
 }
 
-pub trait IndexPQ {
-    type NonPQIndex;
-
-    /// Create a new PQ index from a non-PQ index.
-    ///
-    /// The `pq_config` is the configuration of the PQ table.
-    ///
-    /// The `k_means_size` is the size of the sub vector set for K-Means.
-    fn pq_from(
-        index: Self::NonPQIndex,
-        pq_config: PQConfig,
-        k_means_size: Option<usize>,
-        rng: &mut impl Rng,
-    ) -> Self;
+pub trait IndexPQ<T: Scalar>: IndexKNN<T> {
+    /// Get the precise k-nearest neighbors with PQ and a search radius `ef`.
+    fn knn_pq(&self, query: &[T], k: usize, ef: usize, pq_table: &PQTable<T>)
+        -> Vec<CandidatePair>;
 }

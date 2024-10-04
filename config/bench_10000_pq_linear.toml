@@ -5,7 +5,10 @@ index_cache = "data/gist_10000_pq_linear.local.bin"
 [ef]
 list = [20, 200, 2000]
 
-[algorithm.PQLinear]
+[algorithm.Linear]
+
+[PQ]
+dist = "L2Sqr"
 n_bits = 4
 m = 240
 k_means_size = 1000

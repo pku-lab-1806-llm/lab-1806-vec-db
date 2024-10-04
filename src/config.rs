@@ -1,8 +1,6 @@
 use std::path::Path;
 
-use crate::index_algorithm::{
-    hnsw_index::HNSWConfig, ivf_index::IVFConfig, pq_linear_index::PQLinearConfig,
-};
+use crate::index_algorithm::{hnsw_index::HNSWConfig, ivf_index::IVFConfig};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
@@ -15,7 +13,6 @@ pub enum IndexAlgorithmConfig {
     /// HNSW (Hierarchical Navigable Small World)
     HNSW(HNSWConfig),
     IVF(IVFConfig),
-    PQLinear(PQLinearConfig),
 }
 
 /// Data type of the vector elements.
