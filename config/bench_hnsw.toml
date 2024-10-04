@@ -1,0 +1,24 @@
+dist = "L2Sqr"
+gnd_path = "data/gnd.local.bin"
+index_cache = "data/gist_hnsw.local.bin"
+
+[ef]
+start = 120
+end = 360
+step = 20
+
+[algorithm.HNSW]
+max_elements = 1000000
+ef_construction = 200
+M = 16
+
+[base]
+dim = 960
+data_type = "float32"
+data_path = "data/gist.local.bin"
+
+
+[test]
+dim = 960
+data_type = "float32"
+data_path = "data/gist_test.bin"

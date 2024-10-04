@@ -1,0 +1,26 @@
+dist = "L2Sqr"
+gnd_path = "data/gnd_10000.local.bin"
+index_cache = "data/gist_10000_ivf.local.bin"
+
+[ef]
+start = 8
+end = 24
+step = 4
+
+[algorithm.IVF]
+k = 128
+k_means_size = 1000
+k_means_max_iter = 20
+k_means_tol = 1e-6
+
+
+[base]
+dim = 960
+data_type = "float32"
+data_path = "data/gist_10000.local.bin"
+
+
+[test]
+dim = 960
+data_type = "float32"
+data_path = "data/gist_test.bin"

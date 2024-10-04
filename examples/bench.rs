@@ -3,9 +3,9 @@ use std::path::Path;
 use anyhow::Result;
 use clap::Parser;
 use lab_1806_vec_db::{
-    config::VecDataConfig,
+    config::{IndexAlgorithmConfig, VecDataConfig},
     distance::DistanceAlgorithm,
-    index_algorithm::{candidate_pair::GroundTruth, HNSWConfig, HNSWIndex},
+    index_algorithm::{candidate_pair::GroundTruth, CandidatePair, HNSWIndex, IVFIndex},
     prelude::*,
     scalar::Scalar,
     vec_set::VecSet,
@@ -14,39 +14,40 @@ use plotly::{Plot, Scatter};
 use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BenchEf {
+    start: usize,
+    end: usize,
+    step: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BenchConfig {
+    dist: DistanceAlgorithm,
+    gnd_path: String,
+    index_cache: String,
+    ef: BenchEf,
+    algorithm: IndexAlgorithmConfig,
+    base: VecDataConfig,
+    test: VecDataConfig,
+}
+
+impl BenchConfig {
+    pub fn load_from_toml_file(path: impl AsRef<Path>) -> Result<Self> {
+        let content = std::fs::read_to_string(path)?;
+        let config: BenchConfig = toml::from_str(&content)?;
+        Ok(config)
+    }
+}
+
 /// Generate ground truth for the test set by LinearIndex
 #[derive(Parser)]
 struct Args {
-    /// Path to the base set config file
-    base: String,
-    /// Path to the test set config file
-    #[clap(short, long, default_value = "config/gist_test.toml")]
-    test: String,
-    /// Path to the ground truth file
-    #[clap(short, long)]
-    gnd: String,
-    /// Path to the index cache file
-    #[clap(long, default_value = "data/gist_hnsw.local.bin")]
-    index_cache: String,
+    /// Path to the benchmark config file
+    bench_config_path: String,
     /// Path to the benchmark result html file (optional)
     #[clap(short, long)]
     output: Option<String>,
-    /// The search radius for the HNSW construction
-    #[clap(long, default_value = "200")]
-    ef_construction: usize,
-    /// The number of neighbors in HNSW
-    #[clap(short = 'M', default_value = "16")]
-    m: usize,
-
-    /// The start value of ef for benchmarking
-    #[clap(long, default_value = "120")]
-    ef_start: usize,
-    /// The end value of ef for benchmarking
-    #[clap(long, default_value = "360")]
-    ef_end: usize,
-    /// The step value of ef for benchmarking
-    #[clap(long, default_value = "20")]
-    ef_step: usize,
 }
 
 struct AvgRecorder {
@@ -68,13 +69,41 @@ impl AvgRecorder {
         self.sum / self.count as f32
     }
 }
-fn load_or_build<T: Scalar>(args: &Args, base_set: VecSet<T>) -> Result<HNSWIndex<T>> {
-    let path = Path::new(&args.index_cache);
+enum DynamicIndex<T> {
+    HNSW(HNSWIndex<T>),
+    IVF(IVFIndex<T>),
+}
+impl<T: Scalar> DynamicIndex<T> {
+    pub fn knn_with_ef(&self, query: &[T], k: usize, ef: usize) -> Vec<CandidatePair> {
+        match self {
+            DynamicIndex::HNSW(index) => index.knn_with_ef(query, k, ef),
+            DynamicIndex::IVF(index) => index.knn_with_ef(query, k, ef),
+        }
+    }
+    pub fn algorithm_name(&self) -> String {
+        match self {
+            DynamicIndex::HNSW(_) => "HNSW".to_string(),
+            DynamicIndex::IVF(_) => "IVF".to_string(),
+        }
+    }
+}
+fn load_or_build<T: Scalar>(config: BenchConfig, base_set: VecSet<T>) -> Result<DynamicIndex<T>> {
+    let path = Path::new(&config.index_cache);
 
     if path.exists() {
         println!("Trying to load index from {}...", path.display());
         let start = std::time::Instant::now();
-        let index = HNSWIndex::load_with_external_vec_set(&args.index_cache, base_set)?;
+        let index = match config.algorithm {
+            IndexAlgorithmConfig::HNSW(_) => {
+                let index = HNSWIndex::load_with_external_vec_set(&config.index_cache, base_set)?;
+                DynamicIndex::HNSW(index)
+            }
+            IndexAlgorithmConfig::IVF(_) => {
+                let index = IVFIndex::load_with_external_vec_set(&config.index_cache, base_set)?;
+                DynamicIndex::IVF(index)
+            }
+            _ => unimplemented!("{:?} is not implemented.", config.algorithm),
+        };
         let elapsed = start.elapsed().as_secs_f32();
         println!("Index loaded in {:.2} seconds.", elapsed);
         Ok(index)
@@ -82,24 +111,32 @@ fn load_or_build<T: Scalar>(args: &Args, base_set: VecSet<T>) -> Result<HNSWInde
         println!("Index file not found. Building index...");
         let dist = DistanceAlgorithm::L2Sqr;
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let config = HNSWConfig {
-            max_elements: base_set.len(),
-            ef_construction: args.ef_construction,
-            M: args.m,
-        };
+
         let start = std::time::Instant::now();
-        let index = HNSWIndex::build_on_vec_set(base_set, dist, config, true, &mut rng);
+        let index = match config.algorithm {
+            IndexAlgorithmConfig::HNSW(config) => {
+                let index = HNSWIndex::build_on_vec_set(base_set, dist, config, true, &mut rng);
+                println!("Saving index to {}...", path.display());
+                let index = index.save_without_vec_set(&path)?;
+                DynamicIndex::HNSW(index)
+            }
+            IndexAlgorithmConfig::IVF(config) => {
+                let index = IVFIndex::from_vec_set(base_set, dist, config, &mut rng);
+                println!("Saving index to {}...", path.display());
+                let index = index.save_without_vec_set(&path)?;
+                DynamicIndex::IVF(index)
+            }
+            _ => unimplemented!("{:?} is not implemented.", config.algorithm),
+        };
         let elapsed = start.elapsed().as_secs_f32();
         println!("Index built in {:.2} seconds.", elapsed);
-        println!("Saving index to {}...", path.display());
-        let index = index.save_without_vec_set(&path)?;
         println!("Index saved.");
         Ok(index)
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct BenchResult {
-    /// The search radius for the HNSW construction
+    /// The search radius
     ef: Vec<usize>,
     /// Average search time in ms
     search_time: Vec<f32>,
@@ -114,7 +151,12 @@ impl BenchResult {
             recall: Vec::new(),
         }
     }
-    pub fn plot(self, title: impl Into<String>, path: Option<impl AsRef<Path>>) -> Result<()> {
+    pub fn plot(
+        self,
+        title: impl Into<String>,
+        algorithm_name: String,
+        path: Option<impl AsRef<Path>>,
+    ) -> Result<()> {
         let mut plot = Plot::new();
         println!("=== Source Data ===");
         println!("ef: {:?}", self.ef);
@@ -130,7 +172,7 @@ impl BenchResult {
             .text_font(plotly::common::Font::new().size(10).family("Arial"))
             .text_position(plotly::common::Position::BottomRight)
             .mode(plotly::common::Mode::LinesMarkersText)
-            .name("HNSW");
+            .name(algorithm_name);
         plot.add_trace(trace);
 
         let layout = plotly::Layout::new()
@@ -160,24 +202,27 @@ impl BenchResult {
 fn main() -> Result<()> {
     let args = Args::parse();
     let load_start = std::time::Instant::now();
-    let base_config = VecDataConfig::load_from_toml_file(&args.base)?;
-    let test_config = VecDataConfig::load_from_toml_file(&args.test)?;
-    let base_set = VecSet::<f32>::load_with(&base_config)?;
+    let bench_config = BenchConfig::load_from_toml_file(&args.bench_config_path)?;
+    let base_set = VecSet::<f32>::load_with(&bench_config.base)?;
     println!("Loaded base set (size: {}).", base_set.len());
-
-    let test_set = VecSet::<f32>::load_with(&test_config)?;
+    let test_set = VecSet::<f32>::load_with(&bench_config.test)?;
     println!("Loaded test set (size: {}).", test_set.len());
     let elapsed = load_start.elapsed().as_secs_f32();
     println!("VecSet loaded in {:.2} seconds.", elapsed);
 
-    let index = load_or_build(&args, base_set)?;
-    let gnd = GroundTruth::load(&args.gnd)?;
+    let base_size = base_set.len();
+
+    let gnd = GroundTruth::load(&bench_config.gnd_path)?;
     let k = gnd[0].knn_indices.len(); // default 10
     println!("Loaded ground truth (size: {}).", gnd.len());
 
+    let ef = bench_config.ef.clone();
+
+    let index = load_or_build(bench_config, base_set)?;
+
     let mut bench_result = BenchResult::new();
 
-    for ef in (args.ef_start..=args.ef_end).step_by(args.ef_step) {
+    for ef in (ef.start..=ef.end).step_by(ef.step) {
         let mut avg_recall = AvgRecorder::new();
 
         let start = std::time::Instant::now();
@@ -198,9 +243,8 @@ fn main() -> Result<()> {
         bench_result.push(ef, search_time, recall);
     }
     println!("Finished benchmarking.");
-    let title = format!("HNSW Bench ({} elements)", index.len());
-    bench_result.plot(title, args.output.as_ref())?;
+    let title = format!("HNSW Bench ({} elements)", base_size);
+    bench_result.plot(title, index.algorithm_name(), args.output.as_ref())?;
     Ok(())
 }
-// cargo r -r --example hnsw_bench -- config/gist_10000.local.toml -g data/gnd_10000.local.bin --index-cache data/gist_10000_hnsw.local.bin
-// cargo r -r --example hnsw_bench -- config/gist.local.toml -g data/gnd.local.bin
+// cargo r -r --example bench -- config/bench_hnsw.toml

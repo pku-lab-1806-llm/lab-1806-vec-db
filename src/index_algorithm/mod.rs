@@ -12,7 +12,7 @@ use crate::{
 pub mod prelude {
     // All Index Traits
     pub use super::{
-        IndexBuilder, IndexFromVecSet, IndexIter, IndexKNN, IndexKNNWithEf, IndexSerde,
+        IndexBuilder, IndexFromVecSet, IndexIter, IndexKNN, IndexKNNWithEf, IndexPQ, IndexSerde,
         IndexSerdeExternalVecSet,
     };
 }
@@ -29,6 +29,7 @@ pub use self::{
     hnsw_index::{HNSWConfig, HNSWIndex},
     ivf_index::{IVFConfig, IVFIndex},
     linear_index::LinearIndex,
+    pq_linear_index::PQLinearIndex,
 };
 
 /// The trait for index that can be accessed by the index.
