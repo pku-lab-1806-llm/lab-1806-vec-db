@@ -5,7 +5,7 @@ use clap::Parser;
 use lab_1806_vec_db::{
     config::{IndexAlgorithmConfig, VecDataConfig},
     distance::{
-        pq_table::{PQConfig, PQTable},
+        pq_table::{self, PQConfig, PQTable},
         DistanceAlgorithm,
     },
     index_algorithm::{
@@ -127,9 +127,10 @@ impl<T: Scalar> DynamicIndex<T> {
     ) -> Vec<CandidatePair> {
         use DynamicIndex::*;
         match (self, pq) {
+            (HNSW(index), Some(pq)) => index.knn_pq(query, k, ef, pq),
+            (Linear(index), Some(pq)) => index.knn_pq(query, k, ef, pq),
             (HNSW(index), _) => index.knn_with_ef(query, k, ef),
             (IVF(index), _) => index.knn_with_ef(query, k, ef),
-            (Linear(index), Some(pq)) => index.knn_pq(query, k, ef, pq),
             _ => unimplemented!(
                 "({:?}, {:?}) is not implemented.",
                 self.algorithm_name(),
@@ -167,8 +168,11 @@ fn load_or_build_pq<T: Scalar>(
     let path = Path::new(&pq_cache);
     if path.exists() {
         println!("Trying to load PQTable from {}...", pq_cache);
-        return Ok(Some(PQTable::load(&path)?));
+        let pq_table = PQTable::load(&path)?;
+        println!("PQTable loaded.");
+        return Ok(Some(pq_table));
     }
+    println!("PQTable file not found. Building PQTable...");
     let pq = PQTable::from_vec_set(base_set, config, rng);
     println!("Saving PQTable to {}...", pq_cache);
     pq.save(&pq_cache)?;

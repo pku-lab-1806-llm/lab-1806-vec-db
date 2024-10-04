@@ -10,7 +10,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    distance::{DistanceAdapter, DistanceAlgorithm},
+    distance::{pq_table::PQTable, DistanceAdapter, DistanceAlgorithm},
     index_algorithm::ResultSet,
     scalar::Scalar,
     vec_set::VecSet,
@@ -238,22 +238,21 @@ impl<T: Scalar> HNSWIndex<T> {
     pub fn is_soft_deleted(&self, idx: usize) -> bool {
         self.deleted_mark[idx]
     }
-    /// Search on specific level for adding a vector.
-    fn search_on_level(
+
+    fn search_on_level_fn(
         &self,
         enter_point: usize,
         level: usize,
         ef: usize,
-        query: &[T],
+        dist_fn: &impl Fn(usize) -> f32,
     ) -> ResultSet {
-        let dist = self.config.dist;
         let mut visited = HashSet::new();
         let mut queue = BTreeSet::new();
         let mut result = ResultSet::new(ef);
 
         // Insert the enter point.
         visited.insert(enter_point);
-        let enter_pair = CandidatePair::new(enter_point, dist.d(&self[enter_point], query));
+        let enter_pair = CandidatePair::new(enter_point, dist_fn(enter_point));
         if !self.is_soft_deleted(enter_point) {
             result.add(enter_pair.clone());
         }
@@ -268,7 +267,7 @@ impl<T: Scalar> HNSWIndex<T> {
                     continue;
                 }
                 visited.insert(new_p);
-                let new_d = dist.d(&self[new_p], query);
+                let new_d = dist_fn(new_p);
                 let new_pair = CandidatePair::new(new_p, new_d);
                 if !self.is_soft_deleted(new_p) {
                     result.add(new_pair.clone());
@@ -278,16 +277,31 @@ impl<T: Scalar> HNSWIndex<T> {
         }
         result
     }
+    /// Search on specific level for adding a vector.
+    fn search_on_level(
+        &self,
+        enter_point: usize,
+        level: usize,
+        ef: usize,
+        query: &[T],
+    ) -> ResultSet {
+        let dist_fn = |idx| self.config.dist.d(&self[idx], query);
+        self.search_on_level_fn(enter_point, level, ef, &dist_fn)
+    }
     /// Greedy search on a specific level.
-    fn greedy_search_on_level(&self, level: usize, enter_point: usize, query: &[T]) -> usize {
-        let dist = self.config.dist;
+    fn greedy_search_on_level_fn(
+        &self,
+        level: usize,
+        enter_point: usize,
+        dist_fn: &impl Fn(usize) -> f32,
+    ) -> usize {
         let mut cur_p = enter_point;
-        let mut cur_d = dist.d(&self.vec_set[cur_p], query);
+        let mut cur_d = dist_fn(cur_p);
         loop {
             let mut flag = false;
             for &neighbor in self.get_links(cur_p, level) {
                 let new_p = neighbor as usize;
-                let new_d = dist.d(&self.vec_set[new_p], query);
+                let new_d = dist_fn(new_p);
                 if new_d < cur_d {
                     cur_d = new_d;
                     cur_p = new_p;
@@ -300,20 +314,34 @@ impl<T: Scalar> HNSWIndex<T> {
         }
         cur_p
     }
+
     /// Greedy search until reaching the base layer.
     ///
     /// - This does *NOT* search nearest vector on `target_level`.
     /// - Starts at enter_point. NEVER call this when adding a vector higher than enter_level.
-    fn greedy_search_until_level(&self, target_level: usize, query: &[T]) -> usize {
+    fn greedy_search_until_level_fn(
+        &self,
+        target_level: usize,
+        dist_fn: &impl Fn(usize) -> f32,
+    ) -> usize {
         let (mut level, mut cur_p) = match (self.enter_level, self.enter_point) {
             (Some(enter_level), Some(enter_point)) => (enter_level, enter_point),
             _ => panic!("The index is empty."),
         };
         while level > target_level {
-            cur_p = self.greedy_search_on_level(level, cur_p, query);
+            cur_p = self.greedy_search_on_level_fn(level, cur_p, dist_fn);
             level -= 1;
         }
         cur_p
+    }
+
+    /// Greedy search until reaching the base layer.
+    ///
+    /// - This does *NOT* search nearest vector on `target_level`.
+    /// - Starts at enter_point. NEVER call this when adding a vector higher than enter_level.
+    fn greedy_search_until_level(&self, target_level: usize, query: &[T]) -> usize {
+        let dist_fn = |idx| self.config.dist.d(&self[idx], query);
+        self.greedy_search_until_level_fn(target_level, &dist_fn)
     }
     /// Reset the capacity of the index.
     /// `exact` is true if the capacity should be exactly `new_max_elements`.
@@ -638,6 +666,30 @@ impl<T: Scalar> IndexSerdeExternalVecSet<T> for HNSWIndex<T> {
         index.reset_max_elements(new_max_elements, true);
 
         Ok(index)
+    }
+}
+
+impl<T: Scalar> IndexPQ<T> for HNSWIndex<T> {
+    fn knn_pq(
+        &self,
+        query: &[T],
+        k: usize,
+        ef: usize,
+        pq_table: &PQTable<T>,
+    ) -> Vec<CandidatePair> {
+        if self.len() == 0 {
+            return Vec::new();
+        }
+        let dist = self.config.dist;
+        assert_eq!(dist, pq_table.config.dist, "Distance algorithm mismatch.");
+        let lookup = pq_table.create_lookup(query);
+        let es = &pq_table.encoded_vec_set;
+        let dist_fn = |idx| dist.d(&es[idx], &lookup);
+        let ef = ef.max(k);
+        let level = 0;
+        let enter_point = self.greedy_search_until_level_fn(level, &dist_fn);
+        let result = self.search_on_level_fn(enter_point, level, ef, &dist_fn);
+        result.pq_resort(k, query, self, dist)
     }
 }
 

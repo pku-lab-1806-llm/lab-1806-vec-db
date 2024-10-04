@@ -12,6 +12,16 @@ max_elements = 10000
 ef_construction = 200
 M = 16
 
+[PQ]
+pq_cache = "data/gist_10000_pq.local.bin"
+dist = "L2Sqr"
+n_bits = 4
+m = 240
+k_means_size = 1000
+k_means_max_iter = 20
+k_means_tol = 1e-6
+
+
 [base]
 dim = 960
 data_type = "float32"
