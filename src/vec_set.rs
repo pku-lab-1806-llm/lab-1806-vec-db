@@ -3,6 +3,7 @@ use std::{ops::Index, path::Path};
 use crate::scalar::{BinaryScalar, Scalar};
 
 use anyhow::{bail, Result};
+use rand::{seq::SliceRandom, Rng};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{DataType, VecDataConfig};
@@ -131,6 +132,20 @@ impl<T: Scalar> VecSet<T> {
             .iter()
             .map(|&x| U::cast_from_f32(x.cast_to_f32()))
             .collect::<Vec<U>>();
+        VecSet::new(self.dim, data)
+    }
+
+    /// Select `k` vectors randomly from the `VecSet`.
+    ///
+    /// Usually used for the initialization of the centroids in K-means.
+    pub fn random_sample(&self, k: usize, rng: &mut impl Rng) -> VecSet<T> {
+        let mut indices = (0..self.len()).collect::<Vec<_>>();
+        indices.shuffle(rng);
+        let indices = &indices[..k];
+        let data = indices
+            .iter()
+            .flat_map(|&i| self[i].iter().copied())
+            .collect::<Vec<_>>();
         VecSet::new(self.dim, data)
     }
 }

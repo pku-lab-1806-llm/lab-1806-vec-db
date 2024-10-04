@@ -3,6 +3,7 @@ use std::ops::Range;
 
 use crate::{
     distance::{DistanceAdapter, DistanceAlgorithm},
+    index_algorithm::{CandidatePair, ResultSet},
     scalar::Scalar,
     vec_set::VecSet,
 };
@@ -14,8 +15,12 @@ pub struct KMeansConfig {
     /// The number of clusters.
     pub k: usize,
     /// The maximum number of iterations.
+    ///
+    /// Recommend: 20.
     pub max_iter: usize,
     /// The tolerance to declare convergence.
+    ///
+    /// Recommend: 1e-6.
     pub tol: f32,
     /// The distance algorithm to use.
     pub dist: DistanceAlgorithm,
@@ -81,6 +86,8 @@ impl<T: Scalar> KMeans<T> {
     ///
     /// The number of clusters should be greater than 0.
     /// The selected range should be in the range [0, vec_set.dim()).
+    ///
+    /// Call [VecSet::random_select] before this to select a subset of the vectors for the clustering.
     pub fn from_vec_set(vec_set: &VecSet<T>, config: KMeansConfig, rng: &mut impl Rng) -> Self {
         assert!(
             config.k > 0,
@@ -143,6 +150,27 @@ impl<T: Scalar> KMeans<T> {
         let dim = self.centroids.dim();
         let v = &v[self.config.selected.clone().unwrap_or(0..dim)];
         find_nearest_base(v, &self.centroids, &self.config.dist)
+    }
+
+    /// Find the `n_probes` nearest centroids to the given vector.
+    /// This will use the selected range if it is specified in the config.
+    pub fn find_n_nearest(&self, v: &[T], n_probes: usize) -> Vec<usize> {
+        assert!(
+            n_probes > 0,
+            "The number of probes should be greater than 0."
+        );
+        let dim = self.centroids.dim();
+        let dist = self.config.dist;
+        let v = &v[self.config.selected.clone().unwrap_or(0..dim)];
+        let mut result_set = ResultSet::new(n_probes);
+        for (i, c) in self.centroids.iter().enumerate() {
+            result_set.add(CandidatePair::new(i, dist.d(v, c)));
+        }
+        result_set
+            .into_sorted_vec()
+            .iter()
+            .map(|p| p.index)
+            .collect()
     }
 }
 
@@ -231,9 +259,10 @@ mod test {
             max_iter: 20,
             tol: 1e-6,
             dist: DistanceAlgorithm::L2Sqr,
-            selected: Some(0..2),
+            selected: Some(0..5),
         };
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let vec_set = vec_set.random_sample(400, &mut rng);
         let k_means = KMeans::from_vec_set(&vec_set, k_means_config.clone(), &mut rng);
 
         let k_means = KMeans::<f32>::try_from(k_means)?;
