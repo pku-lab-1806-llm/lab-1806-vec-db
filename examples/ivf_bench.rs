@@ -211,5 +211,6 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-// It will be used in LLM RAG Application, so we care about the 1e4 scale data.
+// IVF implement here will be used in RAG, so we just care about data with a size of 10000.
+// Therefore, it doesn't matter if you find it too slow when the size is larger.
 // cargo r -r --example ivf_bench -- config/gist_10000.local.toml -g data/gnd_10000.local.bin --index-cache data/gist_10000_ivf.local.bin
