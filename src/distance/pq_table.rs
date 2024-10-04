@@ -62,7 +62,7 @@ pub struct PQLookupTable<'a, T> {
 /// Can be used to encode vectors, and compute the distance between quantized vectors.
 ///
 /// The encoded vector is stored as `Vec<u8>` with `ceil(m * n_bits / 8)` bytes.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PQTable<T> {
     /// The configuration for the PQ table.
     pub config: PQConfig,

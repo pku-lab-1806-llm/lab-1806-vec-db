@@ -77,11 +77,13 @@ impl<T: Scalar> IndexFromVecSet<T> for IVFIndex<T> {
             dist,
             selected: None,
         };
-        let sub_vec_set = match config.k_means_size {
-            Some(size) => vec_set.random_sample(size, rng),
-            None => vec_set.clone(),
+        let k_means = match config.k_means_size {
+            Some(size) => {
+                let sub_vec_set = vec_set.random_sample(size, rng);
+                KMeans::from_vec_set(&sub_vec_set, k_means_config, rng)
+            }
+            None => KMeans::from_vec_set(&vec_set, k_means_config, rng),
         };
-        let k_means = KMeans::from_vec_set(&sub_vec_set, k_means_config, rng);
         let mut clusters = vec![vec![]; k];
         let mut index_map = HashMap::new();
         for (i, v) in vec_set.iter().enumerate() {
