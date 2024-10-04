@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, ops::Index};
 
 use anyhow::Result;
 use ordered_float::OrderedFloat;
@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use crate::{
     distance::{DistanceAdapter, DistanceAlgorithm},
     scalar::Scalar,
-    vec_set::VecSet,
 };
 /// A pair of the index and the distance.
 /// For the response of the k-nearest neighbors search.
@@ -90,7 +89,7 @@ impl ResultSet {
     pub fn heuristic<T: Scalar>(
         self,
         m: usize,
-        vec_set: &VecSet<T>,
+        vec_set: &impl Index<usize, Output = [T]>,
         dist: DistanceAlgorithm,
     ) -> Vec<CandidatePair> {
         let mut neighbors: Vec<CandidatePair> = Vec::with_capacity(m);
@@ -106,6 +105,23 @@ impl ResultSet {
             }
         }
         neighbors
+    }
+
+    /// Call this after PQ search to resort the result set.
+    pub fn pq_resort<T: Scalar>(
+        self,
+        k: usize,
+        query: &[T],
+        vec_set: &impl Index<usize, Output = [T]>,
+        dist: DistanceAlgorithm,
+    ) -> Vec<CandidatePair> {
+        let mut result = Self::new(k);
+        for p in self.results {
+            let v = &vec_set[p.index];
+            let d = dist.d(v, query);
+            result.add(CandidatePair::new(p.index, d));
+        }
+        result.into_sorted_vec()
     }
 }
 

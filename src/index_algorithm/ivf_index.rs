@@ -77,11 +77,13 @@ impl<T: Scalar> IndexFromVecSet<T> for IVFIndex<T> {
             dist,
             selected: None,
         };
-        let sub_vec_set = match config.k_means_size {
-            Some(size) => vec_set.random_sample(size, rng),
-            None => vec_set.clone(),
+        let k_means = match config.k_means_size {
+            Some(size) => {
+                let sub_vec_set = vec_set.random_sample(size, rng);
+                KMeans::from_vec_set(&sub_vec_set, k_means_config, rng)
+            }
+            None => KMeans::from_vec_set(&vec_set, k_means_config, rng),
         };
-        let k_means = KMeans::from_vec_set(&sub_vec_set, k_means_config, rng);
         let mut clusters = vec![vec![]; k];
         let mut index_map = HashMap::new();
         for (i, v) in vec_set.iter().enumerate() {
@@ -152,7 +154,7 @@ impl<T: Scalar> IndexKNNWithEf<T> for IVFIndex<T> {
 mod test {
     use std::fs;
 
-    use crate::{config::DBConfig, index_algorithm::LinearIndex};
+    use crate::{config::VecDataConfig, index_algorithm::LinearIndex};
     use anyhow::{Ok, Result};
     use rand::prelude::*;
 
@@ -169,10 +171,10 @@ mod test {
         }
         // The `dim` and `limit` has been limited for debug mode performance.
 
-        let file_path = "config/db_config.toml";
-        let config = DBConfig::load_from_toml_file(file_path)?;
+        let file_path = "config/gist_1000.toml";
+        let config = VecDataConfig::load_from_toml_file(file_path)?;
 
-        let raw_vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
+        let raw_vec_set = VecSet::<f32>::load_with(&config)?;
 
         let clipped_dim = raw_vec_set.dim().min(12);
 

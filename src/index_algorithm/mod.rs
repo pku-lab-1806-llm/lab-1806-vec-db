@@ -4,11 +4,15 @@ use anyhow::Result;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
-use crate::{distance::DistanceAlgorithm, scalar::Scalar, vec_set::VecSet};
+use crate::{
+    distance::{pq_table::PQTable, DistanceAlgorithm},
+    scalar::Scalar,
+    vec_set::VecSet,
+};
 pub mod prelude {
     // All Index Traits
     pub use super::{
-        IndexBuilder, IndexFromVecSet, IndexIter, IndexKNN, IndexKNNWithEf, IndexSerde,
+        IndexBuilder, IndexFromVecSet, IndexIter, IndexKNN, IndexKNNWithEf, IndexPQ, IndexSerde,
         IndexSerdeExternalVecSet,
     };
 }
@@ -136,4 +140,10 @@ pub trait IndexSerdeExternalVecSet<T: Scalar>: IndexSerde {
     fn save_without_vec_set(self, path: impl AsRef<Path>) -> Result<Self>;
     /// Load the index saved by `save_without_vec_set`.
     fn load_with_external_vec_set(path: impl AsRef<Path>, vec_set: VecSet<T>) -> Result<Self>;
+}
+
+pub trait IndexPQ<T: Scalar>: IndexKNN<T> {
+    /// Get the precise k-nearest neighbors with PQ and a search radius `ef`.
+    fn knn_pq(&self, query: &[T], k: usize, ef: usize, pq_table: &PQTable<T>)
+        -> Vec<CandidatePair>;
 }

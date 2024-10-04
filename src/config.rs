@@ -1,9 +1,6 @@
 use std::path::Path;
 
-use crate::{
-    distance::DistanceAlgorithm,
-    index_algorithm::{hnsw_index::HNSWConfig, ivf_index::IVFConfig},
-};
+use crate::index_algorithm::{hnsw_index::HNSWConfig, ivf_index::IVFConfig};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
@@ -54,40 +51,13 @@ impl VecDataConfig {
     }
 }
 
-/// The configuration of the vector database.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DBConfig {
-    /// The configuration of the index algorithm.
-    pub algorithm: IndexAlgorithmConfig,
-    /// The distance algorithm to be used in the vector database.
-    pub distance: DistanceAlgorithm,
-    /// The configuration of the vector data file.
-    pub vec_data: VecDataConfig,
-}
-
-impl DBConfig {
-    pub fn load_from_toml_file(file_path: impl AsRef<Path>) -> Result<Self> {
-        let content = std::fs::read_to_string(file_path.as_ref()).map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to read the TOML file at {}: {}",
-                file_path.as_ref().display(),
-                e.to_string()
-            )
-        })?;
-        Ok(toml::from_str(&content)?)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_load_from_toml_file() {
-        let config = DBConfig::load_from_toml_file("config/db_config.toml").unwrap();
-        println!("{:#?}", config);
-
-        let config = VecDataConfig::load_from_toml_file("config/gist_test.toml").unwrap();
+        let config = VecDataConfig::load_from_toml_file("config/gist_1000.toml").unwrap();
         println!("{:#?}", config);
     }
 }
