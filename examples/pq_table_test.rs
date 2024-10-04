@@ -1,6 +1,6 @@
 use anyhow::Result;
 use lab_1806_vec_db::{
-    config::DBConfig,
+    config::VecDataConfig,
     distance::{
         pq_table::{PQConfig, PQTable},
         DistanceAdapter,
@@ -66,10 +66,10 @@ fn pq_table_test_on_real_set_base<T: Scalar>(
 }
 
 fn main() -> Result<()> {
-    let file_path = "config/db_config.toml";
-    let config = DBConfig::load_from_toml_file(file_path)?;
+    let file_path = "config/gist_1000.toml";
+    let config = VecDataConfig::load_from_toml_file(file_path)?;
 
-    let vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
+    let vec_set = VecSet::<f32>::load_with(&config)?;
     pq_table_test_on_real_set_base(&vec_set, L2Sqr)?;
     pq_table_test_on_real_set_base(&vec_set, L2)?;
     pq_table_test_on_real_set_base(&vec_set, Cosine)?;

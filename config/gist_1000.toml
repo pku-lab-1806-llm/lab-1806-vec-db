@@ -1,0 +1,3 @@
+dim = 960
+data_type = "float32"
+data_path = "data/gist_1000.bin"

@@ -649,7 +649,7 @@ mod test {
     use rand::SeedableRng;
 
     use crate::{
-        config::{DBConfig, IndexAlgorithmConfig},
+        config::VecDataConfig,
         index_algorithm::{linear_index, IndexFromVecSet},
     };
 
@@ -664,16 +664,17 @@ mod test {
                 s.to_string()
             }
         }
-        let file_path = "config/db_config.toml";
-        let config = DBConfig::load_from_toml_file(file_path)?;
+        let file_path = "config/gist_1000.toml";
+        let config = VecDataConfig::load_from_toml_file(file_path)?;
         println!("Loaded config: {:#?}", config);
-        let raw_vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
+        let raw_vec_set = VecSet::<f32>::load_with(&config)?;
         let dist = DistanceAlgorithm::L2Sqr;
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
 
-        let config = match config.algorithm {
-            IndexAlgorithmConfig::HNSW(config) => config,
-            _ => panic!("Testing HNSWIndex with non-HNSW config."),
+        let config = HNSWConfig {
+            max_elements: raw_vec_set.len(),
+            ef_construction: 200,
+            M: 16,
         };
 
         // Limit the dimension for testing.

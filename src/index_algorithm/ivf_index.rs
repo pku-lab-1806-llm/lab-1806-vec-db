@@ -154,7 +154,7 @@ impl<T: Scalar> IndexKNNWithEf<T> for IVFIndex<T> {
 mod test {
     use std::fs;
 
-    use crate::{config::DBConfig, index_algorithm::LinearIndex};
+    use crate::{config::VecDataConfig, index_algorithm::LinearIndex};
     use anyhow::{Ok, Result};
     use rand::prelude::*;
 
@@ -171,10 +171,10 @@ mod test {
         }
         // The `dim` and `limit` has been limited for debug mode performance.
 
-        let file_path = "config/db_config.toml";
-        let config = DBConfig::load_from_toml_file(file_path)?;
+        let file_path = "config/gist_1000.toml";
+        let config = VecDataConfig::load_from_toml_file(file_path)?;
 
-        let raw_vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
+        let raw_vec_set = VecSet::<f32>::load_with(&config)?;
 
         let clipped_dim = raw_vec_set.dim().min(12);
 

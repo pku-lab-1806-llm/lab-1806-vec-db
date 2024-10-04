@@ -282,7 +282,7 @@ mod test {
     use anyhow::Result;
     use rand::SeedableRng;
 
-    use crate::{config::DBConfig, distance::DistanceAdapter, scalar::Scalar};
+    use crate::{config::VecDataConfig, distance::DistanceAdapter, scalar::Scalar};
 
     use super::*;
 
@@ -386,12 +386,12 @@ mod test {
         // Try `cargo r -r --example pq_table_test` for release mode testing,
         // which provides more accurate results.
 
-        let file_path = "config/db_config.toml";
-        let mut config = DBConfig::load_from_toml_file(file_path)?;
+        let file_path = "config/gist_1000.toml";
+        let mut config = VecDataConfig::load_from_toml_file(file_path)?;
 
-        config.vec_data.limit = Some(64);
+        config.limit = Some(64);
 
-        let raw_vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
+        let raw_vec_set = VecSet::<f32>::load_with(&config)?;
 
         let clipped_dim = raw_vec_set.dim().min(12);
 

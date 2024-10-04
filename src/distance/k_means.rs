@@ -179,7 +179,7 @@ mod test {
 
     use anyhow::Result;
 
-    use crate::config::DBConfig;
+    use crate::config::VecDataConfig;
 
     use super::*;
 
@@ -251,9 +251,9 @@ mod test {
                 s.to_string()
             }
         }
-        let file_path = "config/db_config.toml";
-        let config = DBConfig::load_from_toml_file(file_path)?;
-        let vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
+        let file_path = "config/gist_1000.toml";
+        let config = VecDataConfig::load_from_toml_file(file_path)?;
+        let vec_set = VecSet::<f32>::load_with(&config)?;
         let k_means_config = KMeansConfig {
             k: 3,
             max_iter: 20,

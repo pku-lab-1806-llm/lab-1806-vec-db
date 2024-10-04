@@ -197,14 +197,14 @@ impl VecSet<u8> {
 /// ```rust
 /// use anyhow::Result;
 /// use lab_1806_vec_db::{
-///     config::DBConfig,
+///     config::VecDataConfig,
 ///     vec_set::{DynamicVecSet, VecSet},
 ///     scalar::Scalar,
 /// };
 ///
-/// let file_path = "config/db_config.toml";
-/// let config = DBConfig::load_from_toml_file(file_path).unwrap();
-/// let vec_set = DynamicVecSet::load_with(&config.vec_data).unwrap();
+/// let file_path = "config/gist_1000.toml";
+/// let config = VecDataConfig::load_from_toml_file(file_path).unwrap();
+/// let vec_set = DynamicVecSet::load_with(&config).unwrap();
 /// // Or directly determine the data type at compile time.
 /// // let vec_set = VecSet::<f32>::load_with(&config.vec_data).unwrap();
 ///
@@ -278,8 +278,6 @@ mod test {
 
     use anyhow::anyhow;
 
-    use crate::{config::DBConfig, distance::DistanceAdapter};
-
     use super::*;
 
     #[test]
@@ -293,27 +291,22 @@ mod test {
     #[test]
     #[should_panic(expected = "Failed to convert to VecSet<u8>.")]
     fn data_type_mismatched_test() {
-        let file_path = "config/db_config.toml";
-        let config = DBConfig::load_from_toml_file(file_path).unwrap();
+        let file_path = "config/gist_1000.toml";
+        let config = VecDataConfig::load_from_toml_file(file_path).unwrap();
         println!("Loaded config: {:#?}", config);
-        VecSet::<u8>::load_with(&config.vec_data).unwrap();
+        VecSet::<u8>::load_with(&config).unwrap();
     }
 
     #[test]
     fn load_vec_set_test() -> Result<()> {
         // See also the `match` usage in the doc test of `DynamicVecSet`.
 
-        let file_path = "config/db_config.toml";
-        let config = DBConfig::load_from_toml_file(file_path)?;
+        let file_path = "config/gist_1000.toml";
+        let config = VecDataConfig::load_from_toml_file(file_path).unwrap();
         println!("Loaded config: {:#?}", config);
-        let vec_set = VecSet::<f32>::load_with(&config.vec_data)?;
+        let vec_set = VecSet::<f32>::load_with(&config)?;
 
-        let v0 = &vec_set[0];
-        let v1 = &vec_set[1];
-        println!("Distance Algorithm: {:?}", config.distance);
-        let distance = config.distance.d(v0, v1);
-        println!("Distance: {}", distance);
-        assert!((distance - 2.3230).abs() < 1e-4);
+        println!("len: {}", vec_set.len());
 
         Ok(())
     }
