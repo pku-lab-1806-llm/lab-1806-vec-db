@@ -42,6 +42,26 @@ impl BenchEf {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct BenchPQConfig {
+    /// Path to the PQ cache file
+    pq_cache: String,
+    /// The number of bits for each quantized group.
+    ///
+    /// Should be 4 or 8. Usually 4.
+    pub n_bits: usize,
+    /// The number of groups.
+    ///
+    /// Should satisfy `dim % m == 0`. Usually `dim / 4`.
+    pub m: usize,
+    /// The number of vectors to be sampled for the k-means algorithm.
+    pub k_means_size: Option<usize>,
+    /// The number of iterations for the k-means algorithm.
+    pub k_means_max_iter: usize,
+    /// The tolerance for the k-means algorithm.
+    pub k_means_tol: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct BenchConfig {
     dist: DistanceAlgorithm,
     gnd_path: String,
@@ -50,7 +70,7 @@ struct BenchConfig {
     ef: BenchEf,
     algorithm: IndexAlgorithmConfig,
     #[serde(rename = "PQ")]
-    pq: Option<PQConfig>,
+    pq: Option<BenchPQConfig>,
     base: VecDataConfig,
     test: VecDataConfig,
 }
@@ -126,27 +146,32 @@ impl<T: Scalar> DynamicIndex<T> {
     }
 }
 fn load_or_build_pq<T: Scalar>(
-    config: Option<PQConfig>,
-    pq_cache: Option<String>,
+    config: &BenchConfig,
     base_set: &VecSet<T>,
     rng: &mut impl Rng,
 ) -> Result<Option<PQTable<T>>> {
-    let config = match config {
-        Some(config) => config,
+    let (config, pq_cache) = match &config.pq {
+        Some(pq_config) => (
+            PQConfig {
+                dist: config.dist,
+                n_bits: pq_config.n_bits,
+                m: pq_config.m,
+                k_means_size: pq_config.k_means_size,
+                k_means_max_iter: pq_config.k_means_max_iter,
+                k_means_tol: pq_config.k_means_tol,
+            },
+            pq_config.pq_cache.clone(),
+        ),
         None => return Ok(None),
     };
-    if let Some(pq_cache) = &pq_cache {
-        let path = Path::new(&pq_cache);
-        if path.exists() {
-            println!("Trying to load PQTable from {}...", pq_cache);
-            return Ok(Some(PQTable::load(&path)?));
-        }
+    let path = Path::new(&pq_cache);
+    if path.exists() {
+        println!("Trying to load PQTable from {}...", pq_cache);
+        return Ok(Some(PQTable::load(&path)?));
     }
     let pq = PQTable::from_vec_set(base_set, config, rng);
-    if let Some(pq_cache) = &pq_cache {
-        println!("Saving PQTable to {}...", pq_cache);
-        pq.save(&pq_cache)?;
-    }
+    println!("Saving PQTable to {}...", pq_cache);
+    pq.save(&pq_cache)?;
     Ok(Some(pq))
 }
 fn load_or_build_index<T: Scalar>(
@@ -276,7 +301,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
     let mut rng = rand::rngs::StdRng::seed_from_u64(42);
     let load_start = std::time::Instant::now();
-    let mut bench_config = BenchConfig::load_from_toml_file(&args.bench_config_path)?;
+    let bench_config = BenchConfig::load_from_toml_file(&args.bench_config_path)?;
     let base_set = VecSet::<f32>::load_with(&bench_config.base)?;
     println!("Loaded base set (size: {}).", base_set.len());
     let test_set = VecSet::<f32>::load_with(&bench_config.test)?;
@@ -292,12 +317,7 @@ fn main() -> Result<()> {
 
     let ef = bench_config.ef.clone();
 
-    let pq = load_or_build_pq(
-        bench_config.pq.take(),
-        bench_config.pq_cache.take(),
-        &base_set,
-        &mut rng,
-    )?;
+    let pq = load_or_build_pq(&bench_config, &base_set, &mut rng)?;
 
     let index = load_or_build_index(bench_config, base_set, &mut rng)?;
 
