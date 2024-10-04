@@ -4,14 +4,23 @@ index_cache = "data/gist_hnsw.local.bin"
 bench_output = "data/bench.local.toml"
 
 [ef.range]
-start = 120
-end = 360
-step = 40
+start = 200
+end = 650
+step = 50
 
 [algorithm.HNSW]
 max_elements = 1000000
 ef_construction = 200
 M = 16
+
+[PQ]
+pq_cache = "data/gist_pq.local.bin"
+dist = "L2Sqr"
+n_bits = 4
+m = 320
+k_means_size = 10000
+k_means_max_iter = 20
+k_means_tol = 1e-6
 
 [base]
 dim = 960

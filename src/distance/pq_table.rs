@@ -178,30 +178,6 @@ impl<T: Scalar> PQTable<T> {
         }
     }
 
-    /// Get indices from a encoded vector.
-    pub fn split_indices(&self, v: &[u8]) -> Vec<usize> {
-        split_indices(self.config.n_bits, self.config.m, v)
-    }
-
-    /// Decode the given encoded vector.
-    ///
-    /// *Usually used for debugging.*
-    /// See `distance()` for the actual distance computation.
-    pub fn decode(&self, v: &[u8]) -> Vec<T> {
-        let m = self.config.m;
-        let group_dim = self.group_k_means[0].centroids.dim();
-        let dim = m * group_dim;
-        let indices = self.split_indices(v);
-        let mut decoded = Vec::with_capacity(dim);
-        for i in 0..m {
-            let group = &self.group_k_means[i];
-            let index = indices[i];
-            let centroid = &group.centroids[index];
-            decoded.extend_from_slice(centroid);
-        }
-        decoded
-    }
-
     /// Create flattened lookup table for the vector to be queried.
     /// Using the PQ in ADC (Asymmetric Distance Computation) algorithm.
     ///
@@ -244,12 +220,14 @@ impl<T: Scalar> PQTable<T> {
 
     pub fn save(&self, path: &impl AsRef<Path>) -> Result<()> {
         let file = std::fs::File::create(path)?;
-        bincode::serialize_into(file, self)?;
+        let writer = std::io::BufWriter::new(file);
+        bincode::serialize_into(writer, self)?;
         Ok(())
     }
     pub fn load(path: &impl AsRef<Path>) -> Result<Self> {
         let file = std::fs::File::open(path)?;
-        let pq_table: PQTable<T> = bincode::deserialize_from(file)?;
+        let reader = std::io::BufReader::new(file);
+        let pq_table: PQTable<T> = bincode::deserialize_from(reader)?;
         Ok(pq_table)
     }
 }
@@ -268,24 +246,26 @@ impl<T: Scalar> DistanceAdapter<[u8], PQLookupTable<'_, T>> for DistanceAlgorith
 
         let lookup = &lookup_table.lookup;
 
-        let indices = split_indices(n_bits, m, encoded);
-        let d: f32 = indices
-            .iter()
-            .enumerate()
-            .map(|(i, &c)| lookup[i * k + c])
-            .sum();
+        let mut sum = 0.0;
+        let mut norm0_sqr = 0.0;
 
+        for i in 0..m {
+            let idx = match n_bits {
+                4 => (encoded[i / 2] >> (4 * (i % 2))) as usize & 0xf,
+                8 => encoded[i] as usize,
+                _ => panic!("n_bits must be 4 or 8 in PQTable."),
+            };
+            sum += lookup[i * k + idx];
+            if *self == Cosine {
+                norm0_sqr += pq_table.dot_product_cache[i * k + idx];
+            }
+        }
         match self {
-            L2Sqr => d,
-            L2 => d.sqrt(),
+            L2Sqr => sum,
+            L2 => sum.sqrt(),
             Cosine => {
-                let dot_product = d;
-                let norm0 = indices
-                    .iter()
-                    .enumerate()
-                    .map(|(i, &c)| pq_table.dot_product_cache[i * k + c])
-                    .sum::<f32>()
-                    .sqrt();
+                let dot_product = sum;
+                let norm0 = norm0_sqr.sqrt();
                 let norm1 = lookup_table.norm;
 
                 1.0 - dot_product / (norm0 * norm1)
@@ -329,12 +309,7 @@ mod test {
         let pq_table = PQTable::from_vec_set(&src_set, pq_config, &mut rng);
 
         let encoded_set = &pq_table.encoded_vec_set;
-        for i in 0..num_vec {
-            let src = &src_set[i];
-            let decoded = pq_table.decode(&encoded_set[i]);
-            println!("{}: {:?}", i, &src_set[i]);
-            assert_eq!(src, &decoded);
-        }
+
         for i in 0..num_vec {
             let lookup = pq_table.create_lookup(&src_set[i]);
             for j in 0..num_vec {

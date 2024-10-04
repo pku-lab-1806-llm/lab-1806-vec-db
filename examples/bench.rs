@@ -1,11 +1,11 @@
-use std::path::Path;
+use std::{io::Write, path::Path};
 
 use anyhow::Result;
 use clap::Parser;
 use lab_1806_vec_db::{
     config::{IndexAlgorithmConfig, VecDataConfig},
     distance::{
-        pq_table::{self, PQConfig, PQTable},
+        pq_table::{PQConfig, PQTable},
         DistanceAlgorithm,
     },
     index_algorithm::{
@@ -15,7 +15,7 @@ use lab_1806_vec_db::{
     scalar::Scalar,
     vec_set::VecSet,
 };
-use plotly::{Plot, Scatter};
+use plotly::{Plot, Scatter, Trace};
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
@@ -73,6 +73,7 @@ struct BenchConfig {
     pq: Option<BenchPQConfig>,
     base: VecDataConfig,
     test: VecDataConfig,
+    bench_output: String,
 }
 
 impl BenchConfig {
@@ -88,9 +89,10 @@ impl BenchConfig {
 struct Args {
     /// Path to the benchmark config file
     bench_config_path: String,
-    /// Path to the benchmark result html file (optional)
     #[clap(short, long)]
-    output: Option<String>,
+    plot_only: bool,
+    #[clap(long)]
+    html: Option<String>,
 }
 
 struct AvgRecorder {
@@ -131,18 +133,22 @@ impl<T: Scalar> DynamicIndex<T> {
             (Linear(index), Some(pq)) => index.knn_pq(query, k, ef, pq),
             (HNSW(index), _) => index.knn_with_ef(query, k, ef),
             (IVF(index), _) => index.knn_with_ef(query, k, ef),
-            _ => unimplemented!(
-                "({:?}, {:?}) is not implemented.",
-                self.algorithm_name(),
-                pq
-            ),
+            _ => unimplemented!("({:?}, {:?}) is not implemented.", self.base_name(), pq),
         }
     }
-    pub fn algorithm_name(&self) -> String {
+    pub fn base_name(&self) -> String {
         match self {
             DynamicIndex::HNSW(_) => "HNSW".to_string(),
             DynamicIndex::IVF(_) => "IVF".to_string(),
             DynamicIndex::Linear(_) => "Linear".to_string(),
+        }
+    }
+
+    pub fn full_name(&self, pq: &Option<PQTable<T>>) -> String {
+        let base = self.base_name();
+        match pq {
+            Some(_) => format!("{}+PQ", base),
+            None => base.to_string(),
         }
     }
 }
@@ -173,9 +179,13 @@ fn load_or_build_pq<T: Scalar>(
         return Ok(Some(pq_table));
     }
     println!("PQTable file not found. Building PQTable...");
+    let start = std::time::Instant::now();
     let pq = PQTable::from_vec_set(base_set, config, rng);
+    let elapsed = start.elapsed().as_secs_f32();
+    println!("PQTable built in {:.2} seconds.", elapsed);
     println!("Saving PQTable to {}...", pq_cache);
     pq.save(&pq_cache)?;
+    println!("PQTable saved.");
     Ok(Some(pq))
 }
 fn load_or_build_index<T: Scalar>(
@@ -236,8 +246,10 @@ fn load_or_build_index<T: Scalar>(
         Ok(index)
     }
 }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct BenchResult {
+    algorithm_name: String,
     /// The search radius
     ef: Vec<usize>,
     /// Average search time in ms
@@ -246,54 +258,26 @@ struct BenchResult {
     recall: Vec<f32>,
 }
 impl BenchResult {
-    pub fn new() -> Self {
+    pub fn new(algorithm_name: String) -> Self {
         Self {
+            algorithm_name,
             ef: Vec::new(),
             search_time: Vec::new(),
             recall: Vec::new(),
         }
     }
-    pub fn plot(
-        self,
-        title: impl Into<String>,
-        algorithm_name: String,
-        path: Option<impl AsRef<Path>>,
-    ) -> Result<()> {
-        let mut plot = Plot::new();
-        println!("=== Source Data ===");
-        println!("ef: {:?}", self.ef);
-        println!("search_time: {:?}", self.search_time);
-        println!("recall: {:?}", self.recall);
+    pub fn trace(self) -> Box<dyn Trace> {
         let text = self
             .ef
             .iter()
             .map(|&ef| format!("ef={}", ef))
             .collect::<Vec<_>>();
-        let trace = Scatter::new(self.search_time, self.recall)
+        Scatter::new(self.recall, self.search_time)
             .text_array(text)
             .text_font(plotly::common::Font::new().size(10).family("Arial"))
-            .text_position(plotly::common::Position::BottomRight)
+            .text_position(plotly::common::Position::TopLeft)
             .mode(plotly::common::Mode::LinesMarkersText)
-            .name(algorithm_name);
-        plot.add_trace(trace);
-
-        let layout = plotly::Layout::new()
-            .title(plotly::common::Title::with_text(title))
-            .x_axis(plotly::layout::Axis::new().title("Search Time(ms)"))
-            .y_axis(plotly::layout::Axis::new().title("Recall"))
-            .show_legend(true);
-        plot.set_layout(layout);
-
-        if let Some(path) = path {
-            println!("Saved plot to {}", path.as_ref().display());
-            plot.write_html(path);
-        }
-        #[cfg(target_os = "windows")]
-        {
-            println!("Try to show the plot...");
-            plot.show_image(plotly::ImageFormat::SVG, 1024, 768);
-        }
-        Ok(())
+            .name(self.algorithm_name)
     }
     pub fn push(&mut self, ef: usize, search_time: f32, recall: f32) {
         self.ef.push(ef);
@@ -301,10 +285,73 @@ impl BenchResult {
         self.recall.push(recall);
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ResultList {
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    results: Vec<BenchResult>,
+}
+impl ResultList {
+    pub fn load(path: impl AsRef<Path>) -> Result<Self> {
+        println!("Loading results from {}...", path.as_ref().display());
+        let content = std::fs::read_to_string(path).unwrap_or_default();
+        let results: ResultList = toml::from_str(&content)?;
+        println!("Loaded {} results.", results.results.len());
+        Ok(results)
+    }
+    pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
+        let content = toml::to_string_pretty(self)?;
+        let file = std::fs::File::create(path)?;
+        let mut writer = std::io::BufWriter::new(file);
+        writer.write(content.as_bytes())?;
+        Ok(())
+    }
+    pub fn plot(self, html_path: Option<impl AsRef<Path>>) -> Result<()> {
+        let mut plot = Plot::new();
+        for result in self.results {
+            plot.add_trace(result.trace());
+        }
+
+        let layout = plotly::Layout::new()
+            .title(plotly::common::Title::with_text(self.title))
+            .x_axis(plotly::layout::Axis::new().title("Recall"))
+            .y_axis(plotly::layout::Axis::new().title("Search Time(ms)"))
+            .show_legend(true);
+        plot.set_layout(layout);
+
+        if let Some(path) = html_path {
+            println!("Saved plot to {}", path.as_ref().display());
+            plot.write_html(path);
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            println!("Try to show the plot...");
+            plot.show_image(plotly::ImageFormat::SVG, 1024, 768);
+        }
+        Ok(())
+    }
+    pub fn push(&mut self, result: BenchResult) {
+        for r in self.results.iter_mut() {
+            if r.algorithm_name == result.algorithm_name {
+                *r = result;
+                return;
+            }
+        }
+        self.results.push(result);
+    }
+}
 fn main() -> Result<()> {
     let args = Args::parse();
     let mut rng = rand::rngs::StdRng::seed_from_u64(42);
     let load_start = std::time::Instant::now();
+    if args.plot_only {
+        let result_list = ResultList::load(&args.bench_config_path)?;
+        result_list.plot(args.html.as_ref())?;
+        return Ok(());
+    }
     let bench_config = BenchConfig::load_from_toml_file(&args.bench_config_path)?;
     let base_set = VecSet::<f32>::load_with(&bench_config.base)?;
     println!("Loaded base set (size: {}).", base_set.len());
@@ -320,12 +367,13 @@ fn main() -> Result<()> {
     println!("Loaded ground truth (size: {}).", gnd.len());
 
     let ef = bench_config.ef.clone();
+    let bench_output = bench_config.bench_output.clone();
 
     let pq = load_or_build_pq(&bench_config, &base_set, &mut rng)?;
 
     let index = load_or_build_index(bench_config, base_set, &mut rng)?;
 
-    let mut bench_result = BenchResult::new();
+    let mut bench_result = BenchResult::new(index.full_name(&pq));
 
     for ef in ef.to_vec() {
         println!("Benchmarking ef: {}...", ef);
@@ -349,8 +397,13 @@ fn main() -> Result<()> {
         bench_result.push(ef, search_time, recall);
     }
     println!("Finished benchmarking.");
-    let title = format!("{} Bench ({} elements)", index.algorithm_name(), base_size);
-    bench_result.plot(title, index.algorithm_name(), args.output.as_ref())?;
+    let title = format!("Bench ({} elements)", base_size);
+    let mut result_list = ResultList::load(&bench_output)?;
+    result_list.push(bench_result);
+    result_list.title = title;
+    result_list.save(&bench_output)?;
+    println!("Saved results to {}.", bench_output);
+    result_list.plot(args.html.as_ref())?;
     Ok(())
 }
 // cargo r -r --example bench -- config/bench_hnsw.toml

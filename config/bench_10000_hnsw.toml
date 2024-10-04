@@ -1,11 +1,12 @@
 dist = "L2Sqr"
 gnd_path = "data/gnd_10000.local.bin"
 index_cache = "data/gist_10000_hnsw.local.bin"
+bench_output = "data/bench_10000.local.toml"
 
 [ef.range]
 start = 120
 end = 360
-step = 20
+step = 40
 
 [algorithm.HNSW]
 max_elements = 10000
