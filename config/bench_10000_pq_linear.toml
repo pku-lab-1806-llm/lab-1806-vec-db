@@ -1,14 +1,13 @@
 dist = "L2Sqr"
 gnd_path = "data/gnd_10000.local.bin"
-index_cache = "data/gist_10000_ivf.local.bin"
+index_cache = "data/gist_10000_pq_linear.local.bin"
 
-[ef.range]
-start = 8
-end = 24
-step = 4
+[ef]
+list = [20, 200, 2000]
 
-[algorithm.IVF]
-k = 128
+[algorithm.PQLinear]
+n_bits = 4
+m = 240
 k_means_size = 1000
 k_means_max_iter = 20
 k_means_tol = 1e-6

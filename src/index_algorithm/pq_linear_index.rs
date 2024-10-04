@@ -14,6 +14,24 @@ use std::ops::Index;
 
 use super::{prelude::*, IndexPQ, LinearIndex, ResultSet};
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PQLinearConfig {
+    /// The number of bits for each quantized group.
+    ///
+    /// Should be 4 or 8. Usually 4.
+    pub n_bits: usize,
+    /// The number of groups.
+    ///
+    /// Should satisfy `dim % m == 0`. Usually `dim / 4`.
+    pub m: usize,
+    /// The number of vectors to be sampled for the k-means algorithm.
+    pub k_means_size: Option<usize>,
+    /// The number of iterations for the k-means algorithm.
+    pub k_means_max_iter: usize,
+    /// The tolerance for the k-means algorithm.
+    pub k_means_tol: f32,
+}
+
 /// Linear index for the k-nearest neighbors search.
 /// The distance algorithm is configurable.
 ///
@@ -57,7 +75,7 @@ impl<T: Scalar> IndexKNNWithEf<T> for PQLinearIndex<T> {
         self.default_ef = ef;
     }
     fn knn_with_ef(&self, query: &[T], k: usize, ef: usize) -> Vec<CandidatePair> {
-        let mut pq_result = ResultSet::new(ef);
+        let mut pq_result = ResultSet::new(ef.max(k));
         let dist = self.dist;
         let lookup = self.pq_table.create_lookup(query);
         for (i, v) in self.encoded_vec_set.iter().enumerate() {
@@ -72,6 +90,33 @@ impl<T: Scalar> IndexKNNWithEf<T> for PQLinearIndex<T> {
             result.add(CandidatePair::new(i, d));
         }
         result.into_sorted_vec()
+    }
+}
+impl<T: Scalar> IndexFromVecSet<T> for PQLinearIndex<T> {
+    type Config = PQLinearConfig;
+
+    fn from_vec_set(
+        vec_set: VecSet<T>,
+        dist: DistanceAlgorithm,
+        config: Self::Config,
+        rng: &mut impl Rng,
+    ) -> Self {
+        let PQLinearConfig {
+            n_bits,
+            m,
+            k_means_size,
+            k_means_max_iter,
+            k_means_tol,
+        } = config;
+        let pq_config = PQConfig {
+            n_bits,
+            m,
+            dist,
+            k_means_max_iter,
+            k_means_tol,
+        };
+        let original_index = LinearIndex::from_vec_set(vec_set.clone(), dist, (), rng);
+        Self::pq_from(original_index, pq_config, k_means_size, rng)
     }
 }
 impl<T: Scalar> IndexPQ for PQLinearIndex<T> {
