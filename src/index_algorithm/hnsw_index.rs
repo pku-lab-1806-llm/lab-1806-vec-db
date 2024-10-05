@@ -479,7 +479,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         let inner_batch_size = 64;
 
         let vec_set = VecSet::<T>::with_capacity(dim, max_elements);
-        let level0_links = Vec::with_capacity(max_elements);
+        let level0_links = Vec::with_capacity(max_elements * max_m0);
         let vec_level = Vec::with_capacity(max_elements);
         let other_links = Vec::with_capacity(max_elements);
         let links_len = Vec::with_capacity(max_elements);
@@ -613,18 +613,6 @@ impl<T: Scalar> IndexSerde for HNSWIndex<T> {
         let reader = std::io::BufReader::new(file);
         let mut index: Self = bincode::deserialize_from(reader)?;
 
-        let all_len = [
-            index.vec_set.len(),
-            index.level0_links.len(),
-            index.vec_level.len(),
-            index.other_links.len(),
-            index.links_len.len(),
-            index.deleted_mark.len(),
-        ];
-        if !all_len.windows(2).all(|w| w[0] == w[1]) {
-            anyhow::bail!("The lengths of the index data are not consistent. See `load_with_external_vec_set` for loading with external vec_set, if you have saved the index without vec_set.");
-        }
-
         index.init_capacity_after_load();
 
         Ok(index)
@@ -653,18 +641,6 @@ impl<T: Scalar> IndexSerdeExternalVecSet<T> for HNSWIndex<T> {
 
         // Restore the vec_set
         index.vec_set = vec_set;
-
-        let all_len = [
-            index.vec_set.len(),
-            index.level0_links.len(),
-            index.vec_level.len(),
-            index.other_links.len(),
-            index.links_len.len(),
-            index.deleted_mark.len(),
-        ];
-        if !all_len.windows(2).all(|w| w[0] == w[1]) {
-            anyhow::bail!("The lengths of the index data are not consistent. Check if the original vec_set is loaded correctly.");
-        }
 
         index.init_capacity_after_load();
 
@@ -727,7 +703,7 @@ mod test {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
 
         let config = HNSWConfig {
-            max_elements: raw_vec_set.len(),
+            max_elements: 0, // Test auto reallocation.
             ef_construction: 200,
             M: 16,
         };
@@ -748,11 +724,19 @@ mod test {
         // Save and load the index. >>>>
         println!("Saving the index...");
         let path = "data/hnsw_index.tmp.bin";
+        index.save(path)?;
+        let index = HNSWIndex::<f32>::load(path)?;
+        println!("Loaded the index.");
+        // <<<< Save and load the index.
+
+        // Save and load the index without vec_set. >>>>
+        println!("Saving the index...");
+        let path = "data/hnsw_index.tmp.bin";
         let vec_set = index.save_without_vec_set(path)?.vec_set;
 
         let index = HNSWIndex::<f32>::load_with_external_vec_set(path, vec_set)?;
         println!("Loaded the index.");
-        // <<<< Save and load the index.
+        // <<<< Save and load the index without vec_set.
 
         let k = 6;
         let query_index = 200;
