@@ -27,7 +27,7 @@ See also the Binaries at `src/bin/`, and the Examples at `examples/`.
 
 - `src/bin/convert_fvecs.rs`: Convert the fvecs format to the binary format.
 - `src/bin/gen_ground_truth.rs`: Generate the ground truth for the query.
-- `examples/hnsw_bench.rs`: The benchmark for the HNSW algorithm.
+- `examples/bench.rs`: The benchmark for index algorithms.
 
 Check the comments at the end of the source files for the usage.
 
