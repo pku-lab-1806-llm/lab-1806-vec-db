@@ -22,11 +22,15 @@ use super::{prelude::*, CandidatePair};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(non_snake_case)]
 pub struct HNSWConfig {
-    /// The dimension of the vectors.
+    /// The initial capacity of the index.
+    ///
+    /// More vectors can be added safely with auto re-allocation.
+    /// Set it to the maximum expected number of vectors for better performance.
+    /// But if you are not sure, you can set it to a smaller number, even 0.
     pub max_elements: usize,
     /// The number of neighbors to search during construction.
     pub ef_construction: usize,
-    /// The number of neighbors to keep for each vector. (M)
+    /// The number of neighbors to keep for each vector.
     pub M: usize,
 }
 
@@ -343,34 +347,30 @@ impl<T: Scalar> HNSWIndex<T> {
         let dist_fn = |idx| self.config.dist.d(&self[idx], query);
         self.greedy_search_until_level_fn(target_level, &dist_fn)
     }
-    /// Reset the capacity of the index.
-    /// `exact` is true if the capacity should be exactly `new_max_elements`.
-    ///
-    /// This should reset vec_set, level0_links, vec_level, other_links, links_len, deleted_mark.
-    /// Commonly used after loading the index from a file.
-    pub fn reset_max_elements(&mut self, new_max_elements: usize, exact: bool) {
-        assert!(
-            new_max_elements >= self.config.max_elements,
-            "The new capacity should be larger than the current capacity."
-        );
-        self.config.max_elements = new_max_elements;
-        let num_reserve = new_max_elements - self.vec_set.len();
-        if exact {
-            self.vec_set.reserve_exact(num_reserve);
+    /// Init the capacity of the index.
+    fn init_capacity_after_load(&mut self) {
+        if self.config.max_elements > self.len() {
+            let additional = self.config.max_elements - self.len();
+            self.vec_set.reserve_exact(additional);
             self.level0_links
-                .reserve_exact(num_reserve * self.config.max_m0);
-            self.vec_level.reserve_exact(num_reserve);
-            self.other_links.reserve_exact(num_reserve);
-            self.links_len.reserve_exact(num_reserve);
-            self.deleted_mark.reserve_exact(num_reserve);
-        } else {
-            self.vec_set.reserve(num_reserve);
-            self.level0_links.reserve(num_reserve * self.config.max_m0);
-            self.vec_level.reserve(num_reserve);
-            self.other_links.reserve(num_reserve);
-            self.links_len.reserve(num_reserve);
-            self.deleted_mark.reserve(num_reserve);
+                .reserve_exact(additional * self.config.max_m0);
+            self.vec_level.reserve_exact(additional);
+            self.other_links.reserve_exact(additional);
+            self.links_len.reserve_exact(additional);
+            self.deleted_mark.reserve_exact(additional);
         }
+    }
+    pub fn capacity(&self) -> usize {
+        self.vec_set.capacity()
+    }
+    /// Reserve additional capacity for the index.
+    pub fn reserve(&mut self, additional: usize) {
+        self.vec_set.reserve(additional);
+        self.level0_links.reserve(additional * self.config.max_m0);
+        self.vec_level.reserve(additional);
+        self.other_links.reserve(additional);
+        self.links_len.reserve(additional);
+        self.deleted_mark.reserve(additional);
     }
     /// Batch add vectors to the index.
     fn inner_batch_add(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize> {
@@ -380,6 +380,7 @@ impl<T: Scalar> HNSWIndex<T> {
             // Or if vec_list is too small, batch add is not efficient.
             return vec_list.iter().map(|vec| self.add(vec, rng)).collect();
         }
+        self.reserve(n);
         let mut indices = Vec::with_capacity(n);
         let dist = self.config.dist;
         for &vec in vec_list.iter() {
@@ -509,9 +510,6 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         }
     }
     fn add(&mut self, vec: &[T], rng: &mut impl Rng) -> usize {
-        if self.vec_set.len() >= self.config.max_elements {
-            panic!("The index is full.");
-        }
         let level = self.rand_level(rng);
 
         let idx = self.push_init(vec, level);
@@ -627,11 +625,7 @@ impl<T: Scalar> IndexSerde for HNSWIndex<T> {
             anyhow::bail!("The lengths of the index data are not consistent. See `load_with_external_vec_set` for loading with external vec_set, if you have saved the index without vec_set.");
         }
 
-        // The capacity is not as expected after deserialization.
-        let new_max_elements = index.config.max_elements;
-        index.config.max_elements = index.len();
-        // Reset the capacity.
-        index.reset_max_elements(new_max_elements, true);
+        index.init_capacity_after_load();
 
         Ok(index)
     }
@@ -657,13 +651,22 @@ impl<T: Scalar> IndexSerdeExternalVecSet<T> for HNSWIndex<T> {
         let reader = std::io::BufReader::new(file);
         let mut index: Self = bincode::deserialize_from(reader)?;
 
-        // Restore the vec_set at first.
+        // Restore the vec_set
         index.vec_set = vec_set;
-        // The capacity is not as expected after deserialization.
-        let new_max_elements = index.config.max_elements;
-        index.config.max_elements = index.len();
-        // Reset the capacity.
-        index.reset_max_elements(new_max_elements, true);
+
+        let all_len = [
+            index.vec_set.len(),
+            index.level0_links.len(),
+            index.vec_level.len(),
+            index.other_links.len(),
+            index.links_len.len(),
+            index.deleted_mark.len(),
+        ];
+        if !all_len.windows(2).all(|w| w[0] == w[1]) {
+            anyhow::bail!("The lengths of the index data are not consistent. Check if the original vec_set is loaded correctly.");
+        }
+
+        index.init_capacity_after_load();
 
         Ok(index)
     }
