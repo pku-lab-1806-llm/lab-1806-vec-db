@@ -5,12 +5,11 @@ use crate::{
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::{fs::File, io::BufWriter};
 
 #[pymodule]
 pub mod lab_1806_vec_db {
-
-    use std::collections::BTreeMap;
 
     use super::*;
 
