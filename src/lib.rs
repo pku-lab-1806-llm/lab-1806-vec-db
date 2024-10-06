@@ -1,6 +1,7 @@
 pub mod config;
 pub mod distance;
 pub mod index_algorithm;
+mod pyo3;
 pub mod scalar;
 pub mod vec_set;
 pub mod prelude {

@@ -9,9 +9,7 @@ end = 360
 step = 40
 
 [algorithm.HNSW]
-max_elements = 10000
-ef_construction = 200
-M = 16
+# Use default values
 
 [base]
 dim = 960

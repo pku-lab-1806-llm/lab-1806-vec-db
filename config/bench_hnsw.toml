@@ -10,8 +10,7 @@ step = 40
 
 [algorithm.HNSW]
 max_elements = 1000000
-ef_construction = 200
-M = 16
+
 
 [base]
 dim = 960
