@@ -18,6 +18,24 @@ use crate::{
 
 use super::{prelude::*, CandidatePair};
 
+/// The default maximum number of elements in the index.
+///
+/// 0 means auto reallocation.
+pub fn default_max_elements() -> usize {
+    0
+}
+
+/// The default number of neighbors to search during construction.
+pub fn default_ef_construction() -> usize {
+    200
+}
+
+/// The default number of neighbors to keep for each vector.
+#[allow(non_snake_case)]
+pub fn default_M() -> usize {
+    16
+}
+
 /// The configuration of the HNSW (Hierarchical Navigable Small World) algorithm.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(non_snake_case)]
@@ -27,10 +45,16 @@ pub struct HNSWConfig {
     /// More vectors can be added safely with auto re-allocation.
     /// Set it to the maximum expected number of vectors for better performance.
     /// But if you are not sure, you can set it to a smaller number, even 0.
+    ///
+    /// For loaded indexes, this does not affect the capacity.
+    /// If you really want to ensure the capacity, call [HNSWIndex::init_capacity_after_load].
+    #[serde(default = "default_max_elements")]
     pub max_elements: usize,
     /// The number of neighbors to search during construction.
+    #[serde(default = "default_ef_construction")]
     pub ef_construction: usize,
     /// The number of neighbors to keep for each vector.
+    #[serde(default = "default_M")]
     pub M: usize,
 }
 
@@ -348,7 +372,9 @@ impl<T: Scalar> HNSWIndex<T> {
         self.greedy_search_until_level_fn(target_level, &dist_fn)
     }
     /// Init the capacity of the index.
-    fn init_capacity_after_load(&mut self) {
+    ///
+    /// Call this after loading the index, if you want to ensure the capacity.
+    pub fn init_capacity_after_load(&mut self) {
         if self.config.max_elements > self.len() {
             let additional = self.config.max_elements - self.len();
             self.vec_set.reserve_exact(additional);
@@ -604,20 +630,7 @@ impl<T: Scalar> IndexKNNWithEf<T> for HNSWIndex<T> {
         result.into_sorted_vec_limit(k)
     }
 }
-impl<T: Scalar> IndexSerde for HNSWIndex<T> {
-    /// Save the index to the file.
-    ///
-    /// For HNSWIndex, the capacity should be reset after loading.
-    fn load(path: impl AsRef<Path>) -> anyhow::Result<Self> {
-        let file = std::fs::File::open(path)?;
-        let reader = std::io::BufReader::new(file);
-        let mut index: Self = bincode::deserialize_from(reader)?;
-
-        index.init_capacity_after_load();
-
-        Ok(index)
-    }
-}
+impl<T: Scalar> IndexSerde for HNSWIndex<T> {}
 impl<T: Scalar> IndexSerdeExternalVecSet<T> for HNSWIndex<T> {
     fn save_without_vec_set(mut self, path: impl AsRef<Path>) -> anyhow::Result<Self> {
         // Move the vec_set out of the index.
@@ -641,9 +654,6 @@ impl<T: Scalar> IndexSerdeExternalVecSet<T> for HNSWIndex<T> {
 
         // Restore the vec_set
         index.vec_set = vec_set;
-
-        index.init_capacity_after_load();
-
         Ok(index)
     }
 }
