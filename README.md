@@ -2,6 +2,34 @@
 
 Lab 1806 Vector Database.
 
+## Usage with Python
+
+See <https://github.com/pku-lab-1806-llm/lab-1806-vec-db/releases/latest> for the latest release.
+
+Install the wheel file with pip.
+
+```py
+from lab_1806_vec_db import RagVecDB
+
+db = RagVecDB(dim=4)
+
+db.add([1.0, 0.0, 0.0, 0.0], {"content": "a"})
+db.add([1.0, 0.0, 0.0, 0.1], {"content": "aa"})
+
+db.add([0.0, 1.0, 0.0, 0.0], {"content": "b"})
+db.add([0.0, 1.0, 0.0, 0.1], {"content": "bb"})
+
+db.add([0.0, 0.0, 1.0, 0.0], {"content": "c"})
+db.add([0.0, 0.0, 1.0, 0.1], {"content": "cc"})
+
+db.save("test_db.local.bin")
+
+loaded_db = RagVecDB.load("test_db.local.bin")
+
+for idx, metadata in enumerate(loaded_db.search([1.0, 0.0, 0.0, 0.0], 2)):
+    print(idx, metadata["content"])
+```
+
 ## Development with Rust
 
 ```bash
