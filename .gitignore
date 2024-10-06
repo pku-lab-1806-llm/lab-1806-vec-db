@@ -2,3 +2,5 @@ target/
 .vscode/
 *.tmp.*
 *.local.*
+.venv/
+dist/
