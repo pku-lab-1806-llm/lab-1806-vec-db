@@ -73,7 +73,7 @@ uv run ./test-pyo3.py
 uv build
 ```
 
-## Examples Binaries
+### Examples Binaries
 
 See also the Binaries at `src/bin/`, and the Examples at `examples/`.
 
@@ -83,7 +83,7 @@ See also the Binaries at `src/bin/`, and the Examples at `examples/`.
 
 Check the comments at the end of the source files for the usage.
 
-## Dataset
+### Dataset
 
 Download Gist1M dataset from:
 
