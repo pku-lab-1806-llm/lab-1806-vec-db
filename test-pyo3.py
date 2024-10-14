@@ -28,10 +28,11 @@ db_a.add([0.0, 0.0, 1.0, 0.0], {"content": "c"})
 
 db_b = RagVecDB(dim=4)
 
-db_a.batch_add(
+db_b.batch_add(
     [[1.0, 0.0, 0.0, 0.1], [0.0, 1.0, 0.0, 0.1], [0.0, 0.0, 1.0, 0.1]],
     [{"content": x} for x in ["aa", "bb", "cc"]],
 )
+assert len(db_a) == 3 and len(db_b) == 3, "Test failed"
 # Create and add >>>>
 
 # Save and load <<<<
