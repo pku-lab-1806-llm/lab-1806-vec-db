@@ -47,6 +47,12 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo test
 # Or you can click the 'Run Test' button in VSCode to show output.
 # Our GitHub Actions will also run the tests.
+
+# Build the Python Wheel
+# This will be automatically run in GitHub Actions.
+uv build
+# Run the Python test
+uv run ./test-pyo3.py
 ```
 
 ## Examples Binaries
