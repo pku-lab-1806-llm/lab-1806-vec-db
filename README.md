@@ -4,9 +4,10 @@ Lab 1806 Vector Database.
 
 ## Usage with Python
 
-See <https://github.com/pku-lab-1806-llm/lab-1806-vec-db/releases/latest> for the latest release.
-
-Install the wheel file with pip.
+```bash
+# See https://pypi.org/project/lab-1806-vec-db/
+pip install lab-1806-vec-db
+```
 
 ```py
 from lab_1806_vec_db import RagVecDB
