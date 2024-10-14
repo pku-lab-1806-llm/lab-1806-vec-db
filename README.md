@@ -52,6 +52,7 @@ cargo test
 # This will be automatically run in GitHub Actions.
 uv build
 # Run the Python test
+uv sync --reinstall-package lab_1806_vec_db
 uv run ./test-pyo3.py
 ```
 

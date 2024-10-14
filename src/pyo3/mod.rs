@@ -11,8 +11,26 @@ use std::{fs::File, io::BufWriter};
 #[pymodule]
 pub mod lab_1806_vec_db {
 
+    use ordered_float::OrderedFloat;
+
     use super::*;
 
+    /// Calculate the distance between two vectors.
+    ///
+    /// `dist` can be "l2sqr", "l2" or "cosine". (default: "cosine", for RAG)
+    #[pyfunction]
+    #[pyo3(signature = (a, b, dist="cosine"))]
+    pub fn calc_dist(a: Vec<f32>, b: Vec<f32>, dist: &str) -> PyResult<f32> {
+        let dist = match dist {
+            "l2sqr" => DistanceAlgorithm::L2Sqr,
+            "l2" => DistanceAlgorithm::L2,
+            "cosine" => DistanceAlgorithm::Cosine,
+            _ => return Err(PyValueError::new_err("Invalid distance function")),
+        };
+        Ok(dist.d(a.as_slice(), b.as_slice()))
+    }
+
+    /// A vector database for RAG using HNSW index.
     #[pyclass]
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct RagVecDB {
@@ -132,29 +150,128 @@ pub mod lab_1806_vec_db {
             self.metadata[id] = metadata;
         }
 
-        /// Search for the nearest neighbors of a vector, and return the ids.
-        #[pyo3(signature = (query, k, ef=None))]
-        pub fn search_as_id(&self, query: Vec<f32>, k: usize, ef: Option<usize>) -> Vec<usize> {
+        /// Search for the nearest neighbors of a vector.
+        ///
+        /// Returns a list of (id, distance) pairs.
+        #[pyo3(signature = (query, k, ef=None, max_distance=None))]
+        pub fn search_as_pair(
+            &self,
+            query: Vec<f32>,
+            k: usize,
+            ef: Option<usize>,
+            max_distance: Option<f32>,
+        ) -> Vec<(usize, f32)> {
             let results = match ef {
                 Some(ef) => self.inner.knn_with_ef(&query, k, ef),
                 None => self.inner.knn(&query, k),
             };
-            results.into_iter().map(|p| p.index).collect()
+            if let Some(max_distance) = max_distance {
+                results
+                    .into_iter()
+                    .filter(|p| p.distance() <= max_distance)
+                    .map(|p| (p.index, p.distance()))
+                    .collect()
+            } else {
+                results
+                    .into_iter()
+                    .map(|p| (p.index, p.distance()))
+                    .collect()
+            }
         }
 
         /// Search for the nearest neighbors of a vector.
         ///
         /// Returns a list of metadata.
-        #[pyo3(signature = (query, k, ef=None))]
+        #[pyo3(signature = (query, k, ef=None, max_distance=None))]
         pub fn search(
             &self,
             query: Vec<f32>,
             k: usize,
             ef: Option<usize>,
+            max_distance: Option<f32>,
         ) -> Vec<BTreeMap<String, String>> {
-            self.search_as_id(query, k, ef)
+            self.search_as_pair(query, k, ef, max_distance)
                 .into_iter()
-                .map(|id| self.get_metadata(id))
+                .map(|(id, _)| self.metadata[id].clone())
+                .collect()
+        }
+    }
+
+    /// A group of vector databases for automatic searching and merging KNN results.
+    #[pyclass]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct RagMultiVecDB {
+        pub multi_vec_db: Vec<RagVecDB>,
+    }
+
+    #[pymethods]
+    impl RagMultiVecDB {
+        /// Create a new multi-vector database.
+        #[new]
+        pub fn new(multi_vec_db: Vec<RagVecDB>) -> Self {
+            Self { multi_vec_db }
+        }
+
+        /// Get a vector by (db_id, vec_id).
+        pub fn get_vec(&self, db_id: usize, vec_id: usize) -> Vec<f32> {
+            self.multi_vec_db[db_id].get_vec(vec_id)
+        }
+
+        /// Get the metadata by (db_id, vec_id).
+        pub fn get_metadata(&self, db_id: usize, vec_id: usize) -> BTreeMap<String, String> {
+            self.multi_vec_db[db_id].get_metadata(vec_id)
+        }
+
+        /// Search for the nearest neighbors of a vector.
+        ///
+        /// Returns a list of (db_id, vec_id, distance) tuples.
+        #[pyo3(signature = (query, k, ef=None, max_distance=None))]
+        pub fn search_as_pair(
+            &self,
+            query: Vec<f32>,
+            k: usize,
+            ef: Option<usize>,
+            max_distance: Option<f32>,
+        ) -> Vec<(usize, usize, f32)> {
+            let (sender, receiver) = std::sync::mpsc::channel();
+            let idx_list = (0..self.multi_vec_db.len()).collect::<Vec<_>>();
+            std::thread::scope(|s| {
+                for idx in idx_list.iter() {
+                    let db = &self.multi_vec_db[*idx];
+                    let query = query.clone();
+                    s.spawn(|| {
+                        let results = db.search_as_pair(query, k, ef, max_distance);
+                        let results: Vec<(usize, usize, f32)> = results
+                            .into_iter()
+                            .map(|(id, dist)| (*idx, id, dist))
+                            .collect();
+                        sender.send(results).unwrap();
+                    });
+                }
+            });
+            drop(sender);
+            let mut results = Vec::new();
+            for r in receiver {
+                results.extend(r);
+            }
+            results.sort_by_key(|(_, _, dist)| OrderedFloat(*dist));
+            results.truncate(k);
+            results
+        }
+
+        /// Search for the nearest neighbors of a vector.
+        /// Returns a list of metadata.
+        #[pyo3(signature = (query, k, ef=None, max_distance=None))]
+        pub fn search(
+            &self,
+            query: Vec<f32>,
+            k: usize,
+            ef: Option<usize>,
+            max_distance: Option<f32>,
+        ) -> Vec<BTreeMap<String, String>> {
+            self.search_as_pair(query, k, ef, max_distance)
+                .into_iter()
+                .map(|(db_id, vec_id, _)| self.get_metadata(db_id, vec_id))
                 .collect()
         }
     }

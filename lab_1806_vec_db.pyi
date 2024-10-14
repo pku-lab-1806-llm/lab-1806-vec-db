@@ -1,3 +1,13 @@
+def calc_dist(a: list[float], b: list[float], dist: str = "cosine") -> float:
+    """Calculate the distance between two vectors.
+
+    Args:
+        a (list[float]): The first vector.
+        b (list[float]): The second vector.
+        dist (str): Distance function. Can be "l2sqr", "l2" or "cosine". (default: "cosine", for RAG)
+    """
+    ...
+
 class RagVecDB:
     """A vector database for RAG using HNSW index."""
 
@@ -13,12 +23,12 @@ class RagVecDB:
         """Create a new HNSW index.
 
         Args:
-            dim: Dimension of the vectors.
-            dist: Distance function. Can be "l2sqr", "l2" or "cosine". (default: "cosine", for RAG)
-            ef_construction: Number of elements to consider during construction. (default: 200)
-            M: Number of neighbors to consider during search. (default: 16)
-            max_elements: The initial capacity of the index. (default: 0, auto-grow)
-            seed: Random seed for the index. (default: None, random)
+            dim (int): Dimension of the vectors.
+            dist (str): Distance function. Can be "l2sqr", "l2" or "cosine". (default: "cosine", for RAG)
+            ef_construction (int): Number of elements to consider during construction. (default: 200)
+            M (int): Number of neighbors to consider during search. (default: 16)
+            max_elements (int): The initial capacity of the index. (default: 0, auto-grow)
+            seed (int | None): Random seed for the index. (default: None, random)
 
         Random seed will never be saved. Never call `add` on a loaded index if you want to have deterministic index construction.
         """
@@ -34,11 +44,10 @@ class RagVecDB:
         ...
 
     def add(self, vec: list[float], metadata: dict[str, str]) -> int:
-        """Add a vector to the index.
+        """Add a vector to the index. Use `batch_add` for better performance.
 
-        Returns the ID of the added vector.
-
-        Use `batch_add` for better performance.
+        Returns:
+            ID of the added vector.
         """
         ...
 
@@ -47,10 +56,14 @@ class RagVecDB:
     ) -> list[int]:
         """Add multiple vectors to the index.
 
-        Returns the id list of the added vectors.
+        Returns:
+            List of IDs of the added
 
-        If the vec_list is too large, it will be split into smaller chunks.
-        If the vec_list is too small or the index is too small, it will be the same as calling `add` multiple times.
+        Args:
+            vec_list (list[list[float]]): List of vectors.
+                - If the vec_list is too large, it will be split into smaller chunks.
+                - If the vec_list is too small or the index is too small, it will be the same as calling `add` multiple times.
+            metadata_list (list[dict[str, str]]): List of metadata.
         """
         ...
 
@@ -70,17 +83,97 @@ class RagVecDB:
         """Set the metadata by id."""
         ...
 
-    def search_as_id(
-        self, query: list[float], k: int, ef: int | None = None
-    ) -> list[int]:
-        """Search for the nearest neighbors of a vector, and return the ids."""
+    def search_as_pair(
+        self,
+        query: list[float],
+        k: int,
+        ef: int | None = None,
+        max_distance: float | None = None,
+    ) -> list[tuple[int, float]]:
+        """Search for the nearest neighbors of a vector.
+
+        Returns:
+            A list of (id, distance) pairs.
+
+        Args:
+            query (list[float]): The query vector.
+            k (int): The number of neighbors to search for.
+            ef (int | None): Search radius. (default: None, auto)
+            max_distance (float | None): Elements with a distance greater than this will be ignored. (default: None, no limit)
+        """
         ...
 
     def search(
-        self, query: list[float], k: int, ef: int | None = None
+        self,
+        query: list[float],
+        k: int,
+        ef: int | None = None,
+        max_distance: float | None = None,
     ) -> list[dict[str, str]]:
         """Search for the nearest neighbors of a vector.
 
-        Returns a list of metadata.
+        Returns:
+            A list of metadata.
+
+        Args:
+            query (list[float]): The query vector.
+            k (int): The number of neighbors to search for.
+            ef (int | None): Search radius. (default: None, auto)
+            max_distance (float | None): Elements with a distance greater than this will be ignored. (default: None, no limit)
+        """
+        ...
+
+class RagMultiVecDB:
+    """A group of vector databases for automatic searching and merging KNN results."""
+
+    def __init__(self, multi_vec_db: list[RagVecDB]) -> None:
+        """Create a new multi-vector database."""
+        ...
+
+    def get_vec(self, db_id: int, vec_id: int) -> list[float]:
+        """Get a vector by (db_id, vec_id)."""
+        ...
+
+    def get_metadata(self, db_id: int, vec_id: int) -> dict[str, str]:
+        """Get the metadata by (db_id, vec_id)."""
+        ...
+
+    def search_as_pair(
+        self,
+        query: list[float],
+        k: int,
+        ef: int | None = None,
+        max_distance: float | None = None,
+    ) -> list[tuple[int, int, float]]:
+        """Search for the nearest neighbors of a vector.
+
+        Returns:
+            A list of (db_id, vec_id, distance) tuples.
+
+        Args:
+            query (list[float]): The query vector.
+            k (int): The number of neighbors to search for.
+            ef (int | None): Search radius. (default: None, auto)
+            max_distance (float | None): Elements with a distance greater than this will be ignored. (default: None, no limit)
+        """
+        ...
+
+    def search(
+        self,
+        query: list[float],
+        k: int,
+        ef: int | None = None,
+        max_distance: float | None = None,
+    ) -> list[dict[str, str]]:
+        """Search for the nearest neighbors of a vector.
+
+        Returns:
+            A list of metadata.
+
+        Args:
+            query (list[float]): The query vector.
+            k (int): The number of neighbors to search for.
+            ef (int | None): Search radius. (default: None, auto)
+            max_distance (float | None): Elements with a distance greater than this will be ignored. (default: None, no limit)
         """
         ...
