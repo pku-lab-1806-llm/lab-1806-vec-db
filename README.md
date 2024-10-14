@@ -47,13 +47,30 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo test
 # Or you can click the 'Run Test' button in VSCode to show output.
 # Our GitHub Actions will also run the tests.
+```
 
-# Build the Python Wheel
-# This will be automatically run in GitHub Actions.
-uv build
+Test the python binding with `test-pyo3.py`.
+
+```bash
+# Install Python 3.10
+brew install python@3.10
+# or on Windows
+scoop bucket add versions
+scoop install python310
+
+# Install uv.
+# See https://github.com/astral-sh/uv for alternatives.
+pip install uv
+# or on Windows
+scoop install uv
+
 # Run the Python test
 uv sync --reinstall-package lab_1806_vec_db
 uv run ./test-pyo3.py
+
+# Build the Python Wheel Release
+# This will be automatically run in GitHub Actions.
+uv build
 ```
 
 ## Examples Binaries
