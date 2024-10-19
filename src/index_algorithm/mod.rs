@@ -21,7 +21,6 @@ pub mod candidate_pair;
 pub mod hnsw_index;
 pub mod ivf_index;
 pub mod linear_index;
-pub mod reuseable_visited;
 // All Index Algorithms & Candidate Tools
 pub use self::{
     candidate_pair::{CandidatePair, ResultSet},
