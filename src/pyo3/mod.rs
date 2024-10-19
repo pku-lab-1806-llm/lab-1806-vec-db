@@ -2,6 +2,7 @@ use crate::{
     index_algorithm::{HNSWConfig, HNSWIndex},
     prelude::*,
 };
+use ordered_float::OrderedFloat;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -10,10 +11,19 @@ use std::{fs::File, io::BufWriter};
 
 #[pymodule]
 pub mod lab_1806_vec_db {
-
-    use ordered_float::OrderedFloat;
-
     use super::*;
+
+    /// Get the distance algorithm from a string.
+    ///
+    /// Not exposed to Python.
+    fn distance_algorithm_from_str(dist: &str) -> PyResult<DistanceAlgorithm> {
+        match dist {
+            "l2sqr" => Ok(DistanceAlgorithm::L2Sqr),
+            "l2" => Ok(DistanceAlgorithm::L2),
+            "cosine" => Ok(DistanceAlgorithm::Cosine),
+            _ => Err(PyValueError::new_err("Invalid distance function")),
+        }
+    }
 
     /// Calculate the distance between two vectors.
     ///
@@ -21,12 +31,7 @@ pub mod lab_1806_vec_db {
     #[pyfunction]
     #[pyo3(signature = (a, b, dist="cosine"))]
     pub fn calc_dist(a: Vec<f32>, b: Vec<f32>, dist: &str) -> PyResult<f32> {
-        let dist = match dist {
-            "l2sqr" => DistanceAlgorithm::L2Sqr,
-            "l2" => DistanceAlgorithm::L2,
-            "cosine" => DistanceAlgorithm::Cosine,
-            _ => return Err(PyValueError::new_err("Invalid distance function")),
-        };
+        let dist = distance_algorithm_from_str(dist)?;
         Ok(dist.d(a.as_slice(), b.as_slice()))
     }
 
@@ -68,12 +73,7 @@ pub mod lab_1806_vec_db {
                 M,
                 max_elements,
             };
-            let dist = match dist {
-                "l2sqr" => DistanceAlgorithm::L2Sqr,
-                "l2" => DistanceAlgorithm::L2,
-                "cosine" => DistanceAlgorithm::Cosine,
-                _ => return Err(PyValueError::new_err("Invalid distance function")),
-            };
+            let dist = distance_algorithm_from_str(dist)?;
             let rng = match seed {
                 Some(seed) => rand::SeedableRng::seed_from_u64(seed),
                 None => rand::SeedableRng::from_entropy(),
