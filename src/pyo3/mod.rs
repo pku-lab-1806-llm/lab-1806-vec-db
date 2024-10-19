@@ -2,6 +2,7 @@ use crate::{
     index_algorithm::{HNSWConfig, HNSWIndex},
     prelude::*,
 };
+use ordered_float::OrderedFloat;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -10,11 +11,11 @@ use std::{fs::File, io::BufWriter};
 
 #[pymodule]
 pub mod lab_1806_vec_db {
-
-    use ordered_float::OrderedFloat;
-
     use super::*;
 
+    /// Get the distance algorithm from a string.
+    ///
+    /// Not exposed to Python.
     fn distance_algorithm_from_str(dist: &str) -> PyResult<DistanceAlgorithm> {
         match dist {
             "l2sqr" => Ok(DistanceAlgorithm::L2Sqr),
