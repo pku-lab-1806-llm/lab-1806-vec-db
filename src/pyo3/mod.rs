@@ -28,6 +28,9 @@ pub mod lab_1806_vec_db {
     /// Calculate the distance between two vectors.
     ///
     /// `dist` can be "l2sqr", "l2" or "cosine". (default: "cosine", for RAG)
+    ///
+    /// Raises:
+    ///     ValueError: If the distance function is invalid.
     #[pyfunction]
     #[pyo3(signature = (a, b, dist="cosine"))]
     pub fn calc_dist(a: Vec<f32>, b: Vec<f32>, dist: &str) -> PyResult<f32> {
@@ -60,6 +63,9 @@ pub mod lab_1806_vec_db {
         ///    seed (int): Random seed for the index. (default: None, random)
         ///
         /// Random seed will never be saved. Never call `add` on a loaded index if you want to have deterministic index construction.
+        ///
+        /// Raises:
+        ///     ValueError: If the distance function is invalid.
         pub fn new(
             dim: usize,
             dist: &str,
@@ -85,7 +91,15 @@ pub mod lab_1806_vec_db {
             })
         }
 
+        /// Get the dimension of the vectors.
+        pub fn dim(&self) -> usize {
+            self.inner.dim()
+        }
+
         /// Load an existing HNSW index from disk.
+        ///
+        /// Raises:
+        ///     RuntimeError: If the file is not found or the index is corrupted.
         #[staticmethod]
         pub fn load(path: &str) -> PyResult<Self> {
             let file = File::open(path)?;
@@ -97,6 +111,9 @@ pub mod lab_1806_vec_db {
 
         /// Save the HNSW index to disk.
         /// The random seed is not saved.
+        ///
+        /// Raises:
+        ///     RuntimeError: If the file cannot be written.
         pub fn save(&self, path: &str) -> PyResult<()> {
             let file = File::create(path)?;
             let writer = BufWriter::new(file);
@@ -131,6 +148,7 @@ pub mod lab_1806_vec_db {
             self.inner.batch_add(&vec_list, &mut self.rng)
         }
 
+        /// Get the total number of vectors.
         pub fn __len__(&self) -> usize {
             self.inner.len()
         }
@@ -201,15 +219,39 @@ pub mod lab_1806_vec_db {
     #[pyclass]
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct RagMultiVecDB {
+        pub length: usize,
         pub multi_vec_db: Vec<RagVecDB>,
     }
 
     #[pymethods]
     impl RagMultiVecDB {
         /// Create a new multi-vector database.
+        ///
+        /// Raises:
+        ///     ValueError: If the databases have different dimensions.
         #[new]
-        pub fn new(multi_vec_db: Vec<RagVecDB>) -> Self {
-            Self { multi_vec_db }
+        pub fn new(multi_vec_db: Vec<RagVecDB>) -> PyResult<Self> {
+            let dim_list = multi_vec_db.iter().map(|db| db.dim()).collect::<Vec<_>>();
+            if !dim_list.iter().all(|&dim| dim == dim_list[0]) {
+                return Err(PyValueError::new_err(
+                    "All databases must have the same dimension",
+                ));
+            }
+            let length = multi_vec_db.iter().map(|db| db.__len__()).sum();
+            Ok(Self {
+                length,
+                multi_vec_db,
+            })
+        }
+
+        /// Get the dimension of the vectors.
+        pub fn dim(&self) -> usize {
+            self.multi_vec_db[0].dim()
+        }
+
+        /// Get the total number of vectors.
+        pub fn __len__(&self) -> usize {
+            self.length
         }
 
         /// Get a vector by (db_id, vec_id).

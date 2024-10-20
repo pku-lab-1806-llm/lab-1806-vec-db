@@ -45,6 +45,9 @@ os.remove("test_db.local.bin")
 
 multi_db = RagMultiVecDB([db_a, db_b])
 
+assert len(multi_db) == 6, "Test failed"
+assert multi_db.dim() == 4, "Test failed"
+
 result = multi_db.search([1.0, 0.0, 0.0, 0.0], 2)
 
 for idx, metadata in enumerate(result):
