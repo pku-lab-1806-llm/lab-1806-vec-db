@@ -5,6 +5,9 @@ def calc_dist(a: list[float], b: list[float], dist: str = "cosine") -> float:
         a (list[float]): The first vector.
         b (list[float]): The second vector.
         dist (str): Distance function. Can be "l2sqr", "l2" or "cosine". (default: "cosine", for RAG)
+
+    Raises:
+        ValueError: If the distance function is invalid.
     """
     ...
 
@@ -31,16 +34,31 @@ class RagVecDB:
             seed (int | None): Random seed for the index. (default: None, random)
 
         Random seed will never be saved. Never call `add` on a loaded index if you want to have deterministic index construction.
+
+        Raises:
+            ValueError: If the distance function is invalid.
         """
+        ...
+
+    def dim(self) -> int:
+        """Return the dimension of the vectors."""
         ...
 
     @staticmethod
     def load(path: str) -> "RagVecDB":
-        """Load an existing HNSW index from disk."""
+        """Load an existing HNSW index from disk.
+
+        Raises:
+            RuntimeError: If the file is not found or the index is corrupted.
+        """
         ...
 
     def save(self, path: str) -> None:
-        """Save the HNSW index to disk. The random seed is not saved."""
+        """Save the HNSW index to disk. The random seed is not saved.
+
+        Raises:
+            RuntimeError: If the file cannot be written.
+        """
         ...
 
     def add(self, vec: list[float], metadata: dict[str, str]) -> int:
@@ -127,7 +145,19 @@ class RagMultiVecDB:
     """A group of vector databases for automatic searching and merging KNN results."""
 
     def __init__(self, multi_vec_db: list[RagVecDB]) -> None:
-        """Create a new multi-vector database."""
+        """Create a new multi-vector database.
+
+        Raises:
+            ValueError: If the databases have different dimensions.
+        """
+        ...
+
+    def dim(self) -> int:
+        """Return the dimension of the vectors."""
+        ...
+
+    def __len__(self) -> int:
+        """Return the total number of vectors in the indices."""
         ...
 
     def get_vec(self, db_id: int, vec_id: int) -> list[float]:
