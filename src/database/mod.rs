@@ -454,7 +454,7 @@ mod test {
 
     #[test]
     fn test_vec_db_manager() -> Result<()> {
-        let dir = "./tmp";
+        let dir = "./tmp/vec_db";
         let db = VecDBManager::new(dir)?;
         for key in db.get_all_keys() {
             db.delete_table(&key)?;

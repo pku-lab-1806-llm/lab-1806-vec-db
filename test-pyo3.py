@@ -54,7 +54,7 @@ test_bare_vec_table()
 
 def test_vec_db():
     print("\n[Test] VecDB")
-    db = VecDB("./tmp")
+    db = VecDB("./tmp/vec_db")
     for key in db.get_all_keys():
         db.delete_table(key)
 
