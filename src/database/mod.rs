@@ -362,8 +362,14 @@ impl VecDBManager {
         self.brief_manager.signal();
         tables.remove(key);
         let table_file = VecTableManager::file_path_of(&self.dir, key);
-        let _table_lock = acquire_lock(table_file.with_extension("lock"))?;
+        let table_lock_path = table_file.with_extension("lock");
+        // Wait for all the read/write operations to finish.
+        let table_lock = acquire_lock(&table_lock_path)?;
         std::fs::remove_file(table_file)?;
+        // Unlock the table lock.
+        drop(table_lock);
+        // It is safe to remove the lock file now, since we have lock on brief and tables.
+        std::fs::remove_file(table_lock_path)?;
         Ok(())
     }
     pub fn get_table_info(&self, key: &str) -> Option<VecTableBrief> {
