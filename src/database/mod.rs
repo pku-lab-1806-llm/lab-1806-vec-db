@@ -133,6 +133,7 @@ pub struct VecTableBrief {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VecDBBrief {
+    #[serde(default)]
     tables: BTreeMap<String, VecTableBrief>,
 }
 impl VecDBBrief {
@@ -164,9 +165,17 @@ impl ThreadSave for Mutex<VecDBBrief> {
     }
 }
 
+/// A manager for a vector table.
+///
+/// Ensures:
+/// - Auto-save the index to the file.
+/// - Thread-safe. Read and write operations are protected by a RwLock.
+/// - Unique. Only one manager for each table.
 struct VecTableManager {
     manager: debounce::ThreadSavingManager<RwLock<MetadataIndex>>,
     index: Arc<RwLock<MetadataIndex>>,
+    #[allow(unused)]
+    lock_file: File,
 }
 impl VecTableManager {
     fn file_path_of(dir: impl AsRef<Path>, key: &str) -> PathBuf {
@@ -186,21 +195,28 @@ impl VecTableManager {
     }
     pub fn new(dir: impl AsRef<Path>, key: &str, dim: usize, dist: DistanceAlgorithm) -> Self {
         let file = Self::file_path_of(&dir, &key);
+        let lock_file = acquire_lock(file.with_extension("lock")).unwrap();
         let index = MetadataIndex::new(dim, dist);
         let index = Arc::new(RwLock::new(index));
         let manager = Self::new_manager(file, &index);
-        manager.save();
-        Self { manager, index }
+        manager.signal();
+        Self {
+            manager,
+            index,
+            lock_file,
+        }
     }
     pub fn load(dir: impl AsRef<Path>, key: &str) -> Result<Self> {
         let file = Self::file_path_of(&dir, &key);
+        let lock_file = acquire_lock(file.with_extension("lock"))?;
         let index = MetadataIndex::load(&file)?;
         let index = Arc::new(RwLock::new(index));
         let manager = Self::new_manager(file, &index);
-        Ok(Self { manager, index })
-    }
-    pub fn force_save(&self) {
-        self.manager.force_save();
+        Ok(Self {
+            manager,
+            index,
+            lock_file,
+        })
     }
     pub fn info(&self) -> VecTableBrief {
         let index = self.index.read().unwrap();
@@ -210,12 +226,20 @@ impl VecTableManager {
             dist: index.dist(),
         }
     }
+    /// Add a vector with metadata to the table.
+    /// Returns the id of the added vector.
+    ///
+    /// May modify the brief.
     pub fn add(&self, vec: Vec<f32>, metadata: BTreeMap<String, String>) -> usize {
         let mut index = self.index.write().unwrap();
         let id = index.add(vec, metadata);
-        self.manager.save();
+        self.manager.signal();
         id
     }
+    /// Add vectors with metadata to the table.
+    /// Returns the ids of the added vectors.
+    ///
+    /// May modify the brief.
     pub fn batch_add(
         &self,
         vec_list: Vec<Vec<f32>>,
@@ -223,7 +247,7 @@ impl VecTableManager {
     ) -> Vec<usize> {
         let mut index = self.index.write().unwrap();
         let ids = index.batch_add(vec_list, metadata_list);
-        self.manager.save();
+        self.manager.signal();
         ids
     }
     pub fn search(
@@ -238,6 +262,12 @@ impl VecTableManager {
     }
 }
 
+/// A manager for a vector database.
+///
+/// Ensures:
+/// - Auto-save the brief to the file. And tables are saved to files when necessary.
+/// - Thread-safe. Read and write operations to the brief are protected by a Mutex. Operations to the tables are protected by a thread-safe managers.
+/// - Unique. Only one manager for each database.
 pub struct VecDBManager {
     dir: PathBuf,
     brief: Arc<Mutex<VecDBBrief>>,
@@ -268,7 +298,7 @@ impl VecDBManager {
             brief.clone(),
             Some(std::time::Duration::from_secs(30)),
         );
-        brief_manager.save();
+        brief_manager.signal();
         let lock_file = acquire_lock(dir.join("db.lock"))?;
         Ok(Self {
             dir,
@@ -278,16 +308,20 @@ impl VecDBManager {
             tables: Mutex::new(BTreeMap::new()),
         })
     }
-    pub fn force_save(&self) {
-        self.brief_manager.force_save();
-        let tables = self.tables.lock().unwrap();
-        for table in tables.values() {
-            table.force_save();
-        }
-    }
+    /// Returns a list of table keys.
     pub fn get_all_keys(&self) -> Vec<String> {
         let brief = self.brief.lock().unwrap();
         brief.tables.keys().cloned().collect()
+    }
+    /// Returns a list of table keys that are cached.
+    pub fn get_cached_tables(&self) -> Vec<String> {
+        let tables = self.tables.lock().unwrap();
+        tables.keys().cloned().collect()
+    }
+    /// Remove a table from the cache.
+    pub fn remove_cached_table(&self, key: &str) {
+        let mut tables = self.tables.lock().unwrap();
+        tables.remove(key);
     }
     /// Returns bool indicating whether the table is newly created.
     pub fn create_table_if_not_exists(
@@ -306,20 +340,18 @@ impl VecDBManager {
             return Ok(false);
         }
         brief.insert(&key, dim, 0, dist);
-        self.brief_manager.save();
+        self.brief_manager.signal();
 
         let table = VecTableManager::new(&self.dir, &key, dim, dist);
         let table = Arc::new(table);
         tables.insert(key.to_string(), table.clone());
         Ok(true)
     }
-    pub fn free_table_cache(&self, key: &str) {
-        let mut tables = self.tables.lock().unwrap();
-        tables.remove(key);
-    }
     /// After deleting a table, the file is not deleted immediately.
     ///
     /// When a new table with the same name is created, the old file will be overwritten.
+    ///
+    /// May modify the brief.
     pub fn delete_table(&self, key: &str) -> Result<()> {
         let mut brief = self.brief.lock().unwrap();
         let mut tables = self.tables.lock().unwrap();
@@ -327,7 +359,7 @@ impl VecDBManager {
             return Err(anyhow!("Table {} not found", key));
         }
         brief.remove(key);
-        self.brief_manager.save();
+        self.brief_manager.signal();
         tables.remove(key);
         Ok(())
     }
@@ -351,14 +383,26 @@ impl VecDBManager {
         Ok(tables[key].clone())
     }
 
+    /// Add a vector with metadata to a table.
+    ///
+    /// Returns the id of the added vector.
+    ///
+    /// May modify the brief.
     pub fn add(&self, key: &str, vec: Vec<f32>, metadata: BTreeMap<String, String>) -> usize {
         let mut brief = self.brief.lock().unwrap();
         let mut tables = self.tables.lock().unwrap();
         let table = self.get_table(key, &brief, &mut tables).unwrap();
         let id = table.add(vec, metadata);
         brief.tables.insert(key.to_string(), table.info());
+        self.brief_manager.signal();
         id
     }
+
+    /// Add vectors with metadata to a table.
+    ///
+    /// Returns the ids of the added vectors.
+    ///
+    /// May modify the brief.
     pub fn batch_add(
         &self,
         key: &str,
@@ -370,6 +414,7 @@ impl VecDBManager {
         let table = self.get_table(key, &brief, &mut tables).unwrap();
         let ids = table.batch_add(vec_list, metadata_list);
         brief.tables.insert(key.to_string(), table.info());
+        self.brief_manager.signal();
         ids
     }
 
@@ -438,11 +483,6 @@ impl VecDBManager {
         results.sort_by_key(|(_, _, dist)| OrderedFloat(*dist));
         results.truncate(k);
         Ok(results)
-    }
-}
-impl Drop for VecDBManager {
-    fn drop(&mut self) {
-        self.force_save();
     }
 }
 

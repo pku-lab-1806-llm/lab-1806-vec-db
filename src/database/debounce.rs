@@ -20,6 +20,9 @@ impl DebounceWaitList {
         self.list.insert(self.count);
         self.count
     }
+    pub fn is_empty(&self) -> bool {
+        self.list.is_empty()
+    }
     pub fn is_last(&self, task_id: usize) -> bool {
         self.list.last() == Some(&task_id)
     }
@@ -33,9 +36,19 @@ impl DebounceWaitList {
 
 pub trait ThreadSave: Send + Sync {
     fn save_to(&self, path: impl AsRef<Path>);
+    /// Save to a tmp file and rename it to the target file.
+    fn atomic_save_to(&self, path: impl AsRef<Path>) {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let mut tmp = tmp_dir.path().join("tmp");
+        if let Some(ext) = path.as_ref().extension() {
+            tmp.set_extension(ext);
+        }
+        self.save_to(&tmp);
+        std::fs::rename(&tmp, path).unwrap();
+    }
 }
 
-pub struct ThreadSavingManager<T> {
+pub struct ThreadSavingManager<T: ThreadSave + 'static> {
     pub(crate) target: PathBuf,
     delay: time::Duration,
     obj: Arc<T>,
@@ -58,14 +71,16 @@ impl<T: ThreadSave + 'static> ThreadSavingManager<T> {
             wait_list: Arc::new(Mutex::new(DebounceWaitList::new())),
         }
     }
-    pub fn force_save(&self) {
-        self.obj.save_to(&self.target);
+    pub fn sync_save(&self) {
+        let mut wait_list = self.wait_list.lock().unwrap();
+        if !wait_list.is_empty() {
+            self.obj.atomic_save_to(&self.target);
+            wait_list.clear();
+        }
     }
-    pub fn save(&self) {
+    pub fn signal(&self) {
         // target: /path/to/file.db
         let target = self.target.clone();
-        // tmp: /path/to/file.tmp
-        let tmp = target.with_extension("tmp").to_str().unwrap().to_string();
         let obj = self.obj.clone();
         let wait_list = self.wait_list.clone();
         let delay = self.delay.clone();
@@ -76,8 +91,7 @@ impl<T: ThreadSave + 'static> ThreadSavingManager<T> {
             {
                 let mut wait_list = wait_list.lock().unwrap();
                 if wait_list.is_last(task_id) {
-                    obj.save_to(&tmp);
-                    std::fs::rename(&tmp, &target).unwrap();
+                    obj.atomic_save_to(&target);
                     wait_list.clear();
                     return;
                 }
@@ -88,11 +102,15 @@ impl<T: ThreadSave + 'static> ThreadSavingManager<T> {
                 }
                 let mut wait_list = wait_list.lock().unwrap();
                 if wait_list.contains(task_id) {
-                    obj.save_to(&tmp);
-                    std::fs::rename(&tmp, &target).unwrap();
+                    obj.atomic_save_to(&target);
                     wait_list.clear();
                 }
             }
         });
+    }
+}
+impl<T: ThreadSave + 'static> Drop for ThreadSavingManager<T> {
+    fn drop(&mut self) {
+        self.sync_save();
     }
 }
