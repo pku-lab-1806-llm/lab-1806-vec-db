@@ -74,6 +74,16 @@ pub mod lab_1806_vec_db {
             self.inner.dim()
         }
 
+        /// Get the distance algorithm name.
+        pub fn dist(&self) -> String {
+            distance_algorithm_to_str(self.inner.dist()).to_string()
+        }
+
+        /// Get the number of vectors in the index.
+        pub fn __len__(&self) -> usize {
+            self.inner.len()
+        }
+
         /// Load an existing HNSW index from disk.
         ///
         /// Raises:
@@ -116,11 +126,6 @@ pub mod lab_1806_vec_db {
             metadata_list: Vec<BTreeMap<String, String>>,
         ) -> Vec<usize> {
             self.inner.batch_add(vec_list, metadata_list)
-        }
-
-        /// Get the total number of vectors.
-        pub fn __len__(&self) -> usize {
-            self.inner.len()
         }
 
         /// Search for the nearest neighbors of a vector.
