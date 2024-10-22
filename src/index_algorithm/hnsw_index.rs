@@ -58,6 +58,16 @@ pub struct HNSWConfig {
     pub M: usize,
 }
 
+impl Default for HNSWConfig {
+    fn default() -> Self {
+        Self {
+            max_elements: default_max_elements(),
+            ef_construction: default_ef_construction(),
+            M: default_M(),
+        }
+    }
+}
+
 /// The inner configuration of the HNSW algorithm.
 /// Contains more computed values.
 #[derive(Debug, Clone, Serialize, Deserialize)]
