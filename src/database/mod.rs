@@ -317,10 +317,10 @@ impl VecDBManager {
         let mut tables = self.tables.lock().unwrap();
         tables.remove(key);
     }
-    /// After removing a table, the file is not deleted immediately.
+    /// After deleting a table, the file is not deleted immediately.
     ///
     /// When a new table with the same name is created, the old file will be overwritten.
-    pub fn remove_table(&self, key: &str) -> Result<()> {
+    pub fn delete_table(&self, key: &str) -> Result<()> {
         let mut brief = self.brief.lock().unwrap();
         let mut tables = self.tables.lock().unwrap();
         if !brief.tables.contains_key(key) {
@@ -448,7 +448,7 @@ impl Drop for VecDBManager {
 
 #[cfg(test)]
 mod test {
-    use std::{fs::remove_dir_all, thread};
+    use std::thread;
 
     use super::*;
 
@@ -456,6 +456,9 @@ mod test {
     fn test_vec_db_manager() -> Result<()> {
         let dir = "./tmp";
         let db = VecDBManager::new(dir)?;
+        for key in db.get_all_keys() {
+            db.delete_table(&key)?;
+        }
         let dim = 4;
         let dist = DistanceAlgorithm::Cosine;
 
@@ -518,10 +521,6 @@ mod test {
             .map(|(_, m, _)| m["name"].clone())
             .collect::<Vec<_>>();
         assert_eq!(results, vec![String::from("a"), String::from("a'")]);
-
-        drop(db);
-
-        remove_dir_all(dir)?;
 
         Ok(())
     }

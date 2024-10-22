@@ -55,7 +55,7 @@ pub mod lab_1806_vec_db {
     impl BareVecTable {
         #[new]
         #[pyo3(signature = (dim, dist="cosine"))]
-        /// Create a new HNSW index.
+        /// Create a new Table. (Using HNSW internally)
         ///
         /// Args:
         ///    dim (int): Dimension of the vectors.
@@ -84,7 +84,7 @@ pub mod lab_1806_vec_db {
             self.inner.len()
         }
 
-        /// Load an existing HNSW index from disk.
+        /// Load an existing index from disk.
         ///
         /// Raises:
         ///     RuntimeError: If the file is not found or the index is corrupted.
@@ -95,8 +95,7 @@ pub mod lab_1806_vec_db {
             Ok(Self { inner })
         }
 
-        /// Save the HNSW index to disk.
-        /// The random seed is not saved.
+        /// Save the index to disk.
         ///
         /// Raises:
         ///     RuntimeError: If the file cannot be written.
@@ -130,7 +129,7 @@ pub mod lab_1806_vec_db {
 
         /// Search for the nearest neighbors of a vector.
         ///
-        /// Returns a list of (id, distance) pairs.
+        /// Returns a list of (metadata, distance) pairs.
         #[pyo3(signature = (query, k, ef=None, upper_bound=None))]
         pub fn search(
             &self,
@@ -143,6 +142,9 @@ pub mod lab_1806_vec_db {
         }
     }
 
+    /// Vector Database.
+    ///
+    /// Prefer using this to manage multiple tables.
     #[pyclass]
     pub struct VecDB {
         pub(crate) inner: VecDBManager,
@@ -163,15 +165,16 @@ pub mod lab_1806_vec_db {
         ///
         /// Raises:
         ///     RuntimeError: If the file is corrupted.
+        #[pyo3(signature = (key, dim, dist="cosine"))]
         pub fn create_table_if_not_exists(
             &self,
-            name: String,
+            key: &str,
             dim: usize,
             dist: &str,
         ) -> PyResult<bool> {
-            let dist = distance_algorithm_from_str(dist)?;
+            let dist = distance_algorithm_from_str(&dist)?;
             self.inner
-                .create_table_if_not_exists(&name, dim, dist)
+                .create_table_if_not_exists(key, dim, dist)
                 .map_err(|e| PyRuntimeError::new_err(e.to_string()))
         }
         /// Get table info.
@@ -194,24 +197,33 @@ pub mod lab_1806_vec_db {
                 .ok_or_else(|| PyRuntimeError::new_err("Table not found"))
         }
 
+        /// After deleting a table, the file is not deleted immediately.
+        ///
+        /// When a new table with the same name is created, the old file will be overwritten.
+        pub fn delete_table(&self, key: String) -> PyResult<()> {
+            self.inner
+                .delete_table(&key)
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        }
+
         /// Get all table names.
         pub fn get_all_keys(&self) -> Vec<String> {
             self.inner.get_all_keys()
         }
 
         /// Add a vector to the table.
-        pub fn add(&self, key: String, vec: Vec<f32>, metadata: BTreeMap<String, String>) -> usize {
-            self.inner.add(&key, vec, metadata)
+        pub fn add(&self, key: &str, vec: Vec<f32>, metadata: BTreeMap<String, String>) -> usize {
+            self.inner.add(key, vec, metadata)
         }
 
         /// Add multiple vectors to the table.
         pub fn batch_add(
             &self,
-            key: String,
+            key: &str,
             vec_list: Vec<Vec<f32>>,
             metadata_list: Vec<BTreeMap<String, String>>,
         ) -> Vec<usize> {
-            self.inner.batch_add(&key, vec_list, metadata_list)
+            self.inner.batch_add(key, vec_list, metadata_list)
         }
 
         /// Search for the nearest neighbors of a vector.
@@ -219,18 +231,20 @@ pub mod lab_1806_vec_db {
         #[pyo3(signature = (key, query, k, ef=None, upper_bound=None))]
         pub fn search(
             &self,
-            key: String,
+            key: &str,
             query: Vec<f32>,
             k: usize,
             ef: Option<usize>,
             upper_bound: Option<f32>,
         ) -> PyResult<Vec<(BTreeMap<String, String>, f32)>> {
             self.inner
-                .search(&key, &query, k, ef, upper_bound)
+                .search(key, &query, k, ef, upper_bound)
                 .map_err(|e| PyRuntimeError::new_err(e.to_string()))
         }
 
         /// Search for the nearest neighbors of a vector in multiple tables.
+        ///
+        /// Returns a list of (table_name, metadata, distance) pairs.
         #[pyo3(signature = (key_list, query, k, ef=None, upper_bound=None))]
         pub fn join_search(
             &self,
