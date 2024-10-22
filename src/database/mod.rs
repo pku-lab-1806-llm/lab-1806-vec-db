@@ -268,6 +268,8 @@ impl VecTableManager {
 /// - Auto-save the brief to the file. And tables are saved to files when necessary.
 /// - Thread-safe. Read and write operations to the brief are protected by a Mutex. Operations to the tables are protected by a thread-safe managers.
 /// - Unique. Only one manager for each database.
+///
+/// Order of mutex lock: brief -> tables -> table_managers (by key)
 pub struct VecDBManager {
     dir: PathBuf,
     brief: Arc<Mutex<VecDBBrief>>,
@@ -347,9 +349,7 @@ impl VecDBManager {
         tables.insert(key.to_string(), table.clone());
         Ok(true)
     }
-    /// After deleting a table, the file is not deleted immediately.
-    ///
-    /// When a new table with the same name is created, the old file will be overwritten.
+    /// Delete a table and waits for all the read/write operations to finish.
     ///
     /// May modify the brief.
     pub fn delete_table(&self, key: &str) -> Result<()> {
@@ -361,6 +361,9 @@ impl VecDBManager {
         brief.remove(key);
         self.brief_manager.signal();
         tables.remove(key);
+        let table_file = VecTableManager::file_path_of(&self.dir, key);
+        let _table_lock = acquire_lock(table_file.with_extension("lock"))?;
+        std::fs::remove_file(table_file)?;
         Ok(())
     }
     pub fn get_table_info(&self, key: &str) -> Option<VecTableBrief> {
@@ -399,10 +402,10 @@ impl VecDBManager {
     }
 
     /// Add vectors with metadata to a table.
-    ///
     /// Returns the ids of the added vectors.
     ///
     /// May modify the brief.
+    /// Call it with a batch size around 64 to avoid long lock time.
     pub fn batch_add(
         &self,
         key: &str,

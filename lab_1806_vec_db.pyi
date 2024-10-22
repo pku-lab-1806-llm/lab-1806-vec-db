@@ -134,14 +134,20 @@ class VecDB:
 
     def delete_table(self, key: str) -> None:
         """
-        Delete a table.
-
-        The file is not deleted immediately. When a new table with the same name is created, the old file will be overwritten.
+        Delete a table and waits for all the read/write operations to finish.
         """
         ...
 
     def get_all_keys(self) -> list[str]:
         """Get all table names."""
+        ...
+
+    def get_cached_tables(self) -> list[str]:
+        """Returns a list of table keys that are cached."""
+        ...
+
+    def remove_cached_table(self, key: str) -> None:
+        """Remove a table from the cache."""
         ...
 
     def add(self, key: str, vec: list[float], metadata: dict[str, str]) -> int:

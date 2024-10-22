@@ -44,7 +44,9 @@ pub trait ThreadSave: Send + Sync {
             tmp.set_extension(ext);
         }
         self.save_to(&tmp);
-        std::fs::rename(&tmp, path).unwrap();
+        if tmp.is_file() {
+            std::fs::rename(&tmp, path).unwrap();
+        }
     }
 }
 

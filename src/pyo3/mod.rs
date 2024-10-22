@@ -211,6 +211,15 @@ pub mod lab_1806_vec_db {
             self.inner.get_all_keys()
         }
 
+        /// Returns a list of table keys that are cached.
+        pub fn get_cached_tables(&self) -> Vec<String> {
+            self.inner.get_cached_tables()
+        }
+        /// Remove a table from the cache.
+        pub fn remove_cached_table(&self, key: &str) {
+            self.inner.remove_cached_table(key)
+        }
+
         /// Add a vector to the table.
         pub fn add(&self, key: &str, vec: Vec<f32>, metadata: BTreeMap<String, String>) -> usize {
             self.inner.add(key, vec, metadata)
