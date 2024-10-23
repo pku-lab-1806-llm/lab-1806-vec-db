@@ -93,7 +93,7 @@ class VecDB:
     Vector Database. Prefer using this to manage multiple tables.
 
     Ensures:
-    - Auto-save the brief to the file. And tables are saved to files when necessary.
+    - Auto-save. The database will be saved to disk when necessary.
     - Thread-safe. Read and write operations are atomic.
     - Unique. Only one manager for each database.
     """

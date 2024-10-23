@@ -383,11 +383,10 @@ impl VecDBManager {
             // Wait for other threads to finish.
             drop(table);
             receiver.recv().unwrap();
-
-            // Remove the file.
-            let table_file = VecTableManager::file_path_of(&self.dir, key);
-            std::fs::remove_file(table_file)?;
         }
+        // Remove the file.
+        let table_file = VecTableManager::file_path_of(&self.dir, key);
+        std::fs::remove_file(table_file)?;
         Ok(())
     }
     pub fn get_table_info(&self, key: &str) -> Option<VecTableBrief> {

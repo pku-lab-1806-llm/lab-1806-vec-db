@@ -67,7 +67,7 @@ impl<T: ThreadSave + 'static> ThreadSavingManager<T> {
     /// If `stop_thread` is true, stop the auto-saving thread after syncing.
     pub fn sync_save(&self, stop_thread: bool) {
         let mut mark = self.mark.lock().unwrap();
-        if !*mark {
+        if *mark {
             self.obj.atomic_save_to(&self.target);
             *mark = false;
         }
