@@ -59,25 +59,18 @@ class BareVecTable:
         """
         ...
 
-    def add(self, vec: list[float], metadata: dict[str, str]) -> int:
+    def add(self, vec: list[float], metadata: dict[str, str]):
         """
         Add a vector to the index.
-
-        Returns the ID of the added vector.
-
         Use `batch_add` for better performance.
         """
         ...
 
     def batch_add(
         self, vec_list: list[list[float]], metadata_list: list[dict[str, str]]
-    ) -> list[int]:
+    ):
         """
         Add multiple vectors to the index.
-        Returns the id list of the added vectors.
-
-        If the vec_list is too large, it will be split into smaller chunks.
-        If the vec_list is too small or the index is too small, it will be the same as calling `add` multiple times.
         """
         ...
 
@@ -97,15 +90,16 @@ class BareVecTable:
 
 class VecDB:
     """
-    Vector Database.
+    Vector Database. Prefer using this to manage multiple tables.
 
-    Prefer using this to manage multiple tables.
+    Ensures:
+    - Auto-save the brief to the file. And tables are saved to files when necessary.
+    - Thread-safe. Read and write operations are atomic.
+    - Unique. Only one manager for each database.
     """
     def __init__(self, dir: str) -> None:
         """
         Create a new VecDB, it will create a new directory if it does not exist.
-
-        Automatically save the database to disk when dropped. Cache the tables when accessing their contents.
         """
         ...
 
@@ -134,7 +128,7 @@ class VecDB:
 
     def delete_table(self, key: str) -> None:
         """
-        Delete a table and waits for all the read/write operations to finish.
+        Delete a table and waits for all operations to finish.
         """
         ...
 
@@ -147,17 +141,18 @@ class VecDB:
         ...
 
     def remove_cached_table(self, key: str) -> None:
-        """Remove a table from the cache."""
+        """Remove a table from the cache and wait for all operations to finish."""
         ...
 
-    def add(self, key: str, vec: list[float], metadata: dict[str, str]) -> int:
+    def add(self, key: str, vec: list[float], metadata: dict[str, str]):
         """Add a vector to the table."""
         ...
 
     def batch_add(
         self, key: str, vec_list: list[list[float]], metadata_list: list[dict[str, str]]
-    ) -> list[int]:
-        """Add multiple vectors to the table."""
+    ):
+        """Add multiple vectors to the table.
+        Call it with a batch size around 64 to avoid long lock time."""
         ...
 
     def search(
@@ -170,7 +165,6 @@ class VecDB:
     ) -> list[tuple[dict[str, str], float]]:
         """
         Search for the nearest neighbors of a vector.
-
         Returns a list of (metadata, distance) pairs.
         """
         ...
@@ -185,7 +179,6 @@ class VecDB:
     ) -> list[tuple[str, dict[str, str], float]]:
         """
         Search for the nearest neighbors of a vector in multiple tables.
-
         Returns a list of (table_name, metadata, distance) pairs.
         """
         ...

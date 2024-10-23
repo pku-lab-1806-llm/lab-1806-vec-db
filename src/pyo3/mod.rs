@@ -106,25 +106,19 @@ pub mod lab_1806_vec_db {
         }
 
         /// Add a vector to the index.
-        ///
-        /// Returns the ID of the added vector.
-        ///
         /// Use `batch_add` for better performance.
-        pub fn add(&mut self, vec: Vec<f32>, metadata: BTreeMap<String, String>) -> usize {
-            self.inner.add(vec, metadata)
+        pub fn add(&mut self, vec: Vec<f32>, metadata: BTreeMap<String, String>) {
+            self.inner.add(vec, metadata);
         }
 
         /// Add multiple vectors to the index.
-        /// Returns the id list of the added vectors.
-        ///
-        /// If the vec_list is too large, it will be split into smaller chunks.
-        /// If the vec_list is too small or the index is too small, it will be the same as calling `add` multiple times.
+        /// Call it with a batch size around 64 to avoid long lock time.
         pub fn batch_add(
             &mut self,
             vec_list: Vec<Vec<f32>>,
             metadata_list: Vec<BTreeMap<String, String>>,
-        ) -> Vec<usize> {
-            self.inner.batch_add(vec_list, metadata_list)
+        ) {
+            self.inner.batch_add(vec_list, metadata_list);
         }
 
         /// Search for the nearest neighbors of a vector.
@@ -145,6 +139,12 @@ pub mod lab_1806_vec_db {
     /// Vector Database.
     ///
     /// Prefer using this to manage multiple tables.
+    ///
+    ///
+    /// Ensures:
+    /// - Auto-save the brief to the file. And tables are saved to files when necessary.
+    /// - Thread-safe. Read and write operations are atomic.
+    /// - Unique. Only one manager for each database.
     #[pyclass]
     pub struct VecDB {
         pub(crate) inner: VecDBManager,
@@ -152,8 +152,6 @@ pub mod lab_1806_vec_db {
     #[pymethods]
     impl VecDB {
         /// Create a new VecDB, it will create a new directory if it does not exist.
-        ///
-        /// Automatically save the database to disk when dropped. Cache the tables when accessing their contents.
         #[new]
         pub fn new(dir: String) -> PyResult<Self> {
             let inner =
@@ -197,9 +195,7 @@ pub mod lab_1806_vec_db {
                 .ok_or_else(|| PyRuntimeError::new_err("Table not found"))
         }
 
-        /// After deleting a table, the file is not deleted immediately.
-        ///
-        /// When a new table with the same name is created, the old file will be overwritten.
+        /// Delete a table and wait for all operations to finish.
         pub fn delete_table(&self, key: String) -> PyResult<()> {
             self.inner
                 .delete_table(&key)
@@ -216,23 +212,26 @@ pub mod lab_1806_vec_db {
             self.inner.get_cached_tables()
         }
         /// Remove a table from the cache.
-        pub fn remove_cached_table(&self, key: &str) {
-            self.inner.remove_cached_table(key)
+        pub fn remove_cached_table(&self, key: &str) -> PyResult<()> {
+            self.inner
+                .remove_cached_table(key)
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
         }
 
         /// Add a vector to the table.
-        pub fn add(&self, key: &str, vec: Vec<f32>, metadata: BTreeMap<String, String>) -> usize {
-            self.inner.add(key, vec, metadata)
+        pub fn add(&self, key: &str, vec: Vec<f32>, metadata: BTreeMap<String, String>) {
+            self.inner.add(key, vec, metadata);
         }
 
         /// Add multiple vectors to the table.
+        /// Call it with a batch size around 64 to avoid long lock time.
         pub fn batch_add(
             &self,
             key: &str,
             vec_list: Vec<Vec<f32>>,
             metadata_list: Vec<BTreeMap<String, String>>,
-        ) -> Vec<usize> {
-            self.inner.batch_add(key, vec_list, metadata_list)
+        ) {
+            self.inner.batch_add(key, vec_list, metadata_list);
         }
 
         /// Search for the nearest neighbors of a vector.

@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use debounce::ThreadSave;
 use fs2::FileExt;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
@@ -9,15 +8,16 @@ use std::{
     fs::File,
     io::BufReader,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard, RwLock},
+    sync::{mpsc, Arc, Mutex, MutexGuard, RwLock},
 };
+use thread_save::ThreadSave;
 
 use crate::{
     index_algorithm::{HNSWConfig, HNSWIndex},
     prelude::*,
 };
 
-pub mod debounce;
+pub mod thread_save;
 
 pub fn acquire_lock(lock_file: impl AsRef<Path>) -> Result<File> {
     let file = File::options()
@@ -72,22 +72,22 @@ impl MetadataIndex {
         Ok(())
     }
 
-    /// Add a vector with metadata to the index. Returns the id of the added vector.
-    pub fn add(&mut self, vec: Vec<f32>, metadata: BTreeMap<String, String>) -> usize {
+    /// Add a vector with metadata to the index.
+    pub fn add(&mut self, vec: Vec<f32>, metadata: BTreeMap<String, String>) {
         self.metadata.push(metadata);
-        self.inner.add(&vec, &mut self.rng)
+        self.inner.add(&vec, &mut self.rng);
     }
 
-    /// Add vectors with metadata to the index. Returns the ids of the added vectors.
+    /// Add vectors with metadata to the index.
     pub fn batch_add(
         &mut self,
         vec_list: Vec<Vec<f32>>,
         metadata_list: Vec<BTreeMap<String, String>>,
-    ) -> Vec<usize> {
+    ) {
         assert_eq!(vec_list.len(), metadata_list.len());
         self.metadata.extend(metadata_list);
         let vec_list: Vec<_> = vec_list.iter().map(|v| v.as_slice()).collect();
-        self.inner.batch_add(&vec_list, &mut self.rng)
+        self.inner.batch_add(&vec_list, &mut self.rng);
     }
 
     /// Get the total number of vectors.
@@ -172,10 +172,9 @@ impl ThreadSave for Mutex<VecDBBrief> {
 /// - Thread-safe. Read and write operations are protected by a RwLock.
 /// - Unique. Only one manager for each table.
 struct VecTableManager {
-    manager: debounce::ThreadSavingManager<RwLock<MetadataIndex>>,
+    manager: thread_save::ThreadSavingManager<RwLock<MetadataIndex>>,
     index: Arc<RwLock<MetadataIndex>>,
-    #[allow(unused)]
-    lock_file: File,
+    drop_signal_sender: mpsc::Sender<()>,
 }
 impl VecTableManager {
     fn file_path_of(dir: impl AsRef<Path>, key: &str) -> PathBuf {
@@ -185,37 +184,44 @@ impl VecTableManager {
     fn new_manager(
         file: PathBuf,
         index: &Arc<RwLock<MetadataIndex>>,
-    ) -> debounce::ThreadSavingManager<RwLock<MetadataIndex>> {
-        debounce::ThreadSavingManager::new(
-            file,
-            std::time::Duration::from_secs(5),
+    ) -> thread_save::ThreadSavingManager<RwLock<MetadataIndex>> {
+        thread_save::ThreadSavingManager::new(
             index.clone(),
-            Some(std::time::Duration::from_secs(30)),
+            file,
+            std::time::Duration::from_secs(30),
         )
     }
-    pub fn new(dir: impl AsRef<Path>, key: &str, dim: usize, dist: DistanceAlgorithm) -> Self {
+    pub fn new(
+        dir: impl AsRef<Path>,
+        key: &str,
+        dim: usize,
+        dist: DistanceAlgorithm,
+        drop_signal_sender: std::sync::mpsc::Sender<()>,
+    ) -> Self {
         let file = Self::file_path_of(&dir, &key);
-        let lock_file = acquire_lock(file.with_extension("lock")).unwrap();
         let index = MetadataIndex::new(dim, dist);
         let index = Arc::new(RwLock::new(index));
         let manager = Self::new_manager(file, &index);
-        manager.signal();
+        manager.mark_modified();
         Self {
             manager,
             index,
-            lock_file,
+            drop_signal_sender,
         }
     }
-    pub fn load(dir: impl AsRef<Path>, key: &str) -> Result<Self> {
+    pub fn load(
+        dir: impl AsRef<Path>,
+        key: &str,
+        drop_signal_sender: std::sync::mpsc::Sender<()>,
+    ) -> Result<Self> {
         let file = Self::file_path_of(&dir, &key);
-        let lock_file = acquire_lock(file.with_extension("lock"))?;
         let index = MetadataIndex::load(&file)?;
         let index = Arc::new(RwLock::new(index));
         let manager = Self::new_manager(file, &index);
         Ok(Self {
             manager,
             index,
-            lock_file,
+            drop_signal_sender,
         })
     }
     pub fn info(&self) -> VecTableBrief {
@@ -227,29 +233,22 @@ impl VecTableManager {
         }
     }
     /// Add a vector with metadata to the table.
-    /// Returns the id of the added vector.
     ///
-    /// May modify the brief.
-    pub fn add(&self, vec: Vec<f32>, metadata: BTreeMap<String, String>) -> usize {
+    /// Signal the manager after the operation.
+    pub fn add(&self, vec: Vec<f32>, metadata: BTreeMap<String, String>) {
         let mut index = self.index.write().unwrap();
-        let id = index.add(vec, metadata);
-        self.manager.signal();
-        id
+        index.add(vec, metadata);
+        self.manager.mark_modified();
     }
     /// Add vectors with metadata to the table.
-    /// Returns the ids of the added vectors.
     ///
-    /// May modify the brief.
-    pub fn batch_add(
-        &self,
-        vec_list: Vec<Vec<f32>>,
-        metadata_list: Vec<BTreeMap<String, String>>,
-    ) -> Vec<usize> {
+    /// Signal the manager after the operation.
+    pub fn batch_add(&self, vec_list: Vec<Vec<f32>>, metadata_list: Vec<BTreeMap<String, String>>) {
         let mut index = self.index.write().unwrap();
-        let ids = index.batch_add(vec_list, metadata_list);
-        self.manager.signal();
-        ids
+        index.batch_add(vec_list, metadata_list);
+        self.manager.mark_modified();
     }
+    /// Search vector in the table.
     pub fn search(
         &self,
         query: &[f32],
@@ -261,22 +260,31 @@ impl VecTableManager {
         index.search(query, k, ef, upper_bound)
     }
 }
+impl Drop for VecTableManager {
+    fn drop(&mut self) {
+        // Sync the index to the file before dropping.
+        self.manager.sync_save(true);
+        // Send the signal to the drop signal receiver.
+        self.drop_signal_sender.send(()).unwrap();
+    }
+}
 
 /// A manager for a vector database.
 ///
 /// Ensures:
 /// - Auto-save the brief to the file. And tables are saved to files when necessary.
-/// - Thread-safe. Read and write operations to the brief are protected by a Mutex. Operations to the tables are protected by a thread-safe managers.
+/// - Thread-safe. Read and write operations to the brief are protected by a Mutex. Operations to the tables are protected by thread-safe managers.
 /// - Unique. Only one manager for each database.
 ///
 /// Order of mutex lock: brief -> tables -> table_managers (by key)
 pub struct VecDBManager {
     dir: PathBuf,
     brief: Arc<Mutex<VecDBBrief>>,
-    brief_manager: debounce::ThreadSavingManager<Mutex<VecDBBrief>>,
+    brief_manager: thread_save::ThreadSavingManager<Mutex<VecDBBrief>>,
+    tables: Mutex<BTreeMap<String, (mpsc::Receiver<()>, Arc<VecTableManager>)>>,
+    /// The last field to be dropped.
     #[allow(unused)]
     lock_file: File,
-    tables: Mutex<BTreeMap<String, Arc<VecTableManager>>>,
 }
 impl VecDBManager {
     fn brief_file_path(dir: impl AsRef<Path>) -> PathBuf {
@@ -294,13 +302,12 @@ impl VecDBManager {
             VecDBBrief::new()
         };
         let brief = Arc::new(Mutex::new(brief));
-        let brief_manager = debounce::ThreadSavingManager::new(
+        let brief_manager = thread_save::ThreadSavingManager::new(
+            brief.clone(),
             brief_file,
             std::time::Duration::from_secs(5),
-            brief.clone(),
-            Some(std::time::Duration::from_secs(30)),
         );
-        brief_manager.signal();
+        brief_manager.mark_modified();
         let lock_file = acquire_lock(dir.join("db.lock"))?;
         Ok(Self {
             dir,
@@ -310,20 +317,35 @@ impl VecDBManager {
             tables: Mutex::new(BTreeMap::new()),
         })
     }
+    fn get_locks_by_order(
+        &self,
+    ) -> (
+        MutexGuard<'_, VecDBBrief>,
+        MutexGuard<'_, BTreeMap<String, (mpsc::Receiver<()>, Arc<VecTableManager>)>>,
+    ) {
+        let brief = self.brief.lock().unwrap();
+        let tables = self.tables.lock().unwrap();
+        (brief, tables)
+    }
     /// Returns a list of table keys.
     pub fn get_all_keys(&self) -> Vec<String> {
-        let brief = self.brief.lock().unwrap();
+        let (brief, _table) = self.get_locks_by_order();
         brief.tables.keys().cloned().collect()
     }
     /// Returns a list of table keys that are cached.
     pub fn get_cached_tables(&self) -> Vec<String> {
-        let tables = self.tables.lock().unwrap();
+        let (_brief, tables) = self.get_locks_by_order();
         tables.keys().cloned().collect()
     }
-    /// Remove a table from the cache.
-    pub fn remove_cached_table(&self, key: &str) {
-        let mut tables = self.tables.lock().unwrap();
-        tables.remove(key);
+    /// Remove a table from the cache, and wait for all operations to finish.
+    pub fn remove_cached_table(&self, key: &str) -> Result<()> {
+        let (_brief, mut tables) = self.get_locks_by_order();
+        if let Some((receiver, table)) = tables.remove(key) {
+            // Wait for other threads to finish.
+            drop(table);
+            receiver.recv().unwrap();
+        }
+        Ok(())
     }
     /// Returns bool indicating whether the table is newly created.
     pub fn create_table_if_not_exists(
@@ -332,99 +354,89 @@ impl VecDBManager {
         dim: usize,
         dist: DistanceAlgorithm,
     ) -> Result<bool> {
-        let mut brief = self.brief.lock().unwrap();
-        let mut tables = self.tables.lock().unwrap();
+        let (mut brief, mut tables) = self.get_locks_by_order();
         if brief.tables.contains_key(key) {
-            if !tables.contains_key(key) {
-                let table = VecTableManager::load(&self.dir, &key)?;
-                tables.insert(key.to_string(), Arc::new(table));
-            }
-            return Ok(false);
+            return self
+                .get_table_with_lock(key, &brief, &mut tables)
+                .map(|_| false);
         }
         brief.insert(&key, dim, 0, dist);
-        self.brief_manager.signal();
+        self.brief_manager.mark_modified();
 
-        let table = VecTableManager::new(&self.dir, &key, dim, dist);
+        let (sender, receiver) = mpsc::channel();
+        let table = VecTableManager::new(&self.dir, &key, dim, dist, sender);
         let table = Arc::new(table);
-        tables.insert(key.to_string(), table.clone());
+        tables.insert(key.to_string(), (receiver, table));
         Ok(true)
     }
-    /// Delete a table and waits for all the read/write operations to finish.
+    /// Delete a table and waits for all operations to finish.
     ///
-    /// May modify the brief.
+    /// Signal the brief manager after the operation.
     pub fn delete_table(&self, key: &str) -> Result<()> {
-        let mut brief = self.brief.lock().unwrap();
-        let mut tables = self.tables.lock().unwrap();
+        let (mut brief, mut tables) = self.get_locks_by_order();
         if !brief.tables.contains_key(key) {
             return Err(anyhow!("Table {} not found", key));
         }
         brief.remove(key);
-        self.brief_manager.signal();
-        tables.remove(key);
-        let table_file = VecTableManager::file_path_of(&self.dir, key);
-        let table_lock_path = table_file.with_extension("lock");
-        // Wait for all the read/write operations to finish.
-        let table_lock = acquire_lock(&table_lock_path)?;
-        std::fs::remove_file(table_file)?;
-        // Unlock the table lock.
-        drop(table_lock);
-        // It is safe to remove the lock file now, since we have lock on brief and tables.
-        std::fs::remove_file(table_lock_path)?;
+        self.brief_manager.mark_modified();
+        if let Some((receiver, table)) = tables.remove(key) {
+            // Wait for other threads to finish.
+            drop(table);
+            receiver.recv().unwrap();
+
+            // Remove the file.
+            let table_file = VecTableManager::file_path_of(&self.dir, key);
+            std::fs::remove_file(table_file)?;
+        }
         Ok(())
     }
     pub fn get_table_info(&self, key: &str) -> Option<VecTableBrief> {
-        let brief = self.brief.lock().unwrap();
+        let (brief, _tables) = self.get_locks_by_order();
         brief.tables.get(key).cloned()
     }
-    fn get_table(
+    fn get_table_with_lock(
         &self,
         key: &str,
         brief: &MutexGuard<'_, VecDBBrief>,
-        tables: &mut MutexGuard<'_, BTreeMap<String, Arc<VecTableManager>>>,
+        tables: &mut MutexGuard<'_, BTreeMap<String, (mpsc::Receiver<()>, Arc<VecTableManager>)>>,
     ) -> Result<Arc<VecTableManager>> {
         if !brief.tables.contains_key(key) {
             return Err(anyhow!("Table {} not found", key));
         }
         if !tables.contains_key(key) {
-            let table = VecTableManager::load(&self.dir, key)?;
-            tables.insert(key.to_string(), Arc::new(table));
+            let (sender, receiver) = mpsc::channel();
+            let table = VecTableManager::load(&self.dir, key, sender)?;
+            tables.insert(key.to_string(), (receiver, Arc::new(table)));
         }
-        Ok(tables[key].clone())
+        Ok(tables[key].1.clone())
     }
 
     /// Add a vector with metadata to a table.
     ///
-    /// Returns the id of the added vector.
-    ///
-    /// May modify the brief.
-    pub fn add(&self, key: &str, vec: Vec<f32>, metadata: BTreeMap<String, String>) -> usize {
-        let mut brief = self.brief.lock().unwrap();
-        let mut tables = self.tables.lock().unwrap();
-        let table = self.get_table(key, &brief, &mut tables).unwrap();
-        let id = table.add(vec, metadata);
+    /// Signal the brief manager after the operation.
+    pub fn add(&self, key: &str, vec: Vec<f32>, metadata: BTreeMap<String, String>) {
+        let (mut brief, mut tables) = self.get_locks_by_order();
+        let table = self.get_table_with_lock(key, &brief, &mut tables).unwrap();
+        table.add(vec, metadata);
         brief.tables.insert(key.to_string(), table.info());
-        self.brief_manager.signal();
-        id
+        self.brief_manager.mark_modified();
     }
 
     /// Add vectors with metadata to a table.
-    /// Returns the ids of the added vectors.
-    ///
-    /// May modify the brief.
     /// Call it with a batch size around 64 to avoid long lock time.
+    ///
+    /// Signal the brief manager after the operation.
     pub fn batch_add(
         &self,
         key: &str,
         vec_list: Vec<Vec<f32>>,
         metadata_list: Vec<BTreeMap<String, String>>,
-    ) -> Vec<usize> {
-        let mut brief = self.brief.lock().unwrap();
-        let mut tables = self.tables.lock().unwrap();
-        let table = self.get_table(key, &brief, &mut tables).unwrap();
-        let ids = table.batch_add(vec_list, metadata_list);
+    ) {
+        let (mut brief, mut tables) = self.get_locks_by_order();
+        let table = self.get_table_with_lock(key, &brief, &mut tables).unwrap();
+        table.batch_add(vec_list, metadata_list);
         brief.tables.insert(key.to_string(), table.info());
-        self.brief_manager.signal();
-        ids
+        self.brief_manager.mark_modified();
     }
 
     /// Search vector in a table.
@@ -439,9 +451,8 @@ impl VecDBManager {
         upper_bound: Option<f32>,
     ) -> Result<Vec<(BTreeMap<String, String>, f32)>> {
         let table = {
-            let brief = self.brief.lock().unwrap();
-            let mut tables = self.tables.lock().unwrap();
-            self.get_table(key, &brief, &mut tables)?
+            let (brief, mut tables) = self.get_locks_by_order();
+            self.get_table_with_lock(key, &brief, &mut tables)?
         };
 
         Ok(table.search(query, k, ef, upper_bound))
@@ -459,11 +470,10 @@ impl VecDBManager {
         upper_bound: Option<f32>,
     ) -> Result<Vec<(String, BTreeMap<String, String>, f32)>> {
         let selected_tables = {
-            let brief = self.brief.lock().unwrap();
-            let mut tables = self.tables.lock().unwrap();
+            let (brief, mut tables) = self.get_locks_by_order();
             let mut selected_tables = Vec::new();
             for key in keys {
-                let table = self.get_table(key, &brief, &mut tables)?;
+                let table = self.get_table_with_lock(key, &brief, &mut tables)?;
                 selected_tables.push((key.clone(), table));
             }
             selected_tables
@@ -492,6 +502,19 @@ impl VecDBManager {
         results.sort_by_key(|(_, _, dist)| OrderedFloat(*dist));
         results.truncate(k);
         Ok(results)
+    }
+}
+impl Drop for VecDBManager {
+    fn drop(&mut self) {
+        // Sync the brief to the file before dropping.
+        self.brief_manager.sync_save(true);
+        // Wait for all the table managers to be dropped.
+        let mut tables = self.tables.lock().unwrap();
+        while let Some((_, (receiver, table))) = tables.pop_first() {
+            drop(table);
+            receiver.recv().unwrap();
+        }
+        // After all table managers are dropped, we can safely remove the lock file.
     }
 }
 
