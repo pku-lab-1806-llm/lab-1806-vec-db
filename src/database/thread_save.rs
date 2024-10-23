@@ -23,6 +23,8 @@ pub trait ThreadSave: Send + Sync {
 
 /// Auto-save the object to the file with a interval in a separate thread.
 /// Sync the object to the file when it is dropped. (Or you can call `sync_save` manually.)
+///
+/// Order of mutex lock: mark -> obj -> stop_cond. (To avoid deadlock)
 pub struct ThreadSavingManager<T: ThreadSave + 'static> {
     obj: Arc<T>,
     pub(crate) target: PathBuf,
@@ -49,6 +51,11 @@ impl<T: ThreadSave + 'static> ThreadSavingManager<T> {
                 if *stopped {
                     break;
                 }
+                drop(stopped);
+                // Release the stop_cond lock before we lock the mark.
+                // Equivalent to two separate tasks with correct lock order:
+                // 1. _ -> _ -> stop_cond
+                // 2. mark -> obj -> _
                 let mut mark = mark.lock().unwrap();
                 if *mark {
                     obj.atomic_save_to(&target);
@@ -66,6 +73,7 @@ impl<T: ThreadSave + 'static> ThreadSavingManager<T> {
     /// Sync the object to the file if it is modified.
     /// If `stop_thread` is true, stop the auto-saving thread after syncing.
     pub fn sync_save(&self, stop_thread: bool) {
+        // mark -> obj -> stop_cond
         let mut mark = self.mark.lock().unwrap();
         if *mark {
             self.obj.atomic_save_to(&self.target);
