@@ -1,39 +1,27 @@
 def calc_dist(a: list[float], b: list[float], dist: str = "cosine") -> float:
-    """Calculate the distance between two vectors.
+    """
+    Calculate the distance between two vectors.
 
-    Args:
-        a (list[float]): The first vector.
-        b (list[float]): The second vector.
-        dist (str): Distance function. Can be "l2sqr", "l2" or "cosine". (default: "cosine", for RAG)
+    `dist` can be "l2sqr", "l2" or "cosine". (default: "cosine", for RAG)
 
     Raises:
         ValueError: If the distance function is invalid.
     """
     ...
 
-class RagVecDB:
-    """A vector database for RAG using HNSW index."""
+class BareVecTable:
+    """
+    Bare Vector Database Table.
 
-    def __init__(
-        self,
-        dim: int,
-        dist: str = "cosine",
-        ef_construction: int = 200,
-        M: int = 16,
-        max_elements: int = 0,
-        seed: int | None = None,
-    ) -> None:
-        """Create a new HNSW index.
+    Prefer using VecDB to manage multiple tables.
+    """
+    def __init__(self, dim: int, dist: str = "cosine") -> None:
+        """
+        Create a new Table. (Using HNSW internally)
 
         Args:
             dim (int): Dimension of the vectors.
             dist (str): Distance function. Can be "l2sqr", "l2" or "cosine". (default: "cosine", for RAG)
-            ef_construction (int): Number of elements to consider during construction. (default: 200)
-            M (int): Number of neighbors to consider during search. (default: 16)
-            max_elements (int): The initial capacity of the index. (default: 0, auto-grow)
-            seed (int | None): Random seed for the index. (default: None, random)
-
-        Random seed will never be saved. Never call `add` on a loaded index if you want to have deterministic index construction.
 
         Raises:
             ValueError: If the distance function is invalid.
@@ -41,84 +29,35 @@ class RagVecDB:
         ...
 
     def dim(self) -> int:
-        """Return the dimension of the vectors."""
+        """Get the dimension of the vectors."""
+        ...
+
+    def dist(self) -> str:
+        """Get the distance algorithm name."""
+        ...
+
+    def __len__(self) -> int:
+        """Get the number of vectors in the index."""
         ...
 
     @staticmethod
-    def load(path: str) -> "RagVecDB":
-        """Load an existing HNSW index from disk.
-
-        Raises:
-            RuntimeError: If the file is not found or the index is corrupted.
-        """
+    def load(path: str) -> "BareVecTable":
+        """Load an existing index from disk."""
         ...
 
     def save(self, path: str) -> None:
-        """Save the HNSW index to disk. The random seed is not saved.
-
-        Raises:
-            RuntimeError: If the file cannot be written.
-        """
+        """Save the index to disk."""
         ...
 
-    def add(self, vec: list[float], metadata: dict[str, str]) -> int:
-        """Add a vector to the index. Use `batch_add` for better performance.
-
-        Returns:
-            ID of the added vector.
-        """
+    def add(self, vec: list[float], metadata: dict[str, str]):
+        """Add a vector to the index.
+        Use `batch_add` for better performance."""
         ...
 
     def batch_add(
         self, vec_list: list[list[float]], metadata_list: list[dict[str, str]]
-    ) -> list[int]:
-        """Add multiple vectors to the index.
-
-        Returns:
-            List of IDs of the added
-
-        Args:
-            vec_list (list[list[float]]): List of vectors.
-                - If the vec_list is too large, it will be split into smaller chunks.
-                - If the vec_list is too small or the index is too small, it will be the same as calling `add` multiple times.
-            metadata_list (list[dict[str, str]]): List of metadata.
-        """
-        ...
-
-    def __len__(self) -> int:
-        """Return the number of vectors in the index."""
-        ...
-
-    def get_vec(self, id: int) -> list[float]:
-        """Get the vector by id."""
-        ...
-
-    def get_metadata(self, id: int) -> dict[str, str]:
-        """Get the metadata by id."""
-        ...
-
-    def set_metadata(self, id: int, metadata: dict[str, str]) -> None:
-        """Set the metadata by id."""
-        ...
-
-    def search_as_pair(
-        self,
-        query: list[float],
-        k: int,
-        ef: int | None = None,
-        max_distance: float | None = None,
-    ) -> list[tuple[int, float]]:
-        """Search for the nearest neighbors of a vector.
-
-        Returns:
-            A list of (id, distance) pairs.
-
-        Args:
-            query (list[float]): The query vector.
-            k (int): The number of neighbors to search for.
-            ef (int | None): Search radius. (default: None, auto)
-            max_distance (float | None): Elements with a distance greater than this will be ignored. (default: None, no limit)
-        """
+    ):
+        """Add multiple vectors to the index."""
         ...
 
     def search(
@@ -126,84 +65,96 @@ class RagVecDB:
         query: list[float],
         k: int,
         ef: int | None = None,
-        max_distance: float | None = None,
-    ) -> list[dict[str, str]]:
+        upper_bound: float | None = None,
+    ) -> list[tuple[dict[str, str], float]]:
         """Search for the nearest neighbors of a vector.
+        Returns a list of (metadata, distance) pairs."""
+        ...
 
-        Returns:
-            A list of metadata.
+class VecDB:
+    """
+    Vector Database. Prefer using this to manage multiple tables.
 
-        Args:
-            query (list[float]): The query vector.
-            k (int): The number of neighbors to search for.
-            ef (int | None): Search radius. (default: None, auto)
-            max_distance (float | None): Elements with a distance greater than this will be ignored. (default: None, no limit)
+    Ensures:
+    - Auto-save. The database will be saved to disk when necessary.
+    - Thread-safe. Read and write operations are atomic.
+    - Unique. Only one manager for each database.
+    """
+    def __init__(self, dir: str) -> None:
+        """
+        Create a new VecDB, it will create a new directory if it does not exist.
         """
         ...
 
-class RagMultiVecDB:
-    """A group of vector databases for automatic searching and merging KNN results."""
-
-    def __init__(self, multi_vec_db: list[RagVecDB]) -> None:
-        """Create a new multi-vector database.
+    def create_table_if_not_exists(
+        self, name: str, dim: int, dist: str = "cosine"
+    ) -> bool:
+        """Create a new table if it does not exist.
 
         Raises:
-            ValueError: If the databases have different dimensions.
+            ValueError: If the distance function is invalid.
         """
         ...
 
-    def dim(self) -> int:
-        """Return the dimension of the vectors."""
-        ...
-
-    def __len__(self) -> int:
-        """Return the total number of vectors in the indices."""
-        ...
-
-    def get_vec(self, db_id: int, vec_id: int) -> list[float]:
-        """Get a vector by (db_id, vec_id)."""
-        ...
-
-    def get_metadata(self, db_id: int, vec_id: int) -> dict[str, str]:
-        """Get the metadata by (db_id, vec_id)."""
-        ...
-
-    def search_as_pair(
-        self,
-        query: list[float],
-        k: int,
-        ef: int | None = None,
-        max_distance: float | None = None,
-    ) -> list[tuple[int, int, float]]:
-        """Search for the nearest neighbors of a vector.
+    def get_table_info(self, key: str) -> tuple[int, int, str]:
+        """Get table info.
 
         Returns:
-            A list of (db_id, vec_id, distance) tuples.
-
-        Args:
-            query (list[float]): The query vector.
-            k (int): The number of neighbors to search for.
-            ef (int | None): Search radius. (default: None, auto)
-            max_distance (float | None): Elements with a distance greater than this will be ignored. (default: None, no limit)
+            (dim, len, dist)
         """
+        ...
+
+    def delete_table(self, key: str) -> bool:
+        """
+        Delete a table and waits for all operations to finish.
+        Returns False if the table does not exist.
+        """
+        ...
+
+    def get_all_keys(self) -> list[str]:
+        """Get all table names."""
+        ...
+
+    def get_cached_tables(self) -> list[str]:
+        """Returns a list of table keys that are cached."""
+        ...
+
+    def remove_cached_table(self, key: str) -> None:
+        """Remove a table from the cache and wait for all operations to finish.
+        Does nothing if the table is not cached."""
+        ...
+
+    def add(self, key: str, vec: list[float], metadata: dict[str, str]):
+        """Add a vector to the table.
+        Use `batch_add` for better performance."""
+        ...
+
+    def batch_add(
+        self, key: str, vec_list: list[list[float]], metadata_list: list[dict[str, str]]
+    ):
+        """Add multiple vectors to the table."""
         ...
 
     def search(
         self,
+        key: str,
         query: list[float],
         k: int,
         ef: int | None = None,
-        max_distance: float | None = None,
-    ) -> list[dict[str, str]]:
+        upper_bound: float | None = None,
+    ) -> list[tuple[dict[str, str], float]]:
         """Search for the nearest neighbors of a vector.
+        Returns a list of (metadata, distance) pairs."""
+        ...
 
-        Returns:
-            A list of metadata.
-
-        Args:
-            query (list[float]): The query vector.
-            k (int): The number of neighbors to search for.
-            ef (int | None): Search radius. (default: None, auto)
-            max_distance (float | None): Elements with a distance greater than this will be ignored. (default: None, no limit)
-        """
+    def join_search(
+        self,
+        key_list: set[str],
+        query: list[float],
+        k: int,
+        ef: int | None = None,
+        upper_bound: float | None = None,
+    ) -> list[tuple[str, dict[str, str], float]]:
+        """Search for the nearest neighbors of a vector in multiple tables.
+        Returns a list of (table_name, metadata, distance) pairs."""
         ...
