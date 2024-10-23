@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "lab-1806-vec-db"
-requires-python = ">=3.10,<3.11"
+requires-python = ">=3.8,<3.12"
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
@@ -15,6 +15,4 @@ dynamic = ["version"]
 features = ["pyo3/extension-module"]
 
 [tool.uv]
-dev-dependencies = [
-    "maturin>=1.7.4",
-]
+dev-dependencies = ["maturin>=1.7.4"]
