@@ -224,14 +224,6 @@ impl VecTableManager {
             drop_signal_sender,
         })
     }
-    pub fn info(&self) -> VecTableBrief {
-        let index = self.index.read().unwrap();
-        VecTableBrief {
-            dim: index.dim(),
-            len: index.len(),
-            dist: index.dist(),
-        }
-    }
     /// Add a vector with metadata to the table.
     ///
     /// Signal the manager after the operation.
@@ -338,6 +330,7 @@ impl VecDBManager {
         tables.keys().cloned().collect()
     }
     /// Remove a table from the cache, and wait for all operations to finish.
+    /// Does nothing if the table is not cached.
     pub fn remove_cached_table(&self, key: &str) -> Result<()> {
         let (_brief, mut tables) = self.get_locks_by_order();
         if let Some((receiver, table)) = tables.remove(key) {
@@ -370,12 +363,13 @@ impl VecDBManager {
         Ok(true)
     }
     /// Delete a table and waits for all operations to finish.
+    /// Returns false if the table does not exist.
     ///
     /// Signal the brief manager after the operation.
-    pub fn delete_table(&self, key: &str) -> Result<()> {
+    pub fn delete_table(&self, key: &str) -> Result<bool> {
         let (mut brief, mut tables) = self.get_locks_by_order();
         if !brief.tables.contains_key(key) {
-            return Err(anyhow!("Table {} not found", key));
+            return Ok(false);
         }
         brief.remove(key);
         self.brief_manager.mark_modified();
@@ -387,7 +381,7 @@ impl VecDBManager {
         // Remove the file.
         let table_file = VecTableManager::file_path_of(&self.dir, key);
         std::fs::remove_file(table_file)?;
-        Ok(())
+        Ok(true)
     }
     pub fn get_table_info(&self, key: &str) -> Option<VecTableBrief> {
         let (brief, _tables) = self.get_locks_by_order();
@@ -413,16 +407,20 @@ impl VecDBManager {
     /// Add a vector with metadata to a table.
     ///
     /// Signal the brief manager after the operation.
-    pub fn add(&self, key: &str, vec: Vec<f32>, metadata: BTreeMap<String, String>) {
-        let (mut brief, mut tables) = self.get_locks_by_order();
-        let table = self.get_table_with_lock(key, &brief, &mut tables).unwrap();
+    pub fn add(&self, key: &str, vec: Vec<f32>, metadata: BTreeMap<String, String>) -> Result<()> {
+        let table = {
+            let (mut brief, mut tables) = self.get_locks_by_order();
+            if let Some(info) = brief.tables.get_mut(key) {
+                info.len += 1;
+                self.brief_manager.mark_modified();
+            }
+            self.get_table_with_lock(key, &brief, &mut tables)?
+        };
         table.add(vec, metadata);
-        brief.tables.insert(key.to_string(), table.info());
-        self.brief_manager.mark_modified();
+        Ok(())
     }
 
     /// Add vectors with metadata to a table.
-    /// Call it with a batch size around 64 to avoid long lock time.
     ///
     /// Signal the brief manager after the operation.
     pub fn batch_add(
@@ -430,12 +428,17 @@ impl VecDBManager {
         key: &str,
         vec_list: Vec<Vec<f32>>,
         metadata_list: Vec<BTreeMap<String, String>>,
-    ) {
-        let (mut brief, mut tables) = self.get_locks_by_order();
-        let table = self.get_table_with_lock(key, &brief, &mut tables).unwrap();
+    ) -> Result<()> {
+        let table = {
+            let (mut brief, mut tables) = self.get_locks_by_order();
+            if let Some(info) = brief.tables.get_mut(key) {
+                info.len += vec_list.len();
+                self.brief_manager.mark_modified();
+            }
+            self.get_table_with_lock(key, &brief, &mut tables)?
+        };
         table.batch_add(vec_list, metadata_list);
-        brief.tables.insert(key.to_string(), table.info());
-        self.brief_manager.mark_modified();
+        Ok(())
     }
 
     /// Search vector in a table.
@@ -543,9 +546,12 @@ mod test {
                 let key_a = "table_a";
                 db.create_table_if_not_exists(key_a, dim, dist).unwrap();
                 s_a.send(()).unwrap();
-                db.add(key_a, vec![1.0, 0.0, 0.0, 0.0], metadata("a"));
-                db.add(key_a, vec![0.0, 1.0, 0.0, 0.0], metadata("b"));
-                db.add(key_a, vec![0.0, 0.0, 1.0, 0.0], metadata("c"));
+                db.add(key_a, vec![1.0, 0.0, 0.0, 0.0], metadata("a"))
+                    .unwrap();
+                db.add(key_a, vec![0.0, 1.0, 0.0, 0.0], metadata("b"))
+                    .unwrap();
+                db.add(key_a, vec![0.0, 0.0, 1.0, 0.0], metadata("c"))
+                    .unwrap();
                 s_a.send(()).unwrap();
             });
             s.spawn(|| {
@@ -559,7 +565,8 @@ mod test {
                         vec![0.0, 0.0, 1.0, 0.1],
                     ],
                     vec![metadata("a'"), metadata("b'"), metadata("c'")],
-                );
+                )
+                .unwrap();
             });
             let db_ref = &db;
             let s_c_ref = &s_c;

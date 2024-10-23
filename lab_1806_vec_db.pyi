@@ -42,36 +42,22 @@ class BareVecTable:
 
     @staticmethod
     def load(path: str) -> "BareVecTable":
-        """
-        Load an existing index from disk.
-
-        Raises:
-            RuntimeError: If the file is not found or the index is corrupted.
-        """
+        """Load an existing index from disk."""
         ...
 
     def save(self, path: str) -> None:
-        """
-        Save the index to disk.
-
-        Raises:
-            RuntimeError: If the file cannot be written.
-        """
+        """Save the index to disk."""
         ...
 
     def add(self, vec: list[float], metadata: dict[str, str]):
-        """
-        Add a vector to the index.
-        Use `batch_add` for better performance.
-        """
+        """Add a vector to the index.
+        Use `batch_add` for better performance."""
         ...
 
     def batch_add(
         self, vec_list: list[list[float]], metadata_list: list[dict[str, str]]
     ):
-        """
-        Add multiple vectors to the index.
-        """
+        """Add multiple vectors to the index."""
         ...
 
     def search(
@@ -81,11 +67,8 @@ class BareVecTable:
         ef: int | None = None,
         upper_bound: float | None = None,
     ) -> list[tuple[dict[str, str], float]]:
-        """
-        Search for the nearest neighbors of a vector.
-
-        Returns a list of (metadata, distance) pairs.
-        """
+        """Search for the nearest neighbors of a vector.
+        Returns a list of (metadata, distance) pairs."""
         ...
 
 class VecDB:
@@ -106,29 +89,25 @@ class VecDB:
     def create_table_if_not_exists(
         self, name: str, dim: int, dist: str = "cosine"
     ) -> bool:
-        """
-        Create a new table if it does not exist.
+        """Create a new table if it does not exist.
 
         Raises:
-            RuntimeError: If the file is corrupted.
+            ValueError: If the distance function is invalid.
         """
         ...
 
     def get_table_info(self, key: str) -> tuple[int, int, str]:
-        """
-        Get table info.
+        """Get table info.
 
         Returns:
             (dim, len, dist)
-
-        Raises:
-            RuntimeError: If the table is not found.
         """
         ...
 
-    def delete_table(self, key: str) -> None:
+    def delete_table(self, key: str) -> bool:
         """
         Delete a table and waits for all operations to finish.
+        Returns False if the table does not exist.
         """
         ...
 
@@ -141,18 +120,19 @@ class VecDB:
         ...
 
     def remove_cached_table(self, key: str) -> None:
-        """Remove a table from the cache and wait for all operations to finish."""
+        """Remove a table from the cache and wait for all operations to finish.
+        Does nothing if the table is not cached."""
         ...
 
     def add(self, key: str, vec: list[float], metadata: dict[str, str]):
-        """Add a vector to the table."""
+        """Add a vector to the table.
+        Use `batch_add` for better performance."""
         ...
 
     def batch_add(
         self, key: str, vec_list: list[list[float]], metadata_list: list[dict[str, str]]
     ):
-        """Add multiple vectors to the table.
-        Call it with a batch size around 64 to avoid long lock time."""
+        """Add multiple vectors to the table."""
         ...
 
     def search(
@@ -163,10 +143,8 @@ class VecDB:
         ef: int | None = None,
         upper_bound: float | None = None,
     ) -> list[tuple[dict[str, str], float]]:
-        """
-        Search for the nearest neighbors of a vector.
-        Returns a list of (metadata, distance) pairs.
-        """
+        """Search for the nearest neighbors of a vector.
+        Returns a list of (metadata, distance) pairs."""
         ...
 
     def join_search(
@@ -177,8 +155,6 @@ class VecDB:
         ef: int | None = None,
         upper_bound: float | None = None,
     ) -> list[tuple[str, dict[str, str], float]]:
-        """
-        Search for the nearest neighbors of a vector in multiple tables.
-        Returns a list of (table_name, metadata, distance) pairs.
-        """
+        """Search for the nearest neighbors of a vector in multiple tables.
+        Returns a list of (table_name, metadata, distance) pairs."""
         ...

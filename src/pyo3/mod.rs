@@ -162,7 +162,7 @@ pub mod lab_1806_vec_db {
         /// Create a new table if it does not exist.
         ///
         /// Raises:
-        ///     RuntimeError: If the file is corrupted.
+        ///     ValueError: If the distance function is invalid.
         #[pyo3(signature = (key, dim, dist="cosine"))]
         pub fn create_table_if_not_exists(
             &self,
@@ -179,9 +179,6 @@ pub mod lab_1806_vec_db {
         ///
         /// Returns:
         ///    (dim, len, dist)
-        ///
-        /// Raises:
-        ///     RuntimeError: If the table is not found.
         pub fn get_table_info(&self, key: String) -> PyResult<(usize, usize, String)> {
             self.inner
                 .get_table_info(&key)
@@ -196,7 +193,8 @@ pub mod lab_1806_vec_db {
         }
 
         /// Delete a table and wait for all operations to finish.
-        pub fn delete_table(&self, key: String) -> PyResult<()> {
+        /// Returns false if the table does not exist.
+        pub fn delete_table(&self, key: String) -> PyResult<bool> {
             self.inner
                 .delete_table(&key)
                 .map_err(|e| PyRuntimeError::new_err(e.to_string()))
@@ -212,6 +210,7 @@ pub mod lab_1806_vec_db {
             self.inner.get_cached_tables()
         }
         /// Remove a table from the cache.
+        /// Does nothing if the table is not cached.
         pub fn remove_cached_table(&self, key: &str) -> PyResult<()> {
             self.inner
                 .remove_cached_table(key)
@@ -219,19 +218,28 @@ pub mod lab_1806_vec_db {
         }
 
         /// Add a vector to the table.
-        pub fn add(&self, key: &str, vec: Vec<f32>, metadata: BTreeMap<String, String>) {
-            self.inner.add(key, vec, metadata);
+        /// Use `batch_add` for better performance.
+        pub fn add(
+            &self,
+            key: &str,
+            vec: Vec<f32>,
+            metadata: BTreeMap<String, String>,
+        ) -> PyResult<()> {
+            self.inner
+                .add(key, vec, metadata)
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
         }
 
         /// Add multiple vectors to the table.
-        /// Call it with a batch size around 64 to avoid long lock time.
         pub fn batch_add(
             &self,
             key: &str,
             vec_list: Vec<Vec<f32>>,
             metadata_list: Vec<BTreeMap<String, String>>,
-        ) {
-            self.inner.batch_add(key, vec_list, metadata_list);
+        ) -> PyResult<()> {
+            self.inner
+                .batch_add(key, vec_list, metadata_list)
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
         }
 
         /// Search for the nearest neighbors of a vector.
@@ -251,7 +259,6 @@ pub mod lab_1806_vec_db {
         }
 
         /// Search for the nearest neighbors of a vector in multiple tables.
-        ///
         /// Returns a list of (table_name, metadata, distance) pairs.
         #[pyo3(signature = (key_list, query, k, ef=None, upper_bound=None))]
         pub fn join_search(
