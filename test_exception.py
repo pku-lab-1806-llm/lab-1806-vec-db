@@ -27,12 +27,19 @@ db.add("table_1", [0.0], {"content": "0"})
 # - Wait for 30 seconds without doing anything
 # - Enter to exit normally
 # - Type "raise" to raise an exception
+# - Type "dim" to do a wrong operation
 # - Press Ctrl+C to interrupt the process
 
-cmd = input("Type `raise` to raise an exception: ")
+cmd = input("Type to choose the action: ")
 if cmd == "":
     exit(0)  # Exit normally
 elif cmd == "raise":
     raise Exception("Deliberate exception")
+elif cmd == "dim":
+    # Dimension mismatch
+    db.add("table_1", [0.0, 1.0], {"content": "0, 1"})
+elif cmd == "len":
+    # Length mismatch
+    db.batch_add("table_1", [[0.0], [1.0]], [{"content": "0"}])
 
-# File appears before the program exits in all cases, even with KeyboardInterrupt.
+# File appears before the program exits in all cases, even with Exception or KeyboardInterrupt

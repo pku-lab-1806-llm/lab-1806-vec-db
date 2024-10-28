@@ -2,7 +2,7 @@
 
 Lab 1806 Vector Database.
 
-## Usage with Python
+## Getting Started with Python
 
 ```bash
 # See https://pypi.org/project/lab-1806-vec-db/
@@ -11,9 +11,15 @@ pip install lab-1806-vec-db
 
 **Warning**: All the arguments are positional, **DO NOT** use keyword arguments like `upper_bound=0.5`.
 
-## Examples
+### Basic Usage
 
-Basic usage of the database.
+`VecDB` is recommended for most cases as a high-level API.
+
+Low-level APIs are also provided. But before using them, make sure you know what you are doing.
+
+`BareVecTable` is a low-level API designed for a single table without auto-saving or multi-threading support.
+
+`calc_dist` is a helper function to calculate the distance between two vectors. It supports "cosine", "l2sqr" and "l2", default to "cosine". And the cosine distance is normalized to `[0, 2]` to make sure smaller is closer.
 
 ```py
 import os
@@ -112,7 +118,7 @@ def test_vec_db():
 test_vec_db()
 ```
 
-About auto-saving and auto-loading.
+### About auto-saving
 
 Safe to interrupt the process on Python Level at any time with Exception or KeyboardInterrupt.
 
@@ -146,15 +152,22 @@ db.add("table_1", [0.0], {"content": "0"})
 # - Wait for 30 seconds without doing anything
 # - Enter to exit normally
 # - Type "raise" to raise an exception
+# - Type "dim" to do a wrong operation
 # - Press Ctrl+C to interrupt the process
 
-cmd = input("Type `raise` to raise an exception: ")
+cmd = input("Type to choose the action: ")
 if cmd == "":
     exit(0)  # Exit normally
 elif cmd == "raise":
     raise Exception("Deliberate exception")
+elif cmd == "dim":
+    # Dimension mismatch
+    db.add("table_1", [0.0, 1.0], {"content": "0, 1"})
+elif cmd == "len":
+    # Length mismatch
+    db.batch_add("table_1", [[0.0], [1.0]], [{"content": "0"}])
 
-# File appears before the program exits in all cases, even with KeyboardInterrupt.
+# File appears before the program exits in all cases, even with Exception or KeyboardInterrupt
 ```
 
 ## Development with Rust
@@ -176,7 +189,7 @@ cargo test
 # Our GitHub Actions will also run the tests.
 ```
 
-Test the python binding with `test-pyo3.py`.
+Test the python binding with `test_pyo3.py`.
 
 ```bash
 # Install Python 3.10
@@ -193,7 +206,7 @@ scoop install uv
 
 # Run the Python test
 uv sync --reinstall-package lab_1806_vec_db
-uv run ./test-pyo3.py
+uv run ./test_pyo3.py
 
 # Build the Python Wheel Release
 # This will be automatically run in GitHub Actions.

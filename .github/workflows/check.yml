@@ -25,4 +25,4 @@ jobs:
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           uv sync --reinstall-package lab_1806_vec_db
-          uv run test-pyo3.py
+          uv run test_pyo3.py
