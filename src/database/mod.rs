@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use fs2::FileExt;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
@@ -413,6 +413,14 @@ impl VecDBManager {
             if let Some(info) = brief.tables.get_mut(key) {
                 info.len += 1;
                 self.brief_manager.mark_modified();
+                if vec.len() != info.dim {
+                    bail!(
+                        "Dimension mismatch for table {} ({} != {})",
+                        key,
+                        info.dim,
+                        vec.len()
+                    );
+                }
             }
             self.get_table_with_lock(key, &brief, &mut tables)?
         };
@@ -429,11 +437,22 @@ impl VecDBManager {
         vec_list: Vec<Vec<f32>>,
         metadata_list: Vec<BTreeMap<String, String>>,
     ) -> Result<()> {
+        if vec_list.len() != metadata_list.len() {
+            return Err(anyhow!("Length mismatch for vec_list and metadata_list"));
+        }
         let table = {
             let (mut brief, mut tables) = self.get_locks_by_order();
             if let Some(info) = brief.tables.get_mut(key) {
                 info.len += vec_list.len();
                 self.brief_manager.mark_modified();
+                if let Some(v) = vec_list.iter().find(|v| v.len() != info.dim) {
+                    bail!(
+                        "Dimension mismatch for table {} ({} != {})",
+                        key,
+                        info.dim,
+                        v.len()
+                    );
+                }
             }
             self.get_table_with_lock(key, &brief, &mut tables)?
         };
@@ -476,6 +495,16 @@ impl VecDBManager {
             let mut selected_tables = Vec::new();
             for key in keys {
                 let table = self.get_table_with_lock(key, &brief, &mut tables)?;
+                if let Some(info) = brief.tables.get(key) {
+                    if info.dim != query.len() {
+                        bail!(
+                            "Dimension mismatch for table {} ({} != {})",
+                            key,
+                            info.dim,
+                            query.len()
+                        );
+                    }
+                }
                 selected_tables.push((key.clone(), table));
             }
             selected_tables
