@@ -502,11 +502,11 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
     type Config = HNSWConfig;
     fn new(dim: usize, dist: DistanceAlgorithm, config: Self::Config) -> Self {
         let max_elements = config.max_elements;
-        let m = config.M;
-        assert!(
-            m <= 10_000,
-            " M parameter exceeds 10_000 may lead to adverse effects."
-        );
+        let max_m = 10_000;
+        let m = config.M.min(max_m);
+        if config.M > max_m {
+            eprintln!("M parameter exceeds 10_000 may lead to adverse effects.");
+        }
         let max_m0 = m * 2;
         let ef_construction = config.ef_construction.max(m);
         let default_ef = 150;
