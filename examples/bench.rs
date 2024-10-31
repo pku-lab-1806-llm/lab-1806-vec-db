@@ -400,4 +400,4 @@ fn main() -> Result<()> {
     result_list.plot(args.html.as_ref())?;
     Ok(())
 }
-// cargo r -r --example bench -- config/bench_simd_hnsw.toml
+// cargo r -r --example bench -- config/bench_hnsw.toml

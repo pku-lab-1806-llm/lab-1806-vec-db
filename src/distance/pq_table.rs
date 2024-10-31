@@ -256,7 +256,7 @@ impl<T: Scalar> DistanceAdapter<[u8], PQLookupTable<'_, T>> for DistanceAlgorith
                 _ => panic!("n_bits must be 4 or 8 in PQTable."),
             };
             sum += lookup[i * k + idx];
-            if *self == Cosine {
+            if *self == Cosine || *self == SimdCosine {
                 norm0_sqr += pq_table.dot_product_cache[i * k + idx];
             }
         }

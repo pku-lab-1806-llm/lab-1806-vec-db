@@ -2,6 +2,8 @@ pub mod k_means;
 pub mod pq_table;
 
 use serde::{Deserialize, Serialize};
+use wide::f32x8 as Simd;
+const SIMD_N: usize = 8;
 
 pub mod prelude {
     // All Distance Traits & Algorithms
@@ -92,41 +94,26 @@ impl DistanceScalar for f32 {
         a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
     }
     fn simd_l2_sqr_distance(a: &[Self], b: &[Self]) -> f32 {
-        use wide::f32x4;
-        const N: usize = 4;
-        let mut sum = f32x4::ZERO;
-        let simd_len = a.len() / N * N;
-        let rest = if simd_len < a.len() {
-            Self::l2_sqr_distance(&a[simd_len..], &b[simd_len..])
-        } else {
-            0.0
-        };
-
-        for i in (0..simd_len).step_by(N) {
-            let a = f32x4::from(&a[i..i + N]);
-            let b = f32x4::from(&b[i..i + N]);
+        let mut sum = Simd::ZERO;
+        for i in (0..a.len()).step_by(SIMD_N) {
+            let r = a.len().min(i + SIMD_N);
+            let a = Simd::from(&a[i..r]);
+            let b = Simd::from(&b[i..r]);
             let diff = a - b;
             sum += diff * diff;
         }
-        sum.reduce_add() + rest
+        sum.reduce_add()
     }
     fn simd_dot_product(a: &[Self], b: &[Self]) -> f32 {
-        use wide::f32x4;
-        const N: usize = 4;
-        let mut sum = f32x4::ZERO;
-        let simd_len = a.len() / N * N;
-        let rest = if simd_len < a.len() {
-            Self::dot_product(&a[simd_len..], &b[simd_len..])
-        } else {
-            0.0
-        };
+        let mut sum = Simd::ZERO;
 
-        for i in (0..simd_len).step_by(N) {
-            let a = f32x4::from(&a[i..i + N]);
-            let b = f32x4::from(&b[i..i + N]);
+        for i in (0..a.len()).step_by(SIMD_N) {
+            let r = a.len().min(i + SIMD_N);
+            let a = Simd::from(&a[i..r]);
+            let b = Simd::from(&b[i..r]);
             sum += a * b;
         }
-        sum.reduce_add() + rest
+        sum.reduce_add()
     }
 }
 impl DistanceScalar for u8 {
@@ -179,16 +166,44 @@ impl<T: DistanceScalar> DistanceAdapter<[T], [T]> for DistanceAlgorithm {
 #[cfg(test)]
 mod test {
 
+    use rand::{rngs::StdRng, Rng, SeedableRng};
+
     use super::*;
 
     const EPSILON: f32 = 1e-6;
 
     #[test]
     fn test_l2_sqr_distance() {
-        let a = vec![1.0, 2.0, 3.0, 0.0];
-        let b = vec![4.0, 5.0, 6.0, 0.0];
+        let a = vec![1.0, 2.0, 3.0];
+        let b = vec![4.0, 5.0, 6.0];
         assert!((L2Sqr.d(a.as_slice(), b.as_slice()) - 27.0_f32).abs() < EPSILON);
-        assert!((SimdL2Sqr.d(a.as_slice(), b.as_slice()) - 27.0_f32).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_simd_distance() {
+        let mut rng = StdRng::seed_from_u64(42);
+        let a: Vec<f32> = (0..100).map(|_| rng.gen()).collect();
+        let b: Vec<f32> = (0..100).map(|_| rng.gen()).collect();
+
+        let simd_l2_sqr = SimdL2Sqr.d(a.as_slice(), b.as_slice());
+        let l2_sqr = L2Sqr.d(a.as_slice(), b.as_slice());
+
+        assert!(
+            (simd_l2_sqr - l2_sqr).abs() < EPSILON,
+            "L2Sqr: {}, SimdL2Sqr: {}",
+            l2_sqr,
+            simd_l2_sqr
+        );
+
+        let simd_cosine = SimdCosine.d(a.as_slice(), b.as_slice());
+        let cosine = Cosine.d(a.as_slice(), b.as_slice());
+
+        assert!(
+            (simd_cosine - cosine).abs() < EPSILON,
+            "Cosine: {}, SimdCosine: {}",
+            cosine,
+            simd_cosine
+        );
     }
 
     #[test]
