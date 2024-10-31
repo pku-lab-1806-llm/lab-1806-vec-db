@@ -1,14 +1,11 @@
 pub mod k_means;
 pub mod pq_table;
-use std::simd::num::SimdFloat;
-
-use crate::scalar::Scalar;
 
 use serde::{Deserialize, Serialize};
 
 pub mod prelude {
     // All Distance Traits & Algorithms
-    pub use super::{DistanceAdapter, DistanceAlgorithm, SliceDistance};
+    pub use super::{DistanceAdapter, DistanceAlgorithm};
 }
 
 /// Distance algorithm to be used in the vector database.
@@ -24,8 +21,10 @@ pub enum DistanceAlgorithm {
     ///
     /// Range: `[0.0, +inf]`
     L2,
+    /// Dot product.
+    DotProduct,
     /// Cosine distance.
-    /// `cosine_distance = 1 - dot_product / (norm_self * norm_other)`
+    /// `cosine_distance = 1 - dot_product / (norm_lhs * norm_rhs)`
     ///
     /// Range: `[0.0, 2.0]`
     Cosine,
@@ -35,142 +34,121 @@ pub enum DistanceAlgorithm {
     /// SIMD-accelerated L2 distance.
     /// Range: `[0.0, +inf]`
     SimdL2,
-}
-use DistanceAlgorithm::*;
-/// Trait for calculating distances between two vectors.
-///
-/// `[T] where T: Scalar` implements this trait.
-pub trait SliceDistance {
-    /// The *square* of the L2 distance.
-    fn l2_sqr_distance(&self, rhs: &Self) -> f32;
-
-    /// L2 distance.
-    fn l2_distance(&self, rhs: &Self) -> f32 {
-        self.l2_sqr_distance(rhs).sqrt()
-    }
-
-    /// The dot product of two vectors. (For internal use)
-    fn dot_product(&self, rhs: &Self) -> f32;
-
-    /// Cosine distance.
-    /// `cosine_distance = 1 - dot_product / (norm_self * norm_other)`
+    /// SIMD-accelerated dot product.
+    SimdDotProduct,
+    /// SIMD-accelerated Cosine distance.
+    /// `cosine_distance = 1 - dot_product / (norm_lhs * norm_rhs)`
     ///
     /// Range: `[0.0, 2.0]`
-    fn cosine_distance(&self, rhs: &Self) -> f32 {
-        let dot_product_sqr = self.dot_product(rhs);
-        let norm_self = self.dot_product(self).sqrt();
-        let norm_other = rhs.dot_product(rhs).sqrt();
-        1.0 - dot_product_sqr / (norm_self * norm_other)
+    SimdCosine,
+}
+use DistanceAlgorithm::*;
+
+use crate::scalar::BaseScalar;
+
+pub trait DistanceScalar: BaseScalar {
+    /// The *square* of the L2 distance.
+    fn l2_sqr_distance(a: &[Self], b: &[Self]) -> f32;
+
+    /// L2 distance.
+    fn l2_distance(a: &[Self], b: &[Self]) -> f32 {
+        Self::l2_sqr_distance(a, b).sqrt()
     }
 
-    /// Check if SIMD is supported for the current architecture.
-    fn is_simd_supported(&self) -> bool;
+    /// The dot product of two vectors.
+    fn dot_product(a: &[Self], b: &[Self]) -> f32;
+
+    /// Cosine distance.
+    /// `cosine_distance = 1 - dot_product / (norm_lhs * norm_rhs)`
+    /// Range: `[0.0, 2.0]`
+    fn cosine_distance(a: &[Self], b: &[Self]) -> f32 {
+        let dot_product_sqr = Self::dot_product(a, b);
+        let norm_lhs = Self::dot_product(a, a).sqrt();
+        let norm_rhs = Self::dot_product(b, b).sqrt();
+        1.0 - dot_product_sqr / (norm_lhs * norm_rhs)
+    }
 
     /// SIMD-accelerated L2 squared distance.
-    fn simd_l2_sqr_distance(&self, rhs: &Self) -> f32;
-
+    fn simd_l2_sqr_distance(a: &[Self], b: &[Self]) -> f32;
     /// SIMD-accelerated L2 distance.
-    fn simd_l2_distance(&self, rhs: &Self) -> f32 {
-        self.simd_l2_sqr_distance(rhs).sqrt()
+    fn simd_l2_distance(a: &[Self], b: &[Self]) -> f32 {
+        Self::simd_l2_sqr_distance(a, b).sqrt()
+    }
+    /// SIMD-accelerated dot product.
+    fn simd_dot_product(a: &[Self], b: &[Self]) -> f32;
+    /// SIMD-accelerated Cosine distance.
+    fn simd_cosine_distance(a: &[Self], b: &[Self]) -> f32 {
+        let dot_product_sqr = Self::simd_dot_product(a, b);
+        let norm_lhs = Self::simd_dot_product(a, a).sqrt();
+        let norm_rhs = Self::simd_dot_product(b, b).sqrt();
+        1.0 - dot_product_sqr / (norm_lhs * norm_rhs)
     }
 }
-
-impl<T: Scalar> SliceDistance for [T] {
-    default fn l2_sqr_distance(&self, rhs: &Self) -> f32 {
-        assert_eq!(
-            self.len(),
-            rhs.len(),
-            "Vectors must have the same length to calculate distance."
-        );
-        self.iter()
-            .zip(rhs.iter())
-            .map(|(a, b)| {
-                let diff = a.cast_to_f32() - b.cast_to_f32();
-                diff * diff
-            })
-            .sum()
+impl DistanceScalar for f32 {
+    fn l2_sqr_distance(a: &[Self], b: &[Self]) -> f32 {
+        a.iter().zip(b.iter()).map(|(x, y)| (x - y).powi(2)).sum()
     }
-    default fn dot_product(&self, rhs: &Self) -> f32 {
-        assert_eq!(
-            self.len(),
-            rhs.len(),
-            "Vectors must have the same length to calculate distance."
-        );
-        self.iter()
-            .zip(rhs.iter())
-            .map(|(a, b)| a.cast_to_f32() * b.cast_to_f32())
-            .sum()
+    fn dot_product(a: &[Self], b: &[Self]) -> f32 {
+        a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
     }
-
-    default fn is_simd_supported(&self) -> bool {
-        false
-    }
-
-    default fn simd_l2_sqr_distance(&self, _rhs: &Self) -> f32 {
-        panic!(
-            "SIMD is not supported on (arch: {}, type: {})",
-            std::env::consts::ARCH,
-            std::any::type_name::<Self>()
-        );
-    }
-
-    default fn simd_l2_distance(&self, rhs: &Self) -> f32 {
-        self.simd_l2_sqr_distance(rhs).sqrt()
-    }
-}
-
-impl SliceDistance for [f32] {
-    fn l2_sqr_distance(&self, rhs: &Self) -> f32 {
-        assert_eq!(
-            self.len(),
-            rhs.len(),
-            "Vectors must have the same length to calculate distance."
-        );
-        self.iter()
-            .zip(rhs.iter())
-            .map(|(a, b)| {
-                let diff = a - b;
-                diff * diff
-            })
-            .sum()
-    }
-    fn dot_product(&self, other: &Self) -> f32 {
-        assert_eq!(
-            self.len(),
-            other.len(),
-            "Vectors must have the same length to calculate distance."
-        );
-        self.iter().zip(other.iter()).map(|(a, b)| a * b).sum()
-    }
-
-    fn is_simd_supported(&self) -> bool {
-        true
-    }
-
-    fn simd_l2_sqr_distance(&self, rhs: &Self) -> f32 {
-        assert_eq!(
-            self.len(),
-            rhs.len(),
-            "Vectors must have the same length to calculate distance."
-        );
-        use std::simd::Simd;
+    fn simd_l2_sqr_distance(a: &[Self], b: &[Self]) -> f32 {
+        use wide::f32x4;
         const N: usize = 4;
+        let mut sum = f32x4::ZERO;
+        let simd_len = a.len() / N * N;
+        let rest = if simd_len < a.len() {
+            Self::l2_sqr_distance(&a[simd_len..], &b[simd_len..])
+        } else {
+            0.0
+        };
 
-        let self_iter = self.chunks_exact(N);
-        let rhs_iter = rhs.chunks_exact(N);
-        let rest_sum = self_iter.remainder().l2_sqr_distance(rhs_iter.remainder());
+        for i in (0..simd_len).step_by(N) {
+            let a = f32x4::from(&a[i..i + N]);
+            let b = f32x4::from(&b[i..i + N]);
+            let diff = a - b;
+            sum += diff * diff;
+        }
+        sum.reduce_add() + rest
+    }
+    fn simd_dot_product(a: &[Self], b: &[Self]) -> f32 {
+        use wide::f32x4;
+        const N: usize = 4;
+        let mut sum = f32x4::ZERO;
+        let simd_len = a.len() / N * N;
+        let rest = if simd_len < a.len() {
+            Self::dot_product(&a[simd_len..], &b[simd_len..])
+        } else {
+            0.0
+        };
 
-        let self_simd = self_iter.map(Simd::<f32, N>::from_slice);
-        let rhs_simd = rhs_iter.map(Simd::<f32, N>::from_slice);
-        let simd_sum = self_simd
-            .zip(rhs_simd)
-            .map(|(a, b)| {
-                let diff = a - b;
-                diff * diff
-            })
-            .sum::<Simd<f32, N>>();
-
-        simd_sum.reduce_sum() + rest_sum
+        for i in (0..simd_len).step_by(N) {
+            let a = f32x4::from(&a[i..i + N]);
+            let b = f32x4::from(&b[i..i + N]);
+            sum += a * b;
+        }
+        sum.reduce_add() + rest
+    }
+}
+impl DistanceScalar for u8 {
+    fn l2_sqr_distance(a: &[Self], b: &[Self]) -> f32 {
+        a.iter()
+            .zip(b.iter())
+            .map(|(x, y)| (*x as f32 - *y as f32).powi(2))
+            .sum()
+    }
+    fn dot_product(a: &[Self], b: &[Self]) -> f32 {
+        a.iter()
+            .zip(b.iter())
+            .map(|(x, y)| (*x as f32) * (*y as f32))
+            .sum()
+    }
+    fn simd_l2_sqr_distance(a: &[Self], b: &[Self]) -> f32 {
+        eprintln!("SIMD-accelerated L2 squared distance is not implemented for u8");
+        Self::l2_sqr_distance(a, b)
+    }
+    fn simd_dot_product(a: &[Self], b: &[Self]) -> f32 {
+        eprintln!("SIMD-accelerated dot product is not implemented for u8");
+        Self::dot_product(a, b)
     }
 }
 pub trait DistanceAdapter<Lhs: ?Sized, Rhs: ?Sized> {
@@ -183,14 +161,17 @@ pub trait DistanceAdapter<Lhs: ?Sized, Rhs: ?Sized> {
     }
 }
 
-impl<T: Scalar> DistanceAdapter<[T], [T]> for DistanceAlgorithm {
+impl<T: DistanceScalar> DistanceAdapter<[T], [T]> for DistanceAlgorithm {
     fn distance(&self, a: &[T], b: &[T]) -> f32 {
         match self {
-            L2Sqr => a.l2_sqr_distance(b),
-            L2 => a.l2_distance(b),
-            Cosine => a.cosine_distance(b),
-            SimdL2Sqr => a.simd_l2_sqr_distance(b),
-            SimdL2 => a.simd_l2_distance(b),
+            L2Sqr => T::l2_sqr_distance(a, b),
+            L2 => T::l2_distance(a, b),
+            DotProduct => T::dot_product(a, b),
+            Cosine => T::cosine_distance(a, b),
+            SimdL2Sqr => T::simd_l2_sqr_distance(a, b),
+            SimdL2 => T::simd_l2_distance(a, b),
+            SimdDotProduct => T::simd_dot_product(a, b),
+            SimdCosine => T::simd_cosine_distance(a, b),
         }
     }
 }
@@ -204,9 +185,10 @@ mod test {
 
     #[test]
     fn test_l2_sqr_distance() {
-        let a = vec![1.0, 2.0, 3.0];
-        let b = vec![4.0, 5.0, 6.0];
+        let a = vec![1.0, 2.0, 3.0, 0.0];
+        let b = vec![4.0, 5.0, 6.0, 0.0];
         assert!((L2Sqr.d(a.as_slice(), b.as_slice()) - 27.0_f32).abs() < EPSILON);
+        assert!((SimdL2Sqr.d(a.as_slice(), b.as_slice()) - 27.0_f32).abs() < EPSILON);
     }
 
     #[test]

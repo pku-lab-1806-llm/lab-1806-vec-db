@@ -1,5 +1,3 @@
-#![feature(portable_simd)]
-#![feature(specialization)]
 pub mod config;
 pub mod database;
 pub mod distance;

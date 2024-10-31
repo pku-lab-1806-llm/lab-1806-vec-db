@@ -9,22 +9,48 @@ use std::{
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+use crate::distance::DistanceScalar;
+
 pub mod prelude {
     pub use super::{BinaryScalar, Scalar};
 }
 
-/// Trait for scalar types.
-/// Scalar types are used in the vector set.
-/// Scalar trait contains the basic operations for scalar types.
-///
-/// Supported scalar types:
-/// - `u8`
-/// - `f32`
-pub trait Scalar:
-    Sized
-    + Default
-    + Copy
-    + Debug
+/// Base scalar trait.
+pub trait BaseScalar: Sized + Default + Copy + Debug + Send + Sync {
+    /// Cast a float value to the scalar type. *Alias for `as`.*
+    ///
+    /// Casting from a float to an integer will round the float towards zero
+    /// - NaN will return 0
+    /// - Values larger than the maximum integer value, including INFINITY, will saturate to the maximum value of the integer type.
+    /// - Values smaller than the minimum integer value, including NEG_INFINITY, will saturate to the minimum value of the integer type.
+    fn cast_from_f32(value: f32) -> Self;
+
+    /// Cast the scalar value to a float value. *Alias for `as`.*
+    fn cast_to_f32(self) -> f32;
+}
+impl BaseScalar for u8 {
+    fn cast_from_f32(value: f32) -> Self {
+        value as u8
+    }
+    fn cast_to_f32(self) -> f32 {
+        self as f32
+    }
+}
+impl BaseScalar for f32 {
+    fn cast_from_f32(value: f32) -> Self {
+        value
+    }
+    fn cast_to_f32(self) -> f32 {
+        self
+    }
+}
+
+pub trait SerdeScalar: BaseScalar + Serialize + for<'de> Deserialize<'de> {}
+impl SerdeScalar for u8 {}
+impl SerdeScalar for f32 {}
+
+pub trait ArithmeticBaseScalar:
+    BaseScalar
     // +, +=, -, -=, *, *=, /, /=
     + Add
     + AddAssign
@@ -37,42 +63,14 @@ pub trait Scalar:
     // Comparison
     + PartialEq
     + PartialOrd
-    + Serialize
-    + Send
-    + Sync
-    + for <'de> Deserialize<'de>
 {
-    /// Cast a float value to the scalar type. *Alias for `as`.*
-    ///
-    /// Casting from a float to an integer will round the float towards zero
-    /// - NaN will return 0
-    /// - Values larger than the maximum integer value, including INFINITY, will saturate to the maximum value of the integer type.
-    /// - Values smaller than the minimum integer value, including NEG_INFINITY, will saturate to the minimum value of the integer type.
-    fn cast_from_f32(value: f32) -> Self;
-
-    /// Cast the scalar value to a float value. *Alias for `as`.*
-    fn cast_to_f32(self) -> f32;
 }
-impl Scalar for u8 {
-    fn cast_from_f32(value: f32) -> Self {
-        value as u8
-    }
-    fn cast_to_f32(self) -> f32 {
-        self as f32
-    }
-}
-impl Scalar for f32 {
-    fn cast_from_f32(value: f32) -> Self {
-        value
-    }
-    fn cast_to_f32(self) -> f32 {
-        self
-    }
-}
+impl ArithmeticBaseScalar for u8 {}
+impl ArithmeticBaseScalar for f32 {}
 
 /// Trait for loading data from a binary file.
 /// Occupies constant space, apart from the data itself.
-pub trait BinaryScalar: Scalar {
+pub trait BinaryScalar: BaseScalar {
     /// Calculate the exact number of scalar values to be loaded from a binary file.
     ///
     /// limit: The maximum number of scalar values to be loaded, or `None` to load all.
@@ -108,3 +106,14 @@ pub trait BinaryScalar: Scalar {
 }
 impl BinaryScalar for u8 {}
 impl BinaryScalar for f32 {}
+
+/// Trait for scalar types.
+/// Scalar types are used in the vector set.
+/// Scalar trait contains the basic operations for scalar types.
+///
+/// Supported scalar types:
+/// - `u8`
+/// - `f32`
+pub trait Scalar: BaseScalar + DistanceScalar + BinaryScalar + SerdeScalar {}
+impl Scalar for u8 {}
+impl Scalar for f32 {}

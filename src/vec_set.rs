@@ -1,6 +1,6 @@
 use std::{ops::Index, path::Path};
 
-use crate::scalar::{BinaryScalar, Scalar};
+use crate::scalar::Scalar;
 
 use anyhow::{bail, Result};
 use rand::{seq::SliceRandom, Rng};
@@ -150,7 +150,7 @@ impl<T: Scalar> VecSet<T> {
     }
 }
 
-impl<T: BinaryScalar> VecSet<T> {
+impl<T: Scalar> VecSet<T> {
     /// Deserialize a `VecSet` from a binary file.
     pub fn load_raw_file(
         dim: usize,
