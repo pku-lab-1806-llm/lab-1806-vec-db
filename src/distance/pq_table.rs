@@ -197,7 +197,7 @@ impl<T: Scalar> PQTable<T> {
             let selected = d * i..d * (i + 1);
             let vs = &v[selected];
             match self.config.dist {
-                L2Sqr | L2 => centroids
+                L2Sqr | L2 | SimdL2 | SimdL2Sqr => centroids
                     .iter()
                     .map(|c| c.l2_sqr_distance(vs))
                     .for_each(|d| lookup.push(d)),
@@ -208,7 +208,7 @@ impl<T: Scalar> PQTable<T> {
             };
         }
         let norm = match self.config.dist {
-            L2Sqr | L2 => 0.0,
+            L2Sqr | L2 | SimdL2 | SimdL2Sqr => 0.0,
             Cosine => v.dot_product(v).sqrt(),
         };
         PQLookupTable {
@@ -261,8 +261,8 @@ impl<T: Scalar> DistanceAdapter<[u8], PQLookupTable<'_, T>> for DistanceAlgorith
             }
         }
         match self {
-            L2Sqr => sum,
-            L2 => sum.sqrt(),
+            L2Sqr | SimdL2Sqr => sum,
+            L2 | SimdL2 => sum.sqrt(),
             Cosine => {
                 let dot_product = sum;
                 let norm0 = norm0_sqr.sqrt();

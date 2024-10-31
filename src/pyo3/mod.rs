@@ -26,6 +26,7 @@ pub mod lab_1806_vec_db {
             DistanceAlgorithm::L2Sqr => "l2sqr",
             DistanceAlgorithm::L2 => "l2",
             DistanceAlgorithm::Cosine => "cosine",
+            _ => panic!("Invalid distance function"),
         }
     }
 

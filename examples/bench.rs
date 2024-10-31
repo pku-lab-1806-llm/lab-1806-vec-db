@@ -64,6 +64,7 @@ struct BenchPQConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct BenchConfig {
     dist: DistanceAlgorithm,
+    label: String,
     gnd_path: String,
     index_cache: String,
     pq_cache: Option<String>,
@@ -133,22 +134,14 @@ impl<T: Scalar> DynamicIndex<T> {
             (Linear(index), Some(pq)) => index.knn_pq(query, k, ef, pq),
             (HNSW(index), _) => index.knn_with_ef(query, k, ef),
             (IVF(index), _) => index.knn_with_ef(query, k, ef),
-            _ => unimplemented!("({:?}, {:?}) is not implemented.", self.base_name(), pq),
+            _ => unimplemented!("({:?}, {:?}) is not implemented.", self.index_name(), pq),
         }
     }
-    pub fn base_name(&self) -> String {
+    pub fn index_name(&self) -> String {
         match self {
             DynamicIndex::HNSW(_) => "HNSW".to_string(),
             DynamicIndex::IVF(_) => "IVF".to_string(),
             DynamicIndex::Linear(_) => "Linear".to_string(),
-        }
-    }
-
-    pub fn full_name(&self, pq: &Option<PQTable<T>>) -> String {
-        let base = self.base_name();
-        match pq {
-            Some(_) => format!("{}+PQ", base),
-            None => base.to_string(),
         }
     }
 }
@@ -249,7 +242,7 @@ fn load_or_build_index<T: Scalar>(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct BenchResult {
-    algorithm_name: String,
+    label: String,
     /// The search radius
     ef: Vec<usize>,
     /// Average search time in ms
@@ -258,9 +251,9 @@ struct BenchResult {
     recall: Vec<f32>,
 }
 impl BenchResult {
-    pub fn new(algorithm_name: String) -> Self {
+    pub fn new(label: String) -> Self {
         Self {
-            algorithm_name,
+            label,
             ef: Vec::new(),
             search_time: Vec::new(),
             recall: Vec::new(),
@@ -277,7 +270,7 @@ impl BenchResult {
             .text_font(plotly::common::Font::new().size(10).family("Arial"))
             .text_position(plotly::common::Position::TopLeft)
             .mode(plotly::common::Mode::LinesMarkersText)
-            .name(self.algorithm_name)
+            .name(self.label)
     }
     pub fn push(&mut self, ef: usize, search_time: f32, recall: f32) {
         self.ef.push(ef);
@@ -335,7 +328,7 @@ impl ResultList {
     }
     pub fn push(&mut self, result: BenchResult) {
         for r in self.results.iter_mut() {
-            if r.algorithm_name == result.algorithm_name {
+            if r.label == result.label {
                 *r = result;
                 return;
             }
@@ -353,6 +346,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
     let bench_config = BenchConfig::load_from_toml_file(&args.bench_config_path)?;
+    let label = bench_config.label.clone();
     let base_set = VecSet::<f32>::load_with(&bench_config.base)?;
     println!("Loaded base set (size: {}).", base_set.len());
     let test_set = VecSet::<f32>::load_with(&bench_config.test)?;
@@ -373,7 +367,7 @@ fn main() -> Result<()> {
 
     let index = load_or_build_index(bench_config, base_set, &mut rng)?;
 
-    let mut bench_result = BenchResult::new(index.full_name(&pq));
+    let mut bench_result = BenchResult::new(label);
 
     for ef in ef.to_vec() {
         println!("Benchmarking ef: {}...", ef);
@@ -406,4 +400,4 @@ fn main() -> Result<()> {
     result_list.plot(args.html.as_ref())?;
     Ok(())
 }
-// cargo r -r --example bench -- config/bench_hnsw.toml
+// cargo +nightly r -r --example bench -- config/bench_simd_hnsw.toml

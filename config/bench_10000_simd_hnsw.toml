@@ -1,20 +1,16 @@
-label = "IVF+PQ"
-dist = "L2Sqr"
+label = "HNSW+SIMD"
+dist = "SimdL2Sqr"
 gnd_path = "data/gnd_10000.local.bin"
-index_cache = "data/gist_10000_ivf.local.bin"
+index_cache = "data/gist_10000_hnsw.local.bin"
 bench_output = "data/bench_10000.local.toml"
 
 [ef.range]
-start = 16
-end = 32
-step = 4
+start = 120
+end = 360
+step = 40
 
-[algorithm.IVF]
-k = 128
-k_means_size = 1000
-k_means_max_iter = 20
-k_means_tol = 1e-6
-
+[algorithm.HNSW]
+# Use default values
 
 [base]
 dim = 960

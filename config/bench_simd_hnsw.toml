@@ -1,5 +1,5 @@
-label = "HNSW"
-dist = "L2Sqr"
+label = "HNSW+SIMD"
+dist = "SimdL2Sqr"
 gnd_path = "data/gnd.local.bin"
 index_cache = "data/gist_hnsw.local.bin"
 bench_output = "data/bench.local.toml"

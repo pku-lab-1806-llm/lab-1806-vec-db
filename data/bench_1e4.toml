@@ -1,7 +1,7 @@
 title = "Bench (10000 elements)"
 
 [[results]]
-algorithm_name = "HNSW"
+label = "HNSW"
 ef = [120, 160, 200, 240, 280, 320, 360]
 search_time = [
     0.7786242961883545,
@@ -23,7 +23,7 @@ recall = [
 ]
 
 [[results]]
-algorithm_name = "IVF"
+label = "IVF"
 ef = [16, 20, 24, 28, 32]
 search_time = [
     1.526207685470581,
@@ -41,7 +41,7 @@ recall = [
 ]
 
 [[results]]
-algorithm_name = "HNSW+PQ"
+label = "HNSW+PQ"
 ef = [120, 160, 200, 240, 280, 320, 360]
 search_time = [
     0.6242929100990295,
@@ -63,7 +63,7 @@ recall = [
 ]
 
 [[results]]
-algorithm_name = "Linear+PQ"
+label = "Linear+PQ"
 ef = [100, 200]
 search_time = [3.2886290550231934, 3.367217779159546]
 recall = [0.9922999739646912, 0.9974000453948975]
