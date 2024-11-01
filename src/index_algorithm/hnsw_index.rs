@@ -137,6 +137,11 @@ pub struct HNSWIndex<T> {
     pub enter_level: Option<usize>,
     /// The enter point of the search.
     pub enter_point: Option<usize>,
+    /// The norm cache of the vectors.
+    ///
+    /// Only used for cosine distance.
+    #[serde(skip)]
+    pub norm_cache: Option<Vec<f32>>,
 }
 impl<T: Scalar> HNSWIndex<T> {
     /// Generate a random level.
@@ -242,7 +247,7 @@ impl<T: Scalar> HNSWIndex<T> {
         }
     }
     /// Push a vector to the index and initialize:
-    /// vec_set, level0_links, other_links, links_len, vec_level.
+    /// vec_set, level0_links, other_links, links_len, vec_level, deleted_mark, norm_cache.
     ///
     /// Returns the index of the vector. The links are initialized to empty.
     fn push_init(&mut self, vec: &[T], level: usize) -> usize {
@@ -253,6 +258,9 @@ impl<T: Scalar> HNSWIndex<T> {
         self.links_len.push(vec![0; level + 1]);
         self.vec_level.push(level);
         self.deleted_mark.push(false);
+        self.norm_cache
+            .as_mut()
+            .map(|cache| cache.push(T::vec_norm(vec)));
 
         idx
     }
@@ -323,7 +331,7 @@ impl<T: Scalar> HNSWIndex<T> {
         ef: usize,
         query: &[T],
     ) -> ResultSet {
-        let dist_fn = |idx| self.config.dist.d(&self[idx], query);
+        let dist_fn = |idx| self.dist_with_cache(idx, query);
         self.search_on_level_fn(enter_point, level, ef, &dist_fn)
     }
     /// Greedy search on a specific level.
@@ -372,28 +380,35 @@ impl<T: Scalar> HNSWIndex<T> {
         }
         cur_p
     }
-
+    fn dist_with_cache(&self, idx: usize, query: &[T]) -> f32 {
+        if self.config.dist == DistanceAlgorithm::Cosine {
+            let query_norm = T::vec_norm(query);
+            let norm = self
+                .norm_cache
+                .as_ref()
+                .map_or_else(|| T::vec_norm(&self[idx]), |cache| cache[idx]);
+            self.config
+                .dist
+                .d(&(query, query_norm), &(&self[idx], norm))
+        } else {
+            self.config.dist.d(&self[idx], query)
+        }
+    }
     /// Greedy search until reaching the base layer.
     ///
     /// - This does *NOT* search nearest vector on `target_level`.
     /// - Starts at enter_point. NEVER call this when adding a vector higher than enter_level.
     fn greedy_search_until_level(&self, target_level: usize, query: &[T]) -> usize {
-        let dist_fn = |idx| self.config.dist.d(&self[idx], query);
+        let dist_fn = |idx| self.dist_with_cache(idx, query);
         self.greedy_search_until_level_fn(target_level, &dist_fn)
     }
-    /// Init the capacity of the index.
+    /// Ensure the norm cache for cosine distance.
     ///
-    /// Call this after loading the index, if you want to ensure the capacity.
-    pub fn init_capacity_after_load(&mut self) {
-        if self.config.max_elements > self.len() {
-            let additional = self.config.max_elements - self.len();
-            self.vec_set.reserve_exact(additional);
-            self.level0_links
-                .reserve_exact(additional * self.config.max_m0);
-            self.vec_level.reserve_exact(additional);
-            self.other_links.reserve_exact(additional);
-            self.links_len.reserve_exact(additional);
-            self.deleted_mark.reserve_exact(additional);
+    /// Call this after loading the index.
+    pub fn init_norm_cache_after_load(&mut self) {
+        if self.norm_cache.is_none() && self.config.dist == DistanceAlgorithm::Cosine {
+            let cache = self.vec_set.iter().map(T::vec_norm).collect();
+            self.norm_cache = Some(cache);
         }
     }
     pub fn capacity(&self) -> usize {
@@ -520,6 +535,11 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         let other_links = Vec::with_capacity(max_elements);
         let links_len = Vec::with_capacity(max_elements);
         let deleted_mark = Vec::with_capacity(max_elements);
+        let norm_cache = if dist == DistanceAlgorithm::Cosine {
+            Some(Vec::with_capacity(max_elements))
+        } else {
+            None
+        };
 
         Self {
             config: HNSWInnerConfig {
@@ -543,6 +563,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
             num_deleted: 0,
             enter_level: None,
             enter_point: None,
+            norm_cache,
         }
     }
     fn add(&mut self, vec: &[T], rng: &mut impl Rng) -> usize {
@@ -640,7 +661,15 @@ impl<T: Scalar> IndexKNNWithEf<T> for HNSWIndex<T> {
         result.into_sorted_vec_limit(k)
     }
 }
-impl<T: Scalar> IndexSerde for HNSWIndex<T> {}
+impl<T: Scalar> IndexSerde for HNSWIndex<T> {
+    fn init_after_load(&mut self) {
+        // Do not init the capacity here.
+        // In most case we load the index from a file for searching.
+
+        // Init the norm cache for cosine distance.
+        self.init_norm_cache_after_load();
+    }
+}
 impl<T: Scalar> IndexSerdeExternalVecSet<T> for HNSWIndex<T> {
     fn save_without_vec_set(mut self, path: impl AsRef<Path>) -> anyhow::Result<Self> {
         // Move the vec_set out of the index.
@@ -664,6 +693,7 @@ impl<T: Scalar> IndexSerdeExternalVecSet<T> for HNSWIndex<T> {
 
         // Restore the vec_set
         index.vec_set = vec_set;
+        index.init_after_load();
         Ok(index)
     }
 }
@@ -708,6 +738,14 @@ mod test {
 
     #[test]
     pub fn hnsw_index_test() -> Result<()> {
+        hnsw_index_test_with_dist(DistanceAlgorithm::L2Sqr)?;
+        hnsw_index_test_with_dist(DistanceAlgorithm::L2)?;
+        hnsw_index_test_with_dist(DistanceAlgorithm::IP)?;
+        hnsw_index_test_with_dist(DistanceAlgorithm::Cosine)?;
+
+        Ok(())
+    }
+    fn hnsw_index_test_with_dist(dist: DistanceAlgorithm) -> Result<()> {
         fn clip_msg(s: &str) -> String {
             if s.len() > 100 {
                 format!("{}...", &s[..100])
@@ -715,11 +753,11 @@ mod test {
                 s.to_string()
             }
         }
+        println!("Distance Algorithm: {:?}", dist);
         let file_path = "config/gist_1000.toml";
         let config = VecDataConfig::load_from_toml_file(file_path)?;
         println!("Loaded config: {:#?}", config);
         let raw_vec_set = VecSet::<f32>::load_with(&config)?;
-        let dist = DistanceAlgorithm::L2Sqr;
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
 
         let config = HNSWConfig {

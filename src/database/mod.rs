@@ -57,11 +57,18 @@ impl MetadataIndex {
     pub fn dist(&self) -> DistanceAlgorithm {
         self.inner.config.dist
     }
+    pub fn get_row_by_id(&self, id: usize) -> Result<(Vec<f32>, BTreeMap<String, String>)> {
+        if id >= self.len() {
+            bail!("Index out of range");
+        }
+        Ok((self.inner[id].to_vec(), self.metadata[id].clone()))
+    }
     /// Load an index from a file.
     pub fn load(file: impl AsRef<Path>) -> Result<Self> {
         let file = File::open(file)?;
         let buf_reader = BufReader::new(file);
-        let index: Self = bincode::deserialize_from(buf_reader)?;
+        let mut index: Self = bincode::deserialize_from(buf_reader)?;
+        index.inner.init_after_load();
         Ok(index)
     }
     /// Save the index to a file.
@@ -223,6 +230,9 @@ impl VecTableManager {
             index,
             drop_signal_sender,
         })
+    }
+    pub fn get_row_by_id(&self, id: usize) -> Result<(Vec<f32>, BTreeMap<String, String>)> {
+        self.index.read().unwrap().get_row_by_id(id)
     }
     /// Add a vector with metadata to the table.
     ///
@@ -458,6 +468,18 @@ impl VecDBManager {
         };
         table.batch_add(vec_list, metadata_list);
         Ok(())
+    }
+
+    pub fn get_row_by_id(
+        &self,
+        key: &str,
+        id: usize,
+    ) -> Result<(Vec<f32>, BTreeMap<String, String>)> {
+        let table = {
+            let (brief, mut tables) = self.get_locks_by_order();
+            self.get_table_with_lock(key, &brief, &mut tables)?
+        };
+        table.get_row_by_id(id)
     }
 
     /// Search vector in a table.

@@ -2,7 +2,12 @@ def calc_dist(a: list[float], b: list[float], dist: str = "cosine") -> float:
     """
     Calculate the distance between two vectors.
 
-    `dist` can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG). SIMD is expected to be used automatically in most cases.
+    `dist` can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG).
+
+    - l2sqr: squared Euclidean distance
+    - l2: Euclidean distance
+    - ip: inner product distance (-1 * dot_product) [-inf, +inf]
+    - cosine: cosine distance (1 - cosine_similarity) [0.0, 2.0]
 
     Raises:
         ValueError: If the distance function is invalid.
@@ -21,7 +26,7 @@ class BareVecTable:
 
         Args:
             dim (int): Dimension of the vectors.
-            dist (str): Distance function. Can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG). SIMD is expected to be used automatically in most cases.
+            dist (str): Distance function. Can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG).
 
         Raises:
             ValueError: If the distance function is invalid.
@@ -60,6 +65,10 @@ class BareVecTable:
         """Add multiple vectors to the index."""
         ...
 
+    def get_row_by_id(self, id: int) -> tuple[list[float], dict[str, str]]:
+        """Get a vector and metadata by id."""
+        ...
+
     def search(
         self,
         query: list[float],
@@ -90,6 +99,11 @@ class VecDB:
         self, name: str, dim: int, dist: str = "cosine"
     ) -> bool:
         """Create a new table if it does not exist.
+
+        Args:
+            key (str): The table name.
+            dim (int): Dimension of the vectors.
+            dist (str): Distance function. Can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG).
 
         Raises:
             ValueError: If the distance function is invalid.
@@ -133,6 +147,10 @@ class VecDB:
         self, key: str, vec_list: list[list[float]], metadata_list: list[dict[str, str]]
     ):
         """Add multiple vectors to the table."""
+        ...
+
+    def get_row_by_id(self, key: str, id: int) -> tuple[list[float], dict[str, str]]:
+        """Get a vector and metadata by id."""
         ...
 
     def search(
