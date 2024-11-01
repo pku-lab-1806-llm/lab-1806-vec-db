@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     distance::{
         k_means::{KMeans, KMeansConfig},
-        DistanceAdapter, DistanceAlgorithm, SliceDistance,
+        DistanceAdapter, DistanceAlgorithm,
     },
     scalar::Scalar,
     vec_set::VecSet,
@@ -153,7 +153,7 @@ impl<T: Scalar> PQTable<T> {
             let k_means = KMeans::from_vec_set(k_means_vec_set, k_means_config.clone(), rng);
             if config.dist == Cosine {
                 for c in k_means.centroids.iter() {
-                    dot_product_cache.push(c.dot_product(c));
+                    dot_product_cache.push(T::dot_product(c, c))
                 }
             }
             group_k_means.push(k_means);
@@ -183,8 +183,8 @@ impl<T: Scalar> PQTable<T> {
     ///
     /// Size `(m * k,)`. For group `i` and centroid `c`, the cached value is at `i * k + c`.
     ///
-    /// - For L2Sqr and L2 distance, cache the L2Sqr distance between the centroid and the vector.
-    /// - For Cosine distance, cache the dot product of the centroid and the vector.
+    /// - For L2Sqr | L2, cache the L2Sqr distance between the centroid and the vector.
+    /// - For DotProduct | Cosine, cache the dot product of the centroid and the vector.
     pub fn create_lookup(&self, v: &[T]) -> PQLookupTable<'_, T> {
         assert_eq!(v.len(), self.dim);
         let m = self.config.m;
@@ -197,19 +197,19 @@ impl<T: Scalar> PQTable<T> {
             let selected = d * i..d * (i + 1);
             let vs = &v[selected];
             match self.config.dist {
-                L2Sqr | L2 => centroids
+                L2Sqr | L2 | SimdL2 | SimdL2Sqr => centroids
                     .iter()
-                    .map(|c| c.l2_sqr_distance(vs))
+                    .map(|c| T::l2_sqr_distance(vs, c))
                     .for_each(|d| lookup.push(d)),
-                Cosine => centroids
+                DotProduct | Cosine | SimdDotProduct | SimdCosine => centroids
                     .iter()
-                    .map(|c| c.dot_product(vs))
+                    .map(|c| T::dot_product(vs, c))
                     .for_each(|d| lookup.push(d)),
             };
         }
         let norm = match self.config.dist {
-            L2Sqr | L2 => 0.0,
-            Cosine => v.dot_product(v).sqrt(),
+            Cosine => T::dot_product(v, v).sqrt(),
+            _ => 0.0,
         };
         PQLookupTable {
             pq_table: self,
@@ -256,14 +256,14 @@ impl<T: Scalar> DistanceAdapter<[u8], PQLookupTable<'_, T>> for DistanceAlgorith
                 _ => panic!("n_bits must be 4 or 8 in PQTable."),
             };
             sum += lookup[i * k + idx];
-            if *self == Cosine {
+            if *self == Cosine || *self == SimdCosine {
                 norm0_sqr += pq_table.dot_product_cache[i * k + idx];
             }
         }
         match self {
-            L2Sqr => sum,
-            L2 => sum.sqrt(),
-            Cosine => {
+            L2Sqr | SimdL2Sqr | DotProduct | SimdDotProduct => sum,
+            L2 | SimdL2 => sum.sqrt(),
+            Cosine | SimdCosine => {
                 let dot_product = sum;
                 let norm0 = norm0_sqr.sqrt();
                 let norm1 = lookup_table.norm;
@@ -396,6 +396,7 @@ mod test {
 
         pq_table_test_base(&vec_set, L2Sqr)?;
         pq_table_test_base(&vec_set, L2)?;
+        pq_table_test_base(&vec_set, DotProduct)?;
         pq_table_test_base(&vec_set, Cosine)?;
         Ok(())
     }

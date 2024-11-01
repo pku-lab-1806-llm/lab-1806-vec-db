@@ -1,3 +1,4 @@
+label = "HNSW+PQ"
 dist = "L2Sqr"
 gnd_path = "data/gnd.local.bin"
 index_cache = "data/gist_hnsw.local.bin"

@@ -1,6 +1,8 @@
-use std::{io::Write, path::Path};
+use criterion::{criterion_group, criterion_main, Criterion};
 
 use anyhow::Result;
+use std::{path::Path, time::Duration};
+
 use clap::Parser;
 use lab_1806_vec_db::{
     config::{IndexAlgorithmConfig, VecDataConfig},
@@ -8,14 +10,11 @@ use lab_1806_vec_db::{
         pq_table::{PQConfig, PQTable},
         DistanceAlgorithm,
     },
-    index_algorithm::{
-        candidate_pair::GroundTruth, CandidatePair, HNSWIndex, IVFIndex, LinearIndex,
-    },
+    index_algorithm::{CandidatePair, HNSWIndex, IVFIndex, LinearIndex},
     prelude::*,
     scalar::Scalar,
     vec_set::VecSet,
 };
-use plotly::{Plot, Scatter, Trace};
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
@@ -31,14 +30,6 @@ enum BenchEf {
     Range(BenchEfRange),
     #[serde(rename = "list")]
     List(Vec<usize>),
-}
-impl BenchEf {
-    pub fn to_vec(&self) -> Vec<usize> {
-        match self {
-            BenchEf::Range(range) => (range.start..=range.end).step_by(range.step).collect(),
-            BenchEf::List(list) => list.clone(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,33 +81,8 @@ impl BenchConfig {
 struct Args {
     /// Path to the benchmark config file
     bench_config_path: String,
-    #[clap(short, long)]
-    plot_only: bool,
-    #[clap(long)]
-    html: Option<String>,
-    #[clap(short, long, default_value = "1")]
-    repeat_times: usize,
 }
 
-struct AvgRecorder {
-    sum: f32,
-    count: usize,
-}
-impl AvgRecorder {
-    fn new() -> Self {
-        Self { sum: 0.0, count: 0 }
-    }
-    fn add(&mut self, value: f32) {
-        self.sum += value;
-        self.count += 1;
-    }
-    fn avg(&self) -> f32 {
-        if self.count == 0 {
-            return 0.0;
-        }
-        self.sum / self.count as f32
-    }
-}
 enum DynamicIndex<T> {
     HNSW(HNSWIndex<T>),
     IVF(IVFIndex<T>),
@@ -242,175 +208,41 @@ fn load_or_build_index<T: Scalar>(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct BenchResult {
-    label: String,
-    /// The search radius
-    ef: Vec<usize>,
-    /// Average search time in ms
-    search_time: Vec<f32>,
-    /// Recall (k = 10)
-    recall: Vec<f32>,
-}
-impl BenchResult {
-    pub fn new(label: String) -> Self {
-        Self {
-            label,
-            ef: Vec::new(),
-            search_time: Vec::new(),
-            recall: Vec::new(),
-        }
-    }
-    pub fn trace(self) -> Box<dyn Trace> {
-        let text = self
-            .ef
-            .iter()
-            .map(|&ef| format!("ef={}", ef))
-            .collect::<Vec<_>>();
-        Scatter::new(self.recall, self.search_time)
-            .text_array(text)
-            .text_font(plotly::common::Font::new().size(10).family("Arial"))
-            .text_position(plotly::common::Position::TopLeft)
-            .mode(plotly::common::Mode::LinesMarkersText)
-            .name(self.label)
-    }
-    pub fn push(&mut self, ef: usize, search_time: f32, recall: f32) {
-        self.ef.push(ef);
-        self.search_time.push(search_time);
-        self.recall.push(recall);
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct ResultList {
-    #[serde(default)]
-    title: String,
-    #[serde(default)]
-    results: Vec<BenchResult>,
-}
-impl ResultList {
-    pub fn load(path: impl AsRef<Path>) -> Result<Self> {
-        println!("Loading results from {}...", path.as_ref().display());
-        let content = std::fs::read_to_string(path).unwrap_or_default();
-        let results: ResultList = toml::from_str(&content)?;
-        println!("Loaded {} results.", results.results.len());
-        Ok(results)
-    }
-    pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
-        let content = toml::to_string_pretty(self)?;
-        let file = std::fs::File::create(path)?;
-        let mut writer = std::io::BufWriter::new(file);
-        writer.write(content.as_bytes())?;
-        Ok(())
-    }
-    pub fn plot(self, html_path: Option<impl AsRef<Path>>) -> Result<()> {
-        let mut plot = Plot::new();
-        for result in self.results {
-            plot.add_trace(result.trace());
-        }
-
-        let layout = plotly::Layout::new()
-            .title(plotly::common::Title::with_text(self.title))
-            .x_axis(plotly::layout::Axis::new().title("Recall"))
-            .y_axis(plotly::layout::Axis::new().title("Search Time(ms)"))
-            .show_legend(true);
-        plot.set_layout(layout);
-
-        if let Some(path) = html_path {
-            println!("Saved plot to {}", path.as_ref().display());
-            plot.write_html(path);
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            println!("Try to show the plot...");
-            plot.show_image(plotly::ImageFormat::SVG, 1024, 768);
-        }
-        Ok(())
-    }
-    pub fn push(&mut self, result: BenchResult) {
-        for r in self.results.iter_mut() {
-            if r.label == result.label {
-                *r = result;
-                return;
-            }
-        }
-        self.results.push(result);
-    }
-}
-fn main() -> Result<()> {
-    let args = Args::parse();
+pub fn simd_bench(config_path: impl AsRef<Path>, ef: usize, c: &mut Criterion) -> Result<()> {
     let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-    let load_start = std::time::Instant::now();
-    if args.plot_only {
-        let result_list = ResultList::load(&args.bench_config_path)?;
-        result_list.plot(args.html.as_ref())?;
-        return Ok(());
-    }
-    let bench_config = BenchConfig::load_from_toml_file(&args.bench_config_path)?;
+    let bench_config = BenchConfig::load_from_toml_file(&config_path)?;
     let label = bench_config.label.clone();
     let base_set = VecSet::<f32>::load_with(&bench_config.base)?;
-    println!("Loaded base set (size: {}).", base_set.len());
     let test_set = VecSet::<f32>::load_with(&bench_config.test)?;
-    println!("Loaded test set (size: {}).", test_set.len());
-    let elapsed = load_start.elapsed().as_secs_f32();
-    println!("VecSet loaded in {:.2} seconds.", elapsed);
-
-    let base_size = base_set.len();
-
-    let gnd = GroundTruth::load(&bench_config.gnd_path)?;
-    let k = gnd[0].knn_indices.len(); // default 10
-    println!("Loaded ground truth (size: {}).", gnd.len());
-
-    let ef = bench_config.ef.clone();
-    let bench_output = bench_config.bench_output.clone();
-
+    let k = 10;
     let pq = load_or_build_pq(&bench_config, &base_set, &mut rng)?;
-
     let index = load_or_build_index(bench_config, base_set, &mut rng)?;
 
-    let mut bench_result = BenchResult::new(label);
-
-    for ef in ef.to_vec() {
-        println!("Benchmarking ef: {}...", ef);
-        let mut avg_recall = AvgRecorder::new();
-        let mut avg_search_time = AvgRecorder::new();
-
-        let start = std::time::Instant::now();
-        for _ in 0..args.repeat_times {
-            for (query, gnd) in test_set.iter().zip(gnd.iter()) {
-                // benchmark here
-                let result_set = index.knn_with_ef(query, k, ef, &pq);
-
-                let recall = gnd.recall(&result_set);
-                avg_recall.add(recall);
-                avg_search_time.add(elapsed);
-            }
-        }
-        let elapsed = start.elapsed().as_secs_f32();
-        // ms
-        let search_time = elapsed / (args.repeat_times * test_set.len()) as f32 * 1000.0;
-        let recall = avg_recall.avg();
-
-        println!(
-            "ef: {}, Average Search Time: {:.2}ms, Average recall: {:.4}",
-            ef, search_time, recall
-        );
-        bench_result.push(ef, search_time, recall);
-    }
-    println!("Finished benchmarking.");
-    let title = format!("Bench ({} elements)", base_size);
-    let mut result_list = ResultList::load(&bench_output)?;
-    result_list.push(bench_result);
-    result_list.title = title;
-    result_list.save(&bench_output)?;
-    println!("Saved results to {}.", bench_output);
-    result_list.plot(args.html.as_ref())?;
+    let mut rng = rand::rngs::StdRng::seed_from_u64(43);
+    c.bench_function(&format!("{} (ef={})", label, ef), |b| {
+        b.iter(|| {
+            let idx = rng.gen_range(0..test_set.len());
+            index.knn_with_ef(&test_set[idx], k, ef, &pq)
+        })
+    });
     Ok(())
 }
-// # Add `-r 20` or other repeat times to get more stable results.
-// cargo r -r --example bench -- config/bench_hnsw.toml
-// cargo r -r --example bench -- config/bench_pq_hnsw.toml
+pub fn simd_bench_wrapper(c: &mut Criterion) {
+    simd_bench("config/bench_hnsw.toml", 240, c).unwrap();
+    simd_bench("config/bench_simd_hnsw.toml", 240, c).unwrap();
+    // simd_bench("config/bench_pq_hnsw.toml", 320, c).unwrap();
+}
+criterion_group!(
+    name = benches;
+    config = Criterion::default().sample_size(1000).measurement_time(Duration::from_secs(60));
+    targets = simd_bench_wrapper
+);
+criterion_main!(benches);
 
-// # Since LLVM has auto-vectorization, this is just the same as the normal one.
-// cargo r -r --example bench -- config/bench_simd_hnsw.toml
+// $ cargo bench
+// HNSW (ef=240)           time:   [3.8459 ms 3.8642 ms 3.8826 ms]
+// HNSW+SIMD (ef=240)      time:   [3.8496 ms 3.8683 ms 3.8869 ms]
+
+// We find that the SIMD version just the same as the original version.
+// since LLVM can automatically vectorize the code.
+// No need to write SIMD code manually.

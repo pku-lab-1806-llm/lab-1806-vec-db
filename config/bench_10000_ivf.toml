@@ -1,3 +1,4 @@
+label = "IVF"
 dist = "L2Sqr"
 gnd_path = "data/gnd_10000.local.bin"
 index_cache = "data/gist_10000_ivf.local.bin"
