@@ -25,4 +25,9 @@ wide = "0.7.28"
 
 
 [dev-dependencies]
+criterion = "0.5.1"
 plotly = "0.10.0"
+
+[[bench]]
+name = "simd_bench"
+harness = false
