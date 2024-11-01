@@ -396,6 +396,7 @@ mod test {
 
         pq_table_test_base(&vec_set, L2Sqr)?;
         pq_table_test_base(&vec_set, L2)?;
+        pq_table_test_base(&vec_set, DotProduct)?;
         pq_table_test_base(&vec_set, Cosine)?;
         Ok(())
     }

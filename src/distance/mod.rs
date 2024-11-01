@@ -2,8 +2,8 @@ pub mod k_means;
 pub mod pq_table;
 
 use serde::{Deserialize, Serialize};
-use wide::f32x4 as Simd;
-const SIMD_N: usize = 4;
+use wide::f32x8 as Simd;
+const SIMD_N: usize = 8;
 
 pub mod prelude {
     // All Distance Traits & Algorithms
@@ -11,8 +11,9 @@ pub mod prelude {
 }
 
 /// Distance algorithm to be used in the vector database.
+/// SIMD is expected to be used automatically in most cases, but you can force it with the `Simd` variants.
 ///
-/// See also `DistanceAlgorithm::d()`.
+/// See also [DistanceAlgorithm::d].
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum DistanceAlgorithm {
     /// L2 squared distance, AKA squared Euclidean distance.
@@ -183,15 +184,17 @@ mod test {
     #[test]
     fn test_simd_distance() {
         let mut rng = StdRng::seed_from_u64(42);
-        let a: Vec<f32> = (0..100).map(|_| rng.gen()).collect();
-        let b: Vec<f32> = (0..100).map(|_| rng.gen()).collect();
+        let a: Vec<f32> = (0..100).map(|_| rng.gen_range(0.0..1.0)).collect();
+        let b: Vec<f32> = (0..100).map(|_| rng.gen_range(0.0..1.0)).collect();
 
         let simd_l2_sqr = SimdL2Sqr.d(a.as_slice(), b.as_slice());
         let l2_sqr = L2Sqr.d(a.as_slice(), b.as_slice());
 
+        println!("L2Sqr: {:.9}, SimdL2Sqr: {:.9}", l2_sqr, simd_l2_sqr);
+
         assert!(
-            (simd_l2_sqr - l2_sqr).abs() < EPSILON,
-            "L2Sqr: {}, SimdL2Sqr: {}",
+            (simd_l2_sqr - l2_sqr).abs() < EPSILON * l2_sqr.max(1.0),
+            "L2Sqr: {:.9}, SimdL2Sqr: {:.9}",
             l2_sqr,
             simd_l2_sqr
         );
@@ -199,9 +202,11 @@ mod test {
         let simd_cosine = SimdCosine.d(a.as_slice(), b.as_slice());
         let cosine = Cosine.d(a.as_slice(), b.as_slice());
 
+        println!("Cosine: {:.9}, SimdCosine: {:.9}", cosine, simd_cosine);
+
         assert!(
             (simd_cosine - cosine).abs() < EPSILON,
-            "Cosine: {}, SimdCosine: {}",
+            "Cosine: {:.9}, SimdCosine: {:.9}",
             cosine,
             simd_cosine
         );

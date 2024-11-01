@@ -14,25 +14,38 @@ pub mod lab_1806_vec_db {
     ///
     /// Not exposed to Python.
     fn distance_algorithm_from_str(dist: &str) -> PyResult<DistanceAlgorithm> {
+        use DistanceAlgorithm::*;
         match dist {
-            "l2sqr" => Ok(DistanceAlgorithm::L2Sqr),
-            "l2" => Ok(DistanceAlgorithm::L2),
-            "cosine" => Ok(DistanceAlgorithm::Cosine),
+            "l2sqr" => Ok(L2Sqr),
+            "l2" => Ok(L2),
+            "ip" => Ok(DotProduct),
+            "cosine" => Ok(Cosine),
+            "simd_l2sqr" => Ok(SimdL2Sqr),
+            "simd_l2" => Ok(SimdL2),
+            "simd_ip" => Ok(SimdDotProduct),
+            "simd_cosine" => Ok(SimdCosine),
             _ => Err(PyValueError::new_err("Invalid distance function")),
         }
     }
     fn distance_algorithm_to_str(dist: DistanceAlgorithm) -> &'static str {
+        use DistanceAlgorithm::*;
         match dist {
-            DistanceAlgorithm::L2Sqr => "l2sqr",
-            DistanceAlgorithm::L2 => "l2",
-            DistanceAlgorithm::Cosine => "cosine",
+            L2Sqr => "l2sqr",
+            L2 => "l2",
+            Cosine => "cosine",
+            DotProduct => "ip",
+            SimdL2Sqr => "simd_l2sqr",
+            SimdL2 => "simd_l2",
+            SimdCosine => "simd_cosine",
+            SimdDotProduct => "simd_ip",
+            #[allow(unreachable_patterns)]
             _ => panic!("Invalid distance function"),
         }
     }
 
     /// Calculate the distance between two vectors.
     ///
-    /// `dist` can be "l2sqr", "l2" or "cosine". (default: "cosine", for RAG)
+    /// `dist` can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG). SIMD is expected to be used automatically in most cases, but you can force it with the `simd_` prefix.
     ///
     /// Raises:
     ///     ValueError: If the distance function is invalid.
@@ -60,7 +73,7 @@ pub mod lab_1806_vec_db {
         ///
         /// Args:
         ///    dim (int): Dimension of the vectors.
-        ///    dist (str): Distance function. Can be "l2sqr", "l2" or "cosine". (default: "cosine", for RAG)
+        ///    dist (str): Distance function. Can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG). SIMD is expected to be used automatically in most cases, but you can force it with the `simd_` prefix.
         ///
         /// Raises:
         ///     ValueError: If the distance function is invalid.
