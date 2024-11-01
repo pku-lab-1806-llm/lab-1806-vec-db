@@ -389,14 +389,12 @@ fn main() -> Result<()> {
         }
         let elapsed = start.elapsed().as_secs_f32();
         // ms
-        let search_time = elapsed / (args.repeat_times * test_set.len()) as f32;
+        let search_time = elapsed / (args.repeat_times * test_set.len()) as f32 * 1000.0;
         let recall = avg_recall.avg();
 
         println!(
             "ef: {}, Average Search Time: {:.2}ms, Average recall: {:.4}",
-            ef,
-            search_time * 1000.0,
-            recall
+            ef, search_time, recall
         );
         bench_result.push(ef, search_time, recall);
     }
