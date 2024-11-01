@@ -288,8 +288,9 @@ impl<T: Scalar> DistanceAdapter<[u8], PQLookupTable<'_, T>> for DistanceAlgorith
             L2 => sum.sqrt(),
             Cosine => {
                 let dot_product = sum;
-                let norm0 = norm0_sqr.sqrt();
-                let norm1 = lookup_table.norm;
+                const EPSILON: f32 = 1e-10;
+                let norm0 = norm0_sqr.sqrt() + EPSILON;
+                let norm1 = lookup_table.norm + EPSILON;
 
                 1.0 - dot_product / (norm0 * norm1)
             }
