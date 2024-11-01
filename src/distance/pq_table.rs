@@ -249,17 +249,40 @@ impl<T: Scalar> DistanceAdapter<[u8], PQLookupTable<'_, T>> for DistanceAlgorith
         let mut sum = 0.0;
         let mut norm0_sqr = 0.0;
 
-        for i in 0..m {
-            let idx = match n_bits {
-                4 => (encoded[i / 2] >> (4 * (i % 2))) as usize & 0xf,
-                8 => encoded[i] as usize,
-                _ => panic!("n_bits must be 4 or 8 in PQTable."),
-            };
+        let mut push_one = |i: usize, idx: usize| {
+            if i >= m {
+                return;
+            }
             sum += lookup[i * k + idx];
             if *self == Cosine {
                 norm0_sqr += pq_table.dot_product_cache[i * k + idx];
             }
+        };
+
+        match n_bits {
+            4 => {
+                assert_eq!(
+                    encoded.len(),
+                    m.div_ceil(2),
+                    "encoded.len() mismatch in PQTable."
+                );
+                let mut i = 0;
+                for u in encoded {
+                    push_one(i, (u & 0xf) as usize);
+                    i += 1;
+                    push_one(i, (u >> 4) as usize);
+                    i += 1;
+                }
+            }
+            8 => {
+                assert_eq!(encoded.len(), m);
+                for i in 0..m {
+                    push_one(i, encoded[i] as usize);
+                }
+            }
+            _ => panic!("n_bits must be 4 or 8 in PQTable."),
         }
+
         match self {
             L2Sqr | DotProduct => sum,
             L2 => sum.sqrt(),
