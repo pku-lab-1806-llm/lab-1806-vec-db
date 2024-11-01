@@ -197,11 +197,11 @@ impl<T: Scalar> PQTable<T> {
             let selected = d * i..d * (i + 1);
             let vs = &v[selected];
             match self.config.dist {
-                L2Sqr | L2 | SimdL2 | SimdL2Sqr => centroids
+                L2Sqr | L2 => centroids
                     .iter()
                     .map(|c| T::l2_sqr_distance(vs, c))
                     .for_each(|d| lookup.push(d)),
-                DotProduct | Cosine | SimdDotProduct | SimdCosine => centroids
+                DotProduct | Cosine => centroids
                     .iter()
                     .map(|c| T::dot_product(vs, c))
                     .for_each(|d| lookup.push(d)),
@@ -256,14 +256,14 @@ impl<T: Scalar> DistanceAdapter<[u8], PQLookupTable<'_, T>> for DistanceAlgorith
                 _ => panic!("n_bits must be 4 or 8 in PQTable."),
             };
             sum += lookup[i * k + idx];
-            if *self == Cosine || *self == SimdCosine {
+            if *self == Cosine {
                 norm0_sqr += pq_table.dot_product_cache[i * k + idx];
             }
         }
         match self {
-            L2Sqr | SimdL2Sqr | DotProduct | SimdDotProduct => sum,
-            L2 | SimdL2 => sum.sqrt(),
-            Cosine | SimdCosine => {
+            L2Sqr | DotProduct => sum,
+            L2 => sum.sqrt(),
+            Cosine => {
                 let dot_product = sum;
                 let norm0 = norm0_sqr.sqrt();
                 let norm1 = lookup_table.norm;
