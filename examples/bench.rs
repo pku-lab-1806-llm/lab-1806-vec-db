@@ -408,5 +408,9 @@ fn main() -> Result<()> {
     result_list.plot(args.html.as_ref())?;
     Ok(())
 }
+// # Add `-r 20` or other repeat times to get more stable results.
 // cargo r -r --example bench -- config/bench_hnsw.toml
+// cargo r -r --example bench -- config/bench_pq_hnsw.toml
+
+// # Since LLVM has auto-vectorization, this is just the same as the normal one.
 // cargo r -r --example bench -- config/bench_simd_hnsw.toml
