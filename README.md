@@ -19,7 +19,7 @@ Low-level APIs are also provided. But before using them, make sure you know what
 
 `BareVecTable` is a low-level API designed for a single table without auto-saving or multi-threading support.
 
-`calc_dist` is a helper function to calculate the distance between two vectors. It supports "cosine", "l2sqr" and "l2", default to "cosine". And the cosine distance is normalized to `[0, 2]` to make sure smaller is closer.
+`calc_dist` is a helper function to calculate the distance between two vectors. It supports "cosine", "l2sqr" and "l2", default to "cosine". To make sure smaller is closer, we make `cosine_dist = 1 - cosine_similarity`.
 
 ```py
 import os
@@ -29,19 +29,18 @@ from lab_1806_vec_db import BareVecTable, VecDB, calc_dist
 
 def test_calc_dist():
     print("\n[Test] calc_dist")
-    dist0 = calc_dist([1.0, 0.0], [0.0, 1.0])  # default: "cosine"
-    print(f"{dist0=}")
-    assert abs(dist0 - 1.0) < 1e-6, "Test failed"
-    print("Test passed")
+    a = [0.3, 0.4]
+    b = [0.4, 0.3]
 
-    print("\n[Test] calc_dist with invalid metric")
-    try:
-        dist1 = calc_dist([1.0, 0.0], [0.0, 1.0], "euclidean")
-        print(f"{dist1=}")
-        assert False, "Test failed"
-    except ValueError as e:
-        print(f"Got expected exception: {e}")
-        print("Test passed")
+    # norm_a = sqrt(0.3^2 + 0.4^2) = 0.5
+    # norm_b = sqrt(0.4^2 + 0.3^2) = 0.5
+    # dot_product = 0.3 * 0.4 + 0.4 * 0.3 = 0.24
+    # cosine_dist = 1 - (a dot b) / (|a| * |b|)
+    #             = 1 - 0.24 / (0.5 * 0.5) = 0.04
+
+    cosine_dist = calc_dist(a, b)
+    print(f"{cosine_dist=}")
+    assert abs(cosine_dist - 0.04) < 1e-6, "Test failed"
 
 
 test_calc_dist()

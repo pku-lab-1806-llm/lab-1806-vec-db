@@ -97,6 +97,7 @@ impl<T: Scalar> KMeans<T> {
             config.selected.is_none() || config.selected.as_ref().unwrap().end <= vec_set.dim(),
             "The selected range should be in the range [0, vec_set.dim())"
         );
+
         let mut centroids = Self::k_means_init(vec_set, &config, rng);
         let (l, r, dim) = match &config.selected {
             Some(selected) => (selected.start, selected.end, selected.len()),

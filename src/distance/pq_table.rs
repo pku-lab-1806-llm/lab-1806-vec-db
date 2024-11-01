@@ -201,7 +201,7 @@ impl<T: Scalar> PQTable<T> {
                     .iter()
                     .map(|c| T::l2_sqr_distance(vs, c))
                     .for_each(|d| lookup.push(d)),
-                DotProduct | Cosine => centroids
+                Cosine => centroids
                     .iter()
                     .map(|c| T::dot_product(vs, c))
                     .for_each(|d| lookup.push(d)),
@@ -284,12 +284,13 @@ impl<T: Scalar> DistanceAdapter<[u8], PQLookupTable<'_, T>> for DistanceAlgorith
         }
 
         match self {
-            L2Sqr | DotProduct => sum,
+            L2Sqr => sum,
             L2 => sum.sqrt(),
             Cosine => {
                 let dot_product = sum;
-                let norm0 = norm0_sqr.sqrt();
-                let norm1 = lookup_table.norm;
+                const EPSILON: f32 = 1e-10;
+                let norm0 = norm0_sqr.sqrt() + EPSILON;
+                let norm1 = lookup_table.norm + EPSILON;
 
                 1.0 - dot_product / (norm0 * norm1)
             }
@@ -419,7 +420,6 @@ mod test {
 
         pq_table_test_base(&vec_set, L2Sqr)?;
         pq_table_test_base(&vec_set, L2)?;
-        pq_table_test_base(&vec_set, DotProduct)?;
         pq_table_test_base(&vec_set, Cosine)?;
         Ok(())
     }

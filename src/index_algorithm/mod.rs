@@ -114,6 +114,7 @@ pub trait IndexFromVecSet<T: Scalar>: IndexIter<T> {
 }
 
 pub trait IndexSerde: Serialize + for<'de> Deserialize<'de> {
+    fn init_after_load(&mut self) {}
     /// Save the index to the file.
     ///
     /// Some Index may have different Implementations.
@@ -129,7 +130,8 @@ pub trait IndexSerde: Serialize + for<'de> Deserialize<'de> {
     fn load(path: impl AsRef<Path>) -> Result<Self> {
         let file = File::open(path)?;
         let reader = std::io::BufReader::new(file);
-        let index = bincode::deserialize_from(reader)?;
+        let mut index: Self = bincode::deserialize_from(reader)?;
+        index.init_after_load();
         Ok(index)
     }
 }

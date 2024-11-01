@@ -25,10 +25,8 @@ pub enum DistanceAlgorithm {
     ///
     /// Range: `[0.0, +inf]`
     L2,
-    /// Dot product.
-    DotProduct,
     /// Cosine distance.
-    /// `cosine_distance = 1 - dot_product / (norm_lhs * norm_rhs)`
+    /// `cosine_distance(a, b) = 1 - dot_product(a, b) / (norm(a) * norm(b))`
     ///
     /// Range: `[0.0, 2.0]`
     Cosine,
@@ -49,14 +47,26 @@ pub trait DistanceScalar: BaseScalar {
     /// The dot product of two vectors.
     fn dot_product(a: &[Self], b: &[Self]) -> f32;
 
+    /// The norm of a vector.
+    fn vec_norm(a: &[Self]) -> f32 {
+        Self::dot_product(a, a).sqrt()
+    }
+
     /// Cosine distance.
     /// `cosine_distance = 1 - dot_product / (norm_lhs * norm_rhs)`
     /// Range: `[0.0, 2.0]`
     fn cosine_distance(a: &[Self], b: &[Self]) -> f32 {
+        let norm_lhs = Self::vec_norm(a);
+        let norm_rhs = Self::vec_norm(b);
+        Self::cosine_distance_cached(a, b, norm_lhs, norm_rhs)
+    }
+
+    /// Cosine distance with pre-calculated norms.
+    fn cosine_distance_cached(a: &[Self], b: &[Self], norm_a: f32, norm_b: f32) -> f32 {
         let dot_product_sqr = Self::dot_product(a, b);
-        let norm_lhs = Self::dot_product(a, a).sqrt();
-        let norm_rhs = Self::dot_product(b, b).sqrt();
-        1.0 - dot_product_sqr / (norm_lhs * norm_rhs)
+        // Avoid division by zero
+        const EPSILON: f32 = 1e-10;
+        1.0 - dot_product_sqr / ((norm_a + EPSILON) * (norm_b + EPSILON))
     }
 }
 impl DistanceScalar for f32 {
@@ -96,8 +106,20 @@ impl<T: DistanceScalar> DistanceAdapter<[T], [T]> for DistanceAlgorithm {
         match self {
             L2Sqr => T::l2_sqr_distance(a, b),
             L2 => T::l2_distance(a, b),
-            DotProduct => T::dot_product(a, b),
             Cosine => T::cosine_distance(a, b),
+        }
+    }
+}
+
+/// Distance adapter for vectors with pre-calculated norms.
+impl<T: DistanceScalar> DistanceAdapter<(&[T], f32), (&[T], f32)> for DistanceAlgorithm {
+    fn distance(&self, a: &(&[T], f32), b: &(&[T], f32)) -> f32 {
+        let (a, norm_a) = a;
+        let (b, norm_b) = b;
+        match self {
+            L2Sqr => T::l2_sqr_distance(a, b),
+            L2 => T::l2_distance(a, b),
+            Cosine => T::cosine_distance_cached(a, b, *norm_a, *norm_b),
         }
     }
 }
