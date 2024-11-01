@@ -2,8 +2,8 @@ pub mod k_means;
 pub mod pq_table;
 
 use serde::{Deserialize, Serialize};
-use wide::f32x8 as Simd;
-const SIMD_N: usize = 8;
+use wide::f32x4 as Simd;
+const SIMD_N: usize = 4;
 
 pub mod prelude {
     // All Distance Traits & Algorithms
@@ -94,26 +94,27 @@ impl DistanceScalar for f32 {
         a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
     }
     fn simd_l2_sqr_distance(a: &[Self], b: &[Self]) -> f32 {
-        let mut sum = Simd::ZERO;
-        for i in (0..a.len()).step_by(SIMD_N) {
-            let r = a.len().min(i + SIMD_N);
-            let a = Simd::from(&a[i..r]);
-            let b = Simd::from(&b[i..r]);
-            let diff = a - b;
-            sum += diff * diff;
-        }
-        sum.reduce_add()
+        let a = a.chunks(SIMD_N).map(Simd::from);
+        let b = b.chunks(SIMD_N).map(Simd::from);
+
+        a.zip(b)
+            .map(|(a, b)| {
+                let diff = a - b;
+                diff * diff
+            })
+            .reduce(|x, y| x + y)
+            .unwrap_or(Simd::ZERO)
+            .reduce_add()
     }
     fn simd_dot_product(a: &[Self], b: &[Self]) -> f32 {
-        let mut sum = Simd::ZERO;
+        let a = a.chunks(SIMD_N).map(Simd::from);
+        let b = b.chunks(SIMD_N).map(Simd::from);
 
-        for i in (0..a.len()).step_by(SIMD_N) {
-            let r = a.len().min(i + SIMD_N);
-            let a = Simd::from(&a[i..r]);
-            let b = Simd::from(&b[i..r]);
-            sum += a * b;
-        }
-        sum.reduce_add()
+        a.zip(b)
+            .map(|(a, b)| a * b)
+            .reduce(|x, y| x + y)
+            .unwrap_or(Simd::ZERO)
+            .reduce_add()
     }
 }
 impl DistanceScalar for u8 {

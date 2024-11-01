@@ -372,20 +372,24 @@ fn main() -> Result<()> {
     for ef in ef.to_vec() {
         println!("Benchmarking ef: {}...", ef);
         let mut avg_recall = AvgRecorder::new();
+        let mut avg_search_time = AvgRecorder::new();
 
-        let start = std::time::Instant::now();
         for (query, gnd) in test_set.iter().zip(gnd.iter()) {
+            let start = std::time::Instant::now();
+            // benchmark here
             let result_set = index.knn_with_ef(query, k, ef, &pq);
+
+            let elapsed = start.elapsed().as_secs_f32();
             let recall = gnd.recall(&result_set);
             avg_recall.add(recall);
+            avg_search_time.add(elapsed);
         }
-        let elapsed = start.elapsed().as_secs_f32();
         // ms
-        let search_time = elapsed * 1000.0 / test_set.len() as f32;
+        let search_time = avg_search_time.avg() * 1000.0;
         let recall = avg_recall.avg();
 
         println!(
-            "ef: {}, Average Search Time: {:.6}ms, Average recall: {:.4}",
+            "ef: {}, Average Search Time: {:.2}ms, Average recall: {:.4}",
             ef, search_time, recall
         );
         bench_result.push(ef, search_time, recall);
@@ -401,3 +405,4 @@ fn main() -> Result<()> {
     Ok(())
 }
 // cargo r -r --example bench -- config/bench_hnsw.toml
+// cargo r -r --example bench -- config/bench_simd_hnsw.toml
