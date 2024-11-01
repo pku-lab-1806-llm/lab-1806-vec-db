@@ -240,8 +240,8 @@ criterion_group!(
 criterion_main!(benches);
 
 // $ cargo bench
-// HNSW (ef=240)           time:   [3.9022 ms 3.9191 ms 3.9361 ms]
-// HNSW+SIMD (ef=240)      time:   [3.9027 ms 3.9201 ms 3.9372 ms]
+// HNSW (ef=240)           time:   [3.8459 ms 3.8642 ms 3.8826 ms]
+// HNSW+SIMD (ef=240)      time:   [3.8496 ms 3.8683 ms 3.8869 ms]
 
 // We find that the SIMD version just the same as the original version.
 // since LLVM can automatically vectorize the code.
