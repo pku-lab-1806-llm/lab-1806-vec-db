@@ -2,7 +2,7 @@ def calc_dist(a: list[float], b: list[float], dist: str = "cosine") -> float:
     """
     Calculate the distance between two vectors.
 
-    `dist` can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG). SIMD is expected to be used automatically in most cases, but you can force it with the `simd_` prefix.
+    `dist` can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG). SIMD is expected to be used automatically in most cases.
 
     Raises:
         ValueError: If the distance function is invalid.
@@ -21,7 +21,7 @@ class BareVecTable:
 
         Args:
             dim (int): Dimension of the vectors.
-            dist (str): Distance function. Can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG). SIMD is expected to be used automatically in most cases, but you can force it with the `simd_` prefix.
+            dist (str): Distance function. Can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG). SIMD is expected to be used automatically in most cases.
 
         Raises:
             ValueError: If the distance function is invalid.

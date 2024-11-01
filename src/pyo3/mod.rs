@@ -20,10 +20,6 @@ pub mod lab_1806_vec_db {
             "l2" => Ok(L2),
             "ip" => Ok(DotProduct),
             "cosine" => Ok(Cosine),
-            "simd_l2sqr" => Ok(SimdL2Sqr),
-            "simd_l2" => Ok(SimdL2),
-            "simd_ip" => Ok(SimdDotProduct),
-            "simd_cosine" => Ok(SimdCosine),
             _ => Err(PyValueError::new_err("Invalid distance function")),
         }
     }
@@ -34,10 +30,6 @@ pub mod lab_1806_vec_db {
             L2 => "l2",
             Cosine => "cosine",
             DotProduct => "ip",
-            SimdL2Sqr => "simd_l2sqr",
-            SimdL2 => "simd_l2",
-            SimdCosine => "simd_cosine",
-            SimdDotProduct => "simd_ip",
             #[allow(unreachable_patterns)]
             _ => panic!("Invalid distance function"),
         }
@@ -45,7 +37,7 @@ pub mod lab_1806_vec_db {
 
     /// Calculate the distance between two vectors.
     ///
-    /// `dist` can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG). SIMD is expected to be used automatically in most cases, but you can force it with the `simd_` prefix.
+    /// `dist` can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG). SIMD is expected to be used automatically in most cases.
     ///
     /// Raises:
     ///     ValueError: If the distance function is invalid.
@@ -73,7 +65,7 @@ pub mod lab_1806_vec_db {
         ///
         /// Args:
         ///    dim (int): Dimension of the vectors.
-        ///    dist (str): Distance function. Can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG). SIMD is expected to be used automatically in most cases, but you can force it with the `simd_` prefix.
+        ///    dist (str): Distance function. Can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG). SIMD is expected to be used automatically in most cases.
         ///
         /// Raises:
         ///     ValueError: If the distance function is invalid.

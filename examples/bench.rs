@@ -476,8 +476,5 @@ fn main() -> Result<()> {
 // cargo r -r --example bench -- config/bench_hnsw.toml
 // cargo r -r --example bench -- config/bench_pq_hnsw.toml
 
-// # Since LLVM has auto-vectorization, this is just the same as the normal one.
-// cargo r -r --example bench -- config/bench_simd_hnsw.toml
-
 // # Test the multi-threading performance, replace search_time field with inverse_throughput.
 // cargo r -r --example bench -- config/bench_hnsw.toml -n 64 -r 10
