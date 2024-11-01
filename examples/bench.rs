@@ -1,4 +1,10 @@
-use std::{io::Write, path::Path};
+use std::{
+    io::Write,
+    ops::AddAssign,
+    path::{Path, PathBuf},
+    sync::mpsc,
+    thread,
+};
 
 use anyhow::Result;
 use clap::Parser;
@@ -90,12 +96,21 @@ impl BenchConfig {
 struct Args {
     /// Path to the benchmark config file
     bench_config_path: String,
+    /// Plot the result only
     #[clap(short, long)]
     plot_only: bool,
+    /// Save the plot to a html file
     #[clap(long)]
     html: Option<String>,
+    /// Repeat times for more stable results
     #[clap(short, long, default_value = "1")]
     repeat_times: usize,
+    /// Number of threads, recommended to be the number of physical cores.
+    ///
+    /// Generally, multi-threading is disabled for benchmarking,
+    /// but it is common in real applications, so you can try it here.
+    #[clap(short, long)]
+    num_threads: Option<usize>,
 }
 
 struct AvgRecorder {
@@ -103,18 +118,24 @@ struct AvgRecorder {
     count: usize,
 }
 impl AvgRecorder {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self { sum: 0.0, count: 0 }
     }
-    fn add(&mut self, value: f32) {
+    pub fn add(&mut self, value: f32) {
         self.sum += value;
         self.count += 1;
     }
-    fn avg(&self) -> f32 {
+    pub fn avg(&self) -> f32 {
         if self.count == 0 {
             return 0.0;
         }
         self.sum / self.count as f32
+    }
+}
+impl AddAssign for AvgRecorder {
+    fn add_assign(&mut self, rhs: Self) {
+        self.sum += rhs.sum;
+        self.count += rhs.count;
     }
 }
 enum DynamicIndex<T> {
@@ -303,7 +324,7 @@ impl ResultList {
         writer.write(content.as_bytes())?;
         Ok(())
     }
-    pub fn plot(self, html_path: Option<impl AsRef<Path>>) -> Result<()> {
+    pub fn plot(self, multi_thread: bool, html_path: Option<impl AsRef<Path>>) -> Result<()> {
         let mut plot = Plot::new();
         for result in self.results {
             plot.add_trace(result.trace());
@@ -312,7 +333,11 @@ impl ResultList {
         let layout = plotly::Layout::new()
             .title(plotly::common::Title::with_text(self.title))
             .x_axis(plotly::layout::Axis::new().title("Recall"))
-            .y_axis(plotly::layout::Axis::new().title("Search Time(ms)"))
+            .y_axis(plotly::layout::Axis::new().title(if multi_thread {
+                "Inverse Throughput(ms)"
+            } else {
+                "Search Time(ms)"
+            }))
             .show_legend(true);
         plot.set_layout(layout);
 
@@ -344,7 +369,7 @@ fn main() -> Result<()> {
     let load_start = std::time::Instant::now();
     if args.plot_only {
         let result_list = ResultList::load(&args.bench_config_path)?;
-        result_list.plot(args.html.as_ref())?;
+        result_list.plot(args.num_threads.is_some(), args.html.as_ref())?;
         return Ok(());
     }
     let bench_config = BenchConfig::load_from_toml_file(&args.bench_config_path)?;
@@ -374,17 +399,43 @@ fn main() -> Result<()> {
     for ef in ef.to_vec() {
         println!("Benchmarking ef: {}...", ef);
         let mut avg_recall = AvgRecorder::new();
-        let mut avg_search_time = AvgRecorder::new();
 
         let start = std::time::Instant::now();
         for _ in 0..args.repeat_times {
-            for (query, gnd) in test_set.iter().zip(gnd.iter()) {
-                // benchmark here
-                let result_set = index.knn_with_ef(query, k, ef, &pq);
+            if let Some(num_threads) = args.num_threads {
+                let (sender, receiver) = mpsc::channel();
+                thread::scope(|s| {
+                    for idx in 0..num_threads {
+                        let (test_set, gnd, pq, index) = (&test_set, &gnd, &pq, &index);
+                        let sender = sender.clone();
+                        s.spawn(move || {
+                            let mut thread_recorder = AvgRecorder::new();
+                            for (query, gnd) in test_set
+                                .iter()
+                                .zip(gnd.iter())
+                                .skip(idx)
+                                .step_by(num_threads)
+                            {
+                                let result_set = index.knn_with_ef(query, k, ef, &pq);
 
-                let recall = gnd.recall(&result_set);
-                avg_recall.add(recall);
-                avg_search_time.add(elapsed);
+                                let recall = gnd.recall(&result_set);
+                                thread_recorder.add(recall);
+                            }
+                            sender.send(thread_recorder).unwrap();
+                        });
+                    }
+                });
+                for thread_recorder in receiver.iter().take(num_threads) {
+                    avg_recall.add(thread_recorder.avg());
+                }
+            } else {
+                for (query, gnd) in test_set.iter().zip(gnd.iter()) {
+                    // benchmark here
+                    let result_set = index.knn_with_ef(query, k, ef, &pq);
+
+                    let recall = gnd.recall(&result_set);
+                    avg_recall.add(recall);
+                }
             }
         }
         let elapsed = start.elapsed().as_secs_f32();
@@ -399,13 +450,26 @@ fn main() -> Result<()> {
         bench_result.push(ef, search_time, recall);
     }
     println!("Finished benchmarking.");
-    let title = format!("Bench ({} elements)", base_size);
-    let mut result_list = ResultList::load(&bench_output)?;
+    let (title, out) = if let Some(num_threads) = args.num_threads {
+        let title = format!("Bench ({} elements, {} threads)", base_size, num_threads);
+        let out = PathBuf::from(bench_output);
+        let out = out.with_file_name(format!(
+            "t{}_{}",
+            num_threads,
+            out.file_name().unwrap_or_default().to_string_lossy(),
+        ));
+        (title, out)
+    } else {
+        let title = format!("Bench ({} elements)", base_size);
+        let out = PathBuf::from(bench_output);
+        (title, out)
+    };
+    let mut result_list = ResultList::load(&out)?;
     result_list.push(bench_result);
     result_list.title = title;
-    result_list.save(&bench_output)?;
-    println!("Saved results to {}.", bench_output);
-    result_list.plot(args.html.as_ref())?;
+    result_list.save(&out)?;
+    println!("Saved results to {}.", out.display());
+    result_list.plot(args.num_threads.is_some(), args.html.as_ref())?;
     Ok(())
 }
 // # Add `-r 20` or other repeat times to get more stable results.
