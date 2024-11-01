@@ -11,7 +11,13 @@ pub mod prelude {
 }
 
 /// Distance algorithm to be used in the vector database.
-/// SIMD is expected to be used automatically in most cases, but you can force it with the `Simd` variants.
+///
+/// SIMD is expected to be used automatically in most cases,
+/// but you can force it with the `Simd` variants.
+/// By default, we use SSE f32x4 to support generic x86_64 CPUs,
+/// see [wide::f32x8] fallbacks to [wide::f32x4] and scalar implementations.
+/// If you can strictly ensure that your program always runs on AVX supported CPUs,
+/// re-compiling the library on your machine with RUSTFLAGS="-C target-cpu=native".
 ///
 /// See also [DistanceAlgorithm::d].
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
