@@ -2,11 +2,10 @@ def calc_dist(a: list[float], b: list[float], dist: str = "cosine") -> float:
     """
     Calculate the distance between two vectors.
 
-    `dist` can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG).
+    `dist` can be "l2sqr", "l2" or "cosine" (default: "cosine", for RAG).
 
     - l2sqr: squared Euclidean distance
     - l2: Euclidean distance
-    - ip: inner product distance (-1 * dot_product) [-inf, +inf]
     - cosine: cosine distance (1 - cosine_similarity) [0.0, 2.0]
 
     Raises:
@@ -26,7 +25,7 @@ class BareVecTable:
 
         Args:
             dim (int): Dimension of the vectors.
-            dist (str): Distance function. Can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG).
+            dist (str): Distance function. See `calc_dist` for details.
 
         Raises:
             ValueError: If the distance function is invalid.
@@ -103,7 +102,7 @@ class VecDB:
         Args:
             key (str): The table name.
             dim (int): Dimension of the vectors.
-            dist (str): Distance function. Can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG).
+            dist (str): Distance function. See `calc_dist` for details.
 
         Raises:
             ValueError: If the distance function is invalid.

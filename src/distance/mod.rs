@@ -25,11 +25,6 @@ pub enum DistanceAlgorithm {
     ///
     /// Range: `[0.0, +inf]`
     L2,
-    /// Inner product distance.
-    /// `ip_distance(a, b) = -dot_product(a, b)`
-    ///
-    /// Range: `[-inf, +inf]`
-    IP,
     /// Cosine distance.
     /// `cosine_distance(a, b) = 1 - dot_product(a, b) / (norm(a) * norm(b))`
     ///
@@ -57,27 +52,21 @@ pub trait DistanceScalar: BaseScalar {
         Self::dot_product(a, a).sqrt()
     }
 
-    /// Inner product distance.
-    /// `ip_distance = -dot_product`
-    /// Range: `[-inf, +inf]`
-    fn ip_distance(a: &[Self], b: &[Self]) -> f32 {
-        -Self::dot_product(a, b)
-    }
-
     /// Cosine distance.
     /// `cosine_distance = 1 - dot_product / (norm_lhs * norm_rhs)`
     /// Range: `[0.0, 2.0]`
     fn cosine_distance(a: &[Self], b: &[Self]) -> f32 {
-        let dot_product_sqr = Self::dot_product(a, b);
         let norm_lhs = Self::vec_norm(a);
         let norm_rhs = Self::vec_norm(b);
-        1.0 - dot_product_sqr / (norm_lhs * norm_rhs)
+        Self::cosine_distance_cached(a, b, norm_lhs, norm_rhs)
     }
 
     /// Cosine distance with pre-calculated norms.
     fn cosine_distance_cached(a: &[Self], b: &[Self], norm_a: f32, norm_b: f32) -> f32 {
         let dot_product_sqr = Self::dot_product(a, b);
-        1.0 - dot_product_sqr / (norm_a * norm_b)
+        // Avoid division by zero
+        const EPSILON: f32 = 1e-10;
+        1.0 - dot_product_sqr / ((norm_a + EPSILON) * (norm_b + EPSILON))
     }
 }
 impl DistanceScalar for f32 {
@@ -117,7 +106,6 @@ impl<T: DistanceScalar> DistanceAdapter<[T], [T]> for DistanceAlgorithm {
         match self {
             L2Sqr => T::l2_sqr_distance(a, b),
             L2 => T::l2_distance(a, b),
-            IP => T::ip_distance(a, b),
             Cosine => T::cosine_distance(a, b),
         }
     }
@@ -131,7 +119,6 @@ impl<T: DistanceScalar> DistanceAdapter<(&[T], f32), (&[T], f32)> for DistanceAl
         match self {
             L2Sqr => T::l2_sqr_distance(a, b),
             L2 => T::l2_distance(a, b),
-            IP => T::ip_distance(a, b),
             Cosine => T::cosine_distance_cached(a, b, *norm_a, *norm_b),
         }
     }

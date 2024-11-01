@@ -18,7 +18,6 @@ pub mod lab_1806_vec_db {
         match dist {
             "l2sqr" => Ok(L2Sqr),
             "l2" => Ok(L2),
-            "ip" => Ok(IP),
             "cosine" => Ok(Cosine),
             _ => Err(PyValueError::new_err("Invalid distance function")),
         }
@@ -29,7 +28,6 @@ pub mod lab_1806_vec_db {
             L2Sqr => "l2sqr",
             L2 => "l2",
             Cosine => "cosine",
-            IP => "ip",
             #[allow(unreachable_patterns)]
             _ => panic!("Invalid distance function"),
         }
@@ -37,7 +35,12 @@ pub mod lab_1806_vec_db {
 
     /// Calculate the distance between two vectors.
     ///
-    /// `dist` can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG).
+    /// `dist` can be "l2sqr", "l2" or "cosine" (default: "cosine", for RAG).
+    ///
+    ///
+    /// - l2sqr: squared Euclidean distance
+    /// - l2: Euclidean distance
+    /// - cosine: cosine distance (1 - cosine_similarity) [0.0, 2.0]
     ///
     /// Raises:
     ///     ValueError: If the distance function is invalid.
@@ -62,10 +65,6 @@ pub mod lab_1806_vec_db {
         #[new]
         #[pyo3(signature = (dim, dist="cosine"))]
         /// Create a new Table. (Using HNSW internally)
-        ///
-        /// Args:
-        ///    dim (int): Dimension of the vectors.
-        ///    dist (str): Distance function. Can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG).
         ///
         /// Raises:
         ///     ValueError: If the distance function is invalid.
@@ -173,11 +172,6 @@ pub mod lab_1806_vec_db {
         }
 
         /// Create a new table if it does not exist.
-        ///
-        /// Args:
-        ///     key (str): The table name.
-        ///     dim (int): Dimension of the vectors.
-        ///     dist (str): Distance function. Can be "l2sqr", "l2", "ip" or "cosine" (default: "cosine", for RAG).
         ///
         /// Raises:
         ///     ValueError: If the distance function is invalid.

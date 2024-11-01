@@ -11,13 +11,9 @@ def test_calc_dist():
     # norm_a = sqrt(0.3^2 + 0.4^2) = 0.5
     # norm_b = sqrt(0.4^2 + 0.3^2) = 0.5
     # dot_product = 0.3 * 0.4 + 0.4 * 0.3 = 0.24
-    # ip_dist = -dot_product = -0.24
     # cosine_dist = 1 - (a dot b) / (|a| * |b|)
     #             = 1 - 0.24 / (0.5 * 0.5) = 0.04
 
-    ip_dist = calc_dist(a, b, "ip")
-    print(f"{ip_dist=}")
-    assert abs(ip_dist - (-0.24) < 1e-6), "Test failed"
     cosine_dist = calc_dist(a, b)
     print(f"{cosine_dist=}")
     assert abs(cosine_dist - 0.04) < 1e-6, "Test failed"

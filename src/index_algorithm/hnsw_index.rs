@@ -740,7 +740,6 @@ mod test {
     pub fn hnsw_index_test() -> Result<()> {
         hnsw_index_test_with_dist(DistanceAlgorithm::L2Sqr)?;
         hnsw_index_test_with_dist(DistanceAlgorithm::L2)?;
-        hnsw_index_test_with_dist(DistanceAlgorithm::IP)?;
         hnsw_index_test_with_dist(DistanceAlgorithm::Cosine)?;
 
         Ok(())
