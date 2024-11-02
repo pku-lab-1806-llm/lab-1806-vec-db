@@ -14,9 +14,9 @@ use crate::config::{DataType, VecDataConfig};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VecSet<T> {
     /// The dimension of the vector.
-    dim: usize,
+    pub(crate) dim: usize,
     /// The data of the vectors. Size&Cap: dim * len.
-    data: Vec<T>,
+    pub(crate) data: Vec<T>,
 }
 
 impl<T> Index<usize> for VecSet<T> {

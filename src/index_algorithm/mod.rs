@@ -5,7 +5,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    distance::{pq_table::PQTable, DistanceAlgorithm},
+    distance::{pq_table::PQTable, wgpu_cache::WgpuCache, DistanceAlgorithm},
     scalar::Scalar,
     vec_set::VecSet,
 };
@@ -13,7 +13,7 @@ pub mod prelude {
     // All Index Traits
     pub use super::{
         IndexBuilder, IndexFromVecSet, IndexIter, IndexKNN, IndexKNNWithEf, IndexPQ, IndexSerde,
-        IndexSerdeExternalVecSet,
+        IndexSerdeExternalVecSet, IndexWgpu, IndexWgpuWithEf,
     };
 }
 
@@ -147,4 +147,18 @@ pub trait IndexPQ<T: Scalar>: IndexKNN<T> {
     /// Get the precise k-nearest neighbors with PQ and a search radius `ef`.
     fn knn_pq(&self, query: &[T], k: usize, ef: usize, pq_table: &PQTable<T>)
         -> Vec<CandidatePair>;
+}
+
+pub trait IndexWgpu<T: Scalar>: IndexKNN<T> {
+    fn knn_wgpu(&self, wgpu_cache: &WgpuCache, query: &[T], k: usize) -> Vec<CandidatePair>;
+}
+
+pub trait IndexWgpuWithEf<T: Scalar>: IndexKNNWithEf<T> {
+    fn knn_wgpu_with_ef(
+        &self,
+        wgpu_cache: &WgpuCache,
+        query: &[T],
+        k: usize,
+        ef: usize,
+    ) -> Vec<CandidatePair>;
 }

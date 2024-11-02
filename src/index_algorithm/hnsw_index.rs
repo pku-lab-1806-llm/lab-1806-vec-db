@@ -6,11 +6,12 @@ use std::{
     thread, vec,
 };
 
+use burn::{backend::Wgpu, tensor::Tensor};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    distance::{pq_table::PQTable, DistanceAdapter, DistanceAlgorithm},
+    distance::{pq_table::PQTable, wgpu_cache::WgpuCache, DistanceAdapter, DistanceAlgorithm},
     index_algorithm::ResultSet,
     scalar::Scalar,
     vec_set::VecSet,
@@ -719,6 +720,51 @@ impl<T: Scalar> IndexPQ<T> for HNSWIndex<T> {
         let enter_point = self.greedy_search_until_level_fn(level, &dist_fn);
         let result = self.search_on_level_fn(enter_point, level, ef, &dist_fn);
         result.pq_resort(k, query, self, dist)
+    }
+}
+impl HNSWIndex<f32> {
+    fn dist_wgpu_with_cache(
+        &self,
+        wgpu_cache: &WgpuCache,
+        query: &Tensor<Wgpu, 1>,
+        idx: usize,
+    ) -> f32 {
+        if self.config.dist == DistanceAlgorithm::Cosine {
+            if let Some(norm_cache) = &self.norm_cache {
+                let query_norm = WgpuCache::vec_norm(&query);
+                let norm = norm_cache[idx];
+                wgpu_cache.cosine_distance_cached(&query, idx, query_norm, norm)
+            } else {
+                wgpu_cache.distance(self.config.dist, &query, idx)
+            }
+        } else {
+            wgpu_cache.distance(self.config.dist, &query, idx)
+        }
+    }
+}
+impl IndexWgpu<f32> for HNSWIndex<f32> {
+    fn knn_wgpu(&self, wgpu_cache: &WgpuCache, query: &[f32], k: usize) -> Vec<CandidatePair> {
+        self.knn_wgpu_with_ef(wgpu_cache, query, k, self.config.default_ef)
+    }
+}
+impl IndexWgpuWithEf<f32> for HNSWIndex<f32> {
+    fn knn_wgpu_with_ef(
+        &self,
+        wgpu_cache: &WgpuCache,
+        query: &[f32],
+        k: usize,
+        ef: usize,
+    ) -> Vec<CandidatePair> {
+        if self.len() == 0 {
+            return Vec::new();
+        }
+        let query = wgpu_cache.convert_slice(query);
+        let dist_fn = |idx| self.dist_wgpu_with_cache(wgpu_cache, &query, idx);
+        let ef = ef.max(k);
+        let level = 0;
+        let enter_point = self.greedy_search_until_level_fn(level, &dist_fn);
+        let result = self.search_on_level_fn(enter_point, level, ef, &dist_fn);
+        result.into_sorted_vec_limit(k)
     }
 }
 

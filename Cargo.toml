@@ -21,6 +21,7 @@ fs2 = "0.4.3"
 sha2 = "0.10.8"
 base16ct = { version = "0.2.0", features = ["std"] }
 tempfile = "3.13.0"
+burn = { version = "0.15.0", features = ["wgpu"] }
 
 
 [dev-dependencies]
