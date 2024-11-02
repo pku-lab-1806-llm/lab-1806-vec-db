@@ -5,7 +5,11 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    distance::{pq_table::PQTable, wgpu_cache::WgpuCache, DistanceAlgorithm},
+    distance::{
+        pq_table::PQTable,
+        wgpu_cache::{WgpuCache, WgpuScalar},
+        DistanceAlgorithm,
+    },
     scalar::Scalar,
     vec_set::VecSet,
 };
@@ -149,11 +153,11 @@ pub trait IndexPQ<T: Scalar>: IndexKNN<T> {
         -> Vec<CandidatePair>;
 }
 
-pub trait IndexWgpu<T: Scalar>: IndexKNN<T> {
+pub trait IndexWgpu<T: Scalar + WgpuScalar>: IndexKNN<T> {
     fn knn_wgpu(&self, wgpu_cache: &WgpuCache, query: &[T], k: usize) -> Vec<CandidatePair>;
 }
 
-pub trait IndexWgpuWithEf<T: Scalar>: IndexKNNWithEf<T> {
+pub trait IndexWgpuWithEf<T: Scalar + WgpuScalar>: IndexKNNWithEf<T> {
     fn knn_wgpu_with_ef(
         &self,
         wgpu_cache: &WgpuCache,

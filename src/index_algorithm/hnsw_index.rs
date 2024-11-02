@@ -11,7 +11,11 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    distance::{pq_table::PQTable, wgpu_cache::WgpuCache, DistanceAdapter, DistanceAlgorithm},
+    distance::{
+        pq_table::PQTable,
+        wgpu_cache::{WgpuCache, WgpuScalar},
+        DistanceAdapter, DistanceAlgorithm,
+    },
     index_algorithm::ResultSet,
     scalar::Scalar,
     vec_set::VecSet,
@@ -722,7 +726,7 @@ impl<T: Scalar> IndexPQ<T> for HNSWIndex<T> {
         result.pq_resort(k, query, self, dist)
     }
 }
-impl HNSWIndex<f32> {
+impl<T: Scalar + WgpuScalar> HNSWIndex<T> {
     fn dist_wgpu_with_cache(
         &self,
         wgpu_cache: &WgpuCache,
@@ -742,16 +746,16 @@ impl HNSWIndex<f32> {
         }
     }
 }
-impl IndexWgpu<f32> for HNSWIndex<f32> {
-    fn knn_wgpu(&self, wgpu_cache: &WgpuCache, query: &[f32], k: usize) -> Vec<CandidatePair> {
+impl<T: Scalar + WgpuScalar> IndexWgpu<T> for HNSWIndex<T> {
+    fn knn_wgpu(&self, wgpu_cache: &WgpuCache, query: &[T], k: usize) -> Vec<CandidatePair> {
         self.knn_wgpu_with_ef(wgpu_cache, query, k, self.config.default_ef)
     }
 }
-impl IndexWgpuWithEf<f32> for HNSWIndex<f32> {
+impl<T: Scalar + WgpuScalar> IndexWgpuWithEf<T> for HNSWIndex<T> {
     fn knn_wgpu_with_ef(
         &self,
         wgpu_cache: &WgpuCache,
-        query: &[f32],
+        query: &[T],
         k: usize,
         ef: usize,
     ) -> Vec<CandidatePair> {
