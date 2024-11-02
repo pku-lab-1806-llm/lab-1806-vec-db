@@ -1,3 +1,4 @@
+pub mod gpu_cache;
 pub mod k_means;
 pub mod pq_table;
 
@@ -64,9 +65,7 @@ pub trait DistanceScalar: BaseScalar {
     /// Cosine distance with pre-calculated norms.
     fn cosine_distance_cached(a: &[Self], b: &[Self], norm_a: f32, norm_b: f32) -> f32 {
         let dot_product_sqr = Self::dot_product(a, b);
-        // Avoid division by zero
-        const EPSILON: f32 = 1e-10;
-        1.0 - dot_product_sqr / ((norm_a + EPSILON) * (norm_b + EPSILON))
+        1.0 - dot_product_sqr / (norm_a * norm_b)
     }
 }
 impl DistanceScalar for f32 {
