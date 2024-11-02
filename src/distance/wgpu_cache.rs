@@ -4,6 +4,7 @@ use crate::vec_set::VecSet;
 
 use super::DistanceAlgorithm;
 
+#[derive(Debug, Clone)]
 pub struct WgpuCache<B: Backend = Wgpu> {
     pub(crate) dim: usize,
     /// The device used by the cache.
@@ -101,5 +102,22 @@ impl<B: Backend> From<&VecSet<f32>> for WgpuCache<B> {
             .map(|v| Tensor::<B, 1>::from_floats(v, &device))
             .collect();
         Self { dim, device, data }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_wgpu_cache() {
+        let vec_set = VecSet::new(3, vec![1.0, 2.0, 3.0]);
+        let cache = WgpuCache::<Wgpu>::from(&vec_set);
+        println!("{:?}", cache);
+        assert_eq!(cache.len(), 1);
+        assert_eq!(cache.dim(), 3);
+        let query = cache.convert_slice(&[4.0, 5.0, 6.0]);
+        let dist = cache.distance(DistanceAlgorithm::L2Sqr, &query, 0);
+        assert!((dist - 27.0).abs() < 1e-6);
     }
 }
