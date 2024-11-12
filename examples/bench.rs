@@ -11,6 +11,7 @@ use clap::Parser;
 use lab_1806_vec_db::{
     config::{IndexAlgorithmConfig, VecDataConfig},
     distance::{
+        gpu_cache::GpuCache,
         pq_table::{PQConfig, PQTable},
         DistanceAlgorithm,
     },
@@ -78,6 +79,7 @@ struct BenchConfig {
     algorithm: IndexAlgorithmConfig,
     #[serde(rename = "PQ")]
     pq: Option<BenchPQConfig>,
+    gpu: Option<bool>,
     base: VecDataConfig,
     test: VecDataConfig,
     bench_output: String,
@@ -150,14 +152,26 @@ impl<T: Scalar> DynamicIndex<T> {
         k: usize,
         ef: usize,
         pq: &Option<PQTable<T>>,
+        gpu_cache: &Option<GpuCache>,
     ) -> Vec<CandidatePair> {
         use DynamicIndex::*;
-        match (self, pq) {
-            (HNSW(index), Some(pq)) => index.knn_pq(query, k, ef, pq),
-            (Linear(index), Some(pq)) => index.knn_pq(query, k, ef, pq),
-            (HNSW(index), _) => index.knn_with_ef(query, k, ef),
-            (IVF(index), _) => index.knn_with_ef(query, k, ef),
-            _ => unimplemented!("({:?}, {:?}) is not implemented.", self.index_name(), pq),
+        if let Some(pq) = pq {
+            match self {
+                HNSW(index) => index.knn_pq(query, k, ef, pq),
+                Linear(index) => index.knn_pq(query, k, ef, pq),
+                _ => unimplemented!("{}+PQ is not implemented.", self.index_name()),
+            }
+        } else if let Some(gpu_cache) = gpu_cache {
+            match self {
+                HNSW(index) => index.gpu_knn_with_ef(gpu_cache, query, k, ef),
+                _ => unimplemented!("{}+GPU is not implemented.", self.index_name()),
+            }
+        } else {
+            match self {
+                HNSW(index) => index.knn_with_ef(query, k, ef),
+                IVF(index) => index.knn_with_ef(query, k, ef),
+                Linear(index) => index.knn(query, k),
+            }
         }
     }
     pub fn index_name(&self) -> String {
@@ -392,6 +406,12 @@ fn main() -> Result<()> {
 
     let pq = load_or_build_pq(&bench_config, &base_set, &mut rng)?;
 
+    let gpu_cache = if let Some(true) = bench_config.gpu {
+        Some(GpuCache::from(&base_set))
+    } else {
+        None
+    };
+
     let index = load_or_build_index(bench_config, base_set, &mut rng)?;
 
     let mut bench_result = BenchResult::new(label);
@@ -406,7 +426,8 @@ fn main() -> Result<()> {
                 let (sender, receiver) = mpsc::channel();
                 thread::scope(|s| {
                     for idx in 0..num_threads {
-                        let (test_set, gnd, pq, index) = (&test_set, &gnd, &pq, &index);
+                        let (test_set, gnd, pq, index, gpu_cache) =
+                            (&test_set, &gnd, &pq, &index, &gpu_cache);
                         let sender = sender.clone();
                         s.spawn(move || {
                             let mut thread_recorder = AvgRecorder::new();
@@ -416,7 +437,7 @@ fn main() -> Result<()> {
                                 .skip(idx)
                                 .step_by(num_threads)
                             {
-                                let result_set = index.knn_with_ef(query, k, ef, &pq);
+                                let result_set = index.knn_with_ef(query, k, ef, &pq, &gpu_cache);
 
                                 let recall = gnd.recall(&result_set);
                                 thread_recorder.add(recall);
@@ -431,7 +452,7 @@ fn main() -> Result<()> {
             } else {
                 for (query, gnd) in test_set.iter().zip(gnd.iter()) {
                     // benchmark here
-                    let result_set = index.knn_with_ef(query, k, ef, &pq);
+                    let result_set = index.knn_with_ef(query, k, ef, &pq, &gpu_cache);
 
                     let recall = gnd.recall(&result_set);
                     avg_recall.add(recall);
@@ -478,3 +499,5 @@ fn main() -> Result<()> {
 
 // # Test the multi-threading performance, replace search_time field with inverse_throughput.
 // cargo r -r --example bench -- config/bench_hnsw.toml -n 64 -r 10
+
+// cargo r -r --example bench -F gpu -- config/bench_gpu_hnsw.toml

@@ -30,6 +30,9 @@ impl<T> Index<usize> for VecSet<T> {
 }
 
 impl<T: Scalar> VecSet<T> {
+    pub(crate) fn as_slice(&self) -> &[T] {
+        &self.data
+    }
     /// Create a `VecSet` with the specified dimension and data.
     pub fn new(dim: usize, data: Vec<T>) -> Self {
         assert!(
