@@ -1,5 +1,6 @@
 use std::{collections::HashMap, ops::Index};
 
+#[cfg(feature = "gpu")]
 use anyhow::Result;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
