@@ -106,14 +106,8 @@ impl<T: Scalar> IndexGpuKNN<T> for LinearIndex<T> {
         query: &[T],
         k: usize,
     ) -> Result<Vec<CandidatePair>> {
-        use DistanceAlgorithm::*;
         let query = gpu_cache.parse_query(query)?;
-        let distance: Vec<f32> = match self.dist {
-            L2Sqr => gpu_cache.batch_l2_sqr(&query)?,
-            L2 => gpu_cache.batch_l2(&query)?,
-            Cosine => gpu_cache.batch_cosine(&query)?,
-        }
-        .to_vec1()?;
+        let distance: Vec<f32> = gpu_cache.batch_distance(&query, self.dist)?.to_vec1()?;
         let mut result = ResultSet::new(k);
         for (i, d) in distance.into_iter().enumerate() {
             result.add(CandidatePair::new(i, d));

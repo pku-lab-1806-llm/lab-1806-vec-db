@@ -12,8 +12,8 @@ use crate::{
 pub mod prelude {
     // All Index Traits
     pub use super::{
-        IndexBuilder, IndexFromVecSet, IndexGpuKNN, IndexIter, IndexKNN, IndexKNNWithEf, IndexPQ,
-        IndexSerde, IndexSerdeExternalVecSet,
+        IndexBuilder, IndexFromVecSet, IndexGpuKNN, IndexGpuKNNWithEf, IndexIter, IndexKNN,
+        IndexKNNWithEf, IndexPQ, IndexSerde, IndexSerdeExternalVecSet,
     };
 }
 
@@ -158,5 +158,15 @@ pub trait IndexGpuKNN<T: Scalar>: IndexIter<T> {
         gpu_cache: &Self::GpuCache,
         query: &[T],
         k: usize,
+    ) -> Result<Vec<CandidatePair>>;
+}
+pub trait IndexGpuKNNWithEf<T: Scalar>: IndexGpuKNN<T> {
+    /// Get the precise k-nearest neighbors on GPU with a search radius `ef`.
+    fn gpu_knn_with_ef(
+        &self,
+        gpu_cache: &Self::GpuCache,
+        query: &[T],
+        k: usize,
+        ef: usize,
     ) -> Result<Vec<CandidatePair>>;
 }

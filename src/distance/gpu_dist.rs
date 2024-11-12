@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use anyhow::Result;
 use candle_core::{DType, Device, Tensor};
 
@@ -47,13 +48,19 @@ impl GpuVecSet {
         let dot_product = self.data.broadcast_mul(query)?.sum(1)?;
         Ok((dot_product / &self.norm_cache)?.affine(-1.0 / norm_query as f64, 1.0)?)
     }
+    pub fn batch_distance(&self, query: &Tensor, dist: DistanceAlgorithm) -> Result<Tensor> {
+        use DistanceAlgorithm::*;
+        match dist {
+            L2Sqr => self.batch_l2_sqr(query),
+            L2 => self.batch_l2(query),
+            Cosine => self.batch_cosine(query),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use rand::{rngs::StdRng, Rng, SeedableRng};
-
-    use crate::prelude::{DistanceAdapter, DistanceAlgorithm};
 
     use super::*;
 

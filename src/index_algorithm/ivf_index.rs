@@ -1,10 +1,12 @@
 use std::{collections::HashMap, ops::Index};
 
+use anyhow::Result;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     distance::{
+        gpu_dist::GpuVecSet,
         k_means::{KMeans, KMeansConfig},
         DistanceAlgorithm,
     },
@@ -150,6 +152,77 @@ impl<T: Scalar> IndexKNNWithEf<T> for IVFIndex<T> {
         result_set.into_sorted_vec()
     }
 }
+pub struct GpuIVFCache {
+    pub centroids: GpuVecSet,
+    pub clusters: Vec<GpuVecSet>,
+}
+impl<T: Scalar> IndexGpuKNNWithEf<T> for IVFIndex<T> {
+    fn gpu_knn_with_ef(
+        &self,
+        gpu_cache: &Self::GpuCache,
+        query: &[T],
+        k: usize,
+        ef: usize,
+    ) -> Result<Vec<CandidatePair>> {
+        let dist = self.dist;
+        let query = gpu_cache.centroids.parse_query(query)?;
+        let distance = gpu_cache
+            .centroids
+            .batch_distance(&query, dist)?
+            .to_vec1()?;
+        let mut centroids_result = ResultSet::new(ef);
+        for (i, d) in distance.into_iter().enumerate() {
+            centroids_result.add(CandidatePair::new(i, d));
+        }
+        let activated = centroids_result
+            .into_sorted_vec()
+            .into_iter()
+            .map(|p| p.index);
+        let mut result = ResultSet::new(k);
+        for cluster_idx in activated {
+            let cluster = &gpu_cache.clusters[cluster_idx];
+            let distance = cluster.batch_distance(&query, dist)?.to_vec1()?;
+            for (i, d) in distance.into_iter().enumerate() {
+                let index = self.clusters[cluster_idx][i];
+                result.add(CandidatePair::new(index, d));
+            }
+        }
+        Ok(result.into_sorted_vec())
+    }
+}
+
+impl<T: Scalar> IndexGpuKNN<T> for IVFIndex<T> {
+    type GpuCache = GpuIVFCache;
+    fn build_gpu_cache(&self) -> Result<Self::GpuCache> {
+        let dim = self.dim();
+        let centroids = GpuVecSet::try_from(&self.k_means.centroids)?;
+        let clusters = self
+            .clusters
+            .iter()
+            .map(|cluster| {
+                let len = cluster.len();
+                let mut vec_set = VecSet::with_capacity(dim, len);
+                for &i in cluster {
+                    vec_set.push(&self[i]);
+                }
+                GpuVecSet::try_from(&vec_set)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(GpuIVFCache {
+            centroids,
+            clusters,
+        })
+    }
+    fn gpu_knn(
+        &self,
+        gpu_cache: &Self::GpuCache,
+        query: &[T],
+        k: usize,
+    ) -> Result<Vec<CandidatePair>> {
+        self.gpu_knn_with_ef(gpu_cache, query, k, self.default_n_probes)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::fs;

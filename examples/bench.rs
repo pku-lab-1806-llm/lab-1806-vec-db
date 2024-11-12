@@ -16,7 +16,8 @@ use lab_1806_vec_db::{
         DistanceAlgorithm,
     },
     index_algorithm::{
-        candidate_pair::GroundTruth, CandidatePair, HNSWIndex, IVFIndex, LinearIndex,
+        candidate_pair::GroundTruth, ivf_index::GpuIVFCache, CandidatePair, HNSWIndex, IVFIndex,
+        LinearIndex,
     },
     prelude::*,
     scalar::Scalar,
@@ -145,6 +146,7 @@ enum DynamicIndex<T> {
     IVF(IVFIndex<T>),
     Linear(LinearIndex<T>),
     GpuLinear(LinearIndex<T>, GpuVecSet),
+    GpuIVF(IVFIndex<T>, GpuIVFCache),
 }
 impl<T: Scalar> DynamicIndex<T> {
     pub fn knn_with_ef(
@@ -167,6 +169,9 @@ impl<T: Scalar> DynamicIndex<T> {
                 IVF(index) => index.knn_with_ef(query, k, ef),
                 Linear(index) => index.knn(query, k),
                 GpuLinear(index, gpu_cache) => index.gpu_knn(&gpu_cache, &query, k).unwrap(),
+                GpuIVF(index, gpu_cache) => {
+                    index.gpu_knn_with_ef(&gpu_cache, &query, k, ef).unwrap()
+                }
             }
         }
     }
@@ -176,6 +181,7 @@ impl<T: Scalar> DynamicIndex<T> {
             DynamicIndex::IVF(_) => "IVF".to_string(),
             DynamicIndex::Linear(_) => "Linear".to_string(),
             DynamicIndex::GpuLinear(_, _) => "GpuLinear".to_string(),
+            DynamicIndex::GpuIVF(_, _) => "GpuIVF".to_string(),
         }
     }
 }
@@ -232,7 +238,12 @@ fn load_or_build_index<T: Scalar>(
             }
             IndexAlgorithmConfig::IVF(_) => {
                 let index = IVFIndex::load_with_external_vec_set(&config.index_cache, base_set)?;
-                DynamicIndex::IVF(index)
+                if config.gpu.unwrap_or(false) {
+                    let gpu_cache = index.build_gpu_cache()?;
+                    DynamicIndex::GpuIVF(index, gpu_cache)
+                } else {
+                    DynamicIndex::IVF(index)
+                }
             }
             IndexAlgorithmConfig::Linear => {
                 let index = LinearIndex::load_with_external_vec_set(&config.index_cache, base_set)?;
@@ -495,4 +506,4 @@ fn main() -> Result<()> {
 // # Test the multi-threading performance, replace search_time field with inverse_throughput.
 // cargo r -r --example bench -- config/bench_hnsw.toml -n 64 -r 10
 
-// cargo r -r -F gpu --example bench -- config/bench_10000_gpu_linear.toml
+// cargo r -r -F gpu --example bench -- config/bench_10000_gpu_ivf.toml
