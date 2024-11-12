@@ -6,9 +6,9 @@ use std::{
     thread, vec,
 };
 
+use candle_core::Tensor;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use tch::Tensor;
 
 use crate::{
     distance::{
@@ -762,7 +762,7 @@ impl<T: Scalar> IndexGpuKNNWithEf<T> for HNSWIndex<T> {
         }
         let query = gpu_cache.parse_query(query);
         let norm_query = if self.config.dist == DistanceAlgorithm::Cosine {
-            query.norm().to_f32()
+            GpuCache::norm_vec(&query).to_f32()
         } else {
             0.0
         };
@@ -869,6 +869,8 @@ mod test {
         assert_eq!(result.len(), k.min(index.len()));
 
         assert!(result.windows(2).all(|w| w[0].distance <= w[1].distance));
+
+        println!("GPU KNN Test");
 
         let result = index.gpu_knn(&gpu_cache, &index[query_index], k);
         for (res, l_res) in result.iter().zip(linear_result.iter()) {
