@@ -5,15 +5,15 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    distance::{gpu_cache::GpuCache, pq_table::PQTable, DistanceAlgorithm},
+    distance::{pq_table::PQTable, DistanceAlgorithm},
     scalar::Scalar,
     vec_set::VecSet,
 };
 pub mod prelude {
     // All Index Traits
     pub use super::{
-        IndexBuilder, IndexFromVecSet, IndexGpuKNN, IndexGpuKNNWithEf, IndexIter, IndexKNN,
-        IndexKNNWithEf, IndexPQ, IndexSerde, IndexSerdeExternalVecSet,
+        IndexBuilder, IndexFromVecSet, IndexGpuKNN, IndexIter, IndexKNN, IndexKNNWithEf, IndexPQ,
+        IndexSerde, IndexSerdeExternalVecSet,
     };
 }
 
@@ -149,16 +149,14 @@ pub trait IndexPQ<T: Scalar>: IndexKNN<T> {
         -> Vec<CandidatePair>;
 }
 
-pub trait IndexGpuKNN<T: Scalar>: IndexKNN<T> {
-    fn gpu_knn(&self, gpu_cache: &GpuCache, query: &[T], k: usize) -> Vec<CandidatePair>;
-}
-
-pub trait IndexGpuKNNWithEf<T: Scalar>: IndexKNNWithEf<T> {
-    fn gpu_knn_with_ef(
+pub trait IndexGpuKNN<T: Scalar>: IndexIter<T> {
+    type GpuCache;
+    fn build_gpu_cache(&self) -> Result<Self::GpuCache>;
+    /// Get the precise k-nearest neighbors on GPU.
+    fn gpu_knn(
         &self,
-        gpu_cache: &GpuCache,
+        gpu_cache: &Self::GpuCache,
         query: &[T],
         k: usize,
-        ef: usize,
-    ) -> Vec<CandidatePair>;
+    ) -> Result<Vec<CandidatePair>>;
 }

@@ -1,17 +1,15 @@
-label = "HNSW+GPU"
+label = "GPU Linear"
 dist = "L2Sqr"
 gnd_path = "data/gnd_10000.local.bin"
-index_cache = "data/gist_10000_hnsw.local.bin"
+index_cache = "data/gist_10000_pq_linear.local.bin"
 bench_output = "data/bench_10000.local.toml"
 gpu = true
 
-[ef.range]
-start = 120
-end = 360
-step = 40
+[ef]
+list = [0]
 
-[algorithm.HNSW]
-# Use default values
+[algorithm.Linear]
+
 
 [base]
 dim = 960

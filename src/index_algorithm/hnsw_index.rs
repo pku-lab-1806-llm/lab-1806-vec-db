@@ -6,16 +6,11 @@ use std::{
     thread, vec,
 };
 
-use candle_core::Tensor;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    distance::{
-        gpu_cache::{GpuCache, TensorToF32},
-        pq_table::PQTable,
-        DistanceAdapter, DistanceAlgorithm,
-    },
+    distance::{pq_table::PQTable, DistanceAdapter, DistanceAlgorithm},
     index_algorithm::ResultSet,
     scalar::Scalar,
     vec_set::VecSet,
@@ -726,54 +721,6 @@ impl<T: Scalar> IndexPQ<T> for HNSWIndex<T> {
         result.pq_resort(k, query, self, dist)
     }
 }
-impl<T: Scalar> HNSWIndex<T> {
-    fn gpu_dist_fn_with_cache(
-        &self,
-        gpu_cache: &GpuCache,
-        query: &Tensor,
-        norm_query: f32,
-        idx: usize,
-    ) -> f32 {
-        let dist = self.config.dist;
-        if dist == DistanceAlgorithm::Cosine {
-            if let Some(norm_cache) = &self.norm_cache {
-                let norm_cached = norm_cache[idx];
-                return gpu_cache.cosine_distance_cached(&query, idx, norm_query, norm_cached);
-            }
-        }
-        gpu_cache.distance(&query, idx, dist)
-    }
-}
-impl<T: Scalar> IndexGpuKNN<T> for HNSWIndex<T> {
-    fn gpu_knn(&self, gpu_cache: &GpuCache, query: &[T], k: usize) -> Vec<CandidatePair> {
-        self.gpu_knn_with_ef(gpu_cache, query, k, self.config.default_ef)
-    }
-}
-impl<T: Scalar> IndexGpuKNNWithEf<T> for HNSWIndex<T> {
-    fn gpu_knn_with_ef(
-        &self,
-        gpu_cache: &GpuCache,
-        query: &[T],
-        k: usize,
-        ef: usize,
-    ) -> Vec<CandidatePair> {
-        if self.len() == 0 {
-            return Vec::new();
-        }
-        let query = gpu_cache.parse_query(query);
-        let norm_query = if self.config.dist == DistanceAlgorithm::Cosine {
-            GpuCache::norm_vec(&query).to_f32()
-        } else {
-            0.0
-        };
-        let dist_fn = |idx| self.gpu_dist_fn_with_cache(gpu_cache, &query, norm_query, idx);
-        let ef = ef.max(k);
-        let level = 0;
-        let enter_point = self.greedy_search_until_level_fn(level, &dist_fn);
-        let result = self.search_on_level_fn(enter_point, level, ef, &dist_fn);
-        result.into_sorted_vec_limit(k)
-    }
-}
 
 #[cfg(test)]
 mod test {
@@ -826,7 +773,6 @@ mod test {
         for vec in raw_vec_set.iter() {
             vec_set.push(&vec[..clipped_dim]);
         }
-        let gpu_cache = GpuCache::from(&vec_set);
 
         // Test the HNSWIndex by comparing with LinearIndex.
         let index = HNSWIndex::<f32>::build_on_vec_set(&vec_set, dist, config, false, &mut rng);
@@ -861,18 +807,6 @@ mod test {
         let result = index.knn(&index[query_index], k);
         let linear_result = linear_index.knn(&linear_index[query_index], k);
 
-        for (res, l_res) in result.iter().zip(linear_result.iter()) {
-            println!("Index: {}, Distance: {}", res.index, res.distance);
-            println!("Vector: {}", clip_msg(&format!("{:?}", &index[res.index])));
-            assert_eq!(res.index, l_res.index, "Index mismatch");
-        }
-        assert_eq!(result.len(), k.min(index.len()));
-
-        assert!(result.windows(2).all(|w| w[0].distance <= w[1].distance));
-
-        println!("GPU KNN Test");
-
-        let result = index.gpu_knn(&gpu_cache, &index[query_index], k);
         for (res, l_res) in result.iter().zip(linear_result.iter()) {
             println!("Index: {}, Distance: {}", res.index, res.distance);
             println!("Vector: {}", clip_msg(&format!("{:?}", &index[res.index])));

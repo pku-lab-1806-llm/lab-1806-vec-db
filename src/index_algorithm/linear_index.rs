@@ -3,14 +3,14 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    distance::{DistanceAdapter, DistanceAlgorithm},
+    distance::{gpu_dist::GpuVecSet, DistanceAdapter, DistanceAlgorithm},
     index_algorithm::CandidatePair,
     scalar::Scalar,
     vec_set::VecSet,
 };
 use std::{ops::Index, path::Path};
 
-use super::{prelude::*, ResultSet};
+use super::{prelude::*, IndexGpuKNN, ResultSet};
 
 /// Linear index for the k-nearest neighbors search.
 /// The distance algorithm is configurable.
@@ -92,6 +92,33 @@ impl<T: Scalar> IndexPQ<T> for LinearIndex<T> {
             pq_result.add(CandidatePair::new(i, d));
         }
         pq_result.pq_resort(k, query, self, self.dist)
+    }
+}
+
+impl<T: Scalar> IndexGpuKNN<T> for LinearIndex<T> {
+    type GpuCache = GpuVecSet;
+    fn build_gpu_cache(&self) -> Result<Self::GpuCache> {
+        GpuVecSet::try_from(&self.vec_set)
+    }
+    fn gpu_knn(
+        &self,
+        gpu_cache: &Self::GpuCache,
+        query: &[T],
+        k: usize,
+    ) -> Result<Vec<CandidatePair>> {
+        use DistanceAlgorithm::*;
+        let query = gpu_cache.parse_query(query)?;
+        let distance: Vec<f32> = match self.dist {
+            L2Sqr => gpu_cache.batch_l2_sqr(&query)?,
+            L2 => gpu_cache.batch_l2(&query)?,
+            Cosine => gpu_cache.batch_cosine(&query)?,
+        }
+        .to_vec1()?;
+        let mut result = ResultSet::new(k);
+        for (i, d) in distance.into_iter().enumerate() {
+            result.add(CandidatePair::new(i, d));
+        }
+        Ok(result.into_sorted_vec())
     }
 }
 

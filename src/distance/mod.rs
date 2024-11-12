@@ -1,4 +1,4 @@
-pub mod gpu_cache;
+pub mod gpu_dist;
 pub mod k_means;
 pub mod pq_table;
 

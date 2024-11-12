@@ -9,7 +9,7 @@ use std::{
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use crate::distance::{gpu_cache::GpuScalar, DistanceScalar};
+use crate::distance::{gpu_dist::GpuScalar, DistanceScalar};
 
 pub mod prelude {
     pub use super::{BinaryScalar, Scalar};

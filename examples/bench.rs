@@ -11,7 +11,7 @@ use clap::Parser;
 use lab_1806_vec_db::{
     config::{IndexAlgorithmConfig, VecDataConfig},
     distance::{
-        gpu_cache::GpuCache,
+        gpu_dist::GpuVecSet,
         pq_table::{PQConfig, PQTable},
         DistanceAlgorithm,
     },
@@ -144,6 +144,7 @@ enum DynamicIndex<T> {
     HNSW(HNSWIndex<T>),
     IVF(IVFIndex<T>),
     Linear(LinearIndex<T>),
+    GpuLinear(LinearIndex<T>, GpuVecSet),
 }
 impl<T: Scalar> DynamicIndex<T> {
     pub fn knn_with_ef(
@@ -152,7 +153,6 @@ impl<T: Scalar> DynamicIndex<T> {
         k: usize,
         ef: usize,
         pq: &Option<PQTable<T>>,
-        gpu_cache: &Option<GpuCache>,
     ) -> Vec<CandidatePair> {
         use DynamicIndex::*;
         if let Some(pq) = pq {
@@ -161,16 +161,12 @@ impl<T: Scalar> DynamicIndex<T> {
                 Linear(index) => index.knn_pq(query, k, ef, pq),
                 _ => unimplemented!("{}+PQ is not implemented.", self.index_name()),
             }
-        } else if let Some(gpu_cache) = gpu_cache {
-            match self {
-                HNSW(index) => index.gpu_knn_with_ef(gpu_cache, query, k, ef),
-                _ => unimplemented!("{}+GPU is not implemented.", self.index_name()),
-            }
         } else {
             match self {
                 HNSW(index) => index.knn_with_ef(query, k, ef),
                 IVF(index) => index.knn_with_ef(query, k, ef),
                 Linear(index) => index.knn(query, k),
+                GpuLinear(index, gpu_cache) => index.gpu_knn(&gpu_cache, &query, k).unwrap(),
             }
         }
     }
@@ -179,6 +175,7 @@ impl<T: Scalar> DynamicIndex<T> {
             DynamicIndex::HNSW(_) => "HNSW".to_string(),
             DynamicIndex::IVF(_) => "IVF".to_string(),
             DynamicIndex::Linear(_) => "Linear".to_string(),
+            DynamicIndex::GpuLinear(_, _) => "GpuLinear".to_string(),
         }
     }
 }
@@ -239,7 +236,12 @@ fn load_or_build_index<T: Scalar>(
             }
             IndexAlgorithmConfig::Linear => {
                 let index = LinearIndex::load_with_external_vec_set(&config.index_cache, base_set)?;
-                DynamicIndex::Linear(index)
+                if config.gpu.unwrap_or(false) {
+                    let gpu_cache = index.build_gpu_cache()?;
+                    DynamicIndex::GpuLinear(index, gpu_cache)
+                } else {
+                    DynamicIndex::Linear(index)
+                }
             }
         };
         let elapsed = start.elapsed().as_secs_f32();
@@ -406,12 +408,6 @@ fn main() -> Result<()> {
 
     let pq = load_or_build_pq(&bench_config, &base_set, &mut rng)?;
 
-    let gpu_cache = if let Some(true) = bench_config.gpu {
-        Some(GpuCache::from(&base_set))
-    } else {
-        None
-    };
-
     let index = load_or_build_index(bench_config, base_set, &mut rng)?;
 
     let mut bench_result = BenchResult::new(label);
@@ -426,8 +422,7 @@ fn main() -> Result<()> {
                 let (sender, receiver) = mpsc::channel();
                 thread::scope(|s| {
                     for idx in 0..num_threads {
-                        let (test_set, gnd, pq, index, gpu_cache) =
-                            (&test_set, &gnd, &pq, &index, &gpu_cache);
+                        let (test_set, gnd, pq, index) = (&test_set, &gnd, &pq, &index);
                         let sender = sender.clone();
                         s.spawn(move || {
                             let mut thread_recorder = AvgRecorder::new();
@@ -437,7 +432,7 @@ fn main() -> Result<()> {
                                 .skip(idx)
                                 .step_by(num_threads)
                             {
-                                let result_set = index.knn_with_ef(query, k, ef, &pq, &gpu_cache);
+                                let result_set = index.knn_with_ef(query, k, ef, &pq);
 
                                 let recall = gnd.recall(&result_set);
                                 thread_recorder.add(recall);
@@ -452,7 +447,7 @@ fn main() -> Result<()> {
             } else {
                 for (query, gnd) in test_set.iter().zip(gnd.iter()) {
                     // benchmark here
-                    let result_set = index.knn_with_ef(query, k, ef, &pq, &gpu_cache);
+                    let result_set = index.knn_with_ef(query, k, ef, &pq);
 
                     let recall = gnd.recall(&result_set);
                     avg_recall.add(recall);
@@ -500,4 +495,4 @@ fn main() -> Result<()> {
 // # Test the multi-threading performance, replace search_time field with inverse_throughput.
 // cargo r -r --example bench -- config/bench_hnsw.toml -n 64 -r 10
 
-// cargo r -r --example bench -F gpu -- config/bench_gpu_hnsw.toml
+// cargo r -r -F gpu --example bench -- config/bench_10000_gpu_linear.toml
