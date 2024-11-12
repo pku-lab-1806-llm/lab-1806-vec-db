@@ -11,18 +11,18 @@ use clap::Parser;
 use lab_1806_vec_db::{
     config::{IndexAlgorithmConfig, VecDataConfig},
     distance::{
-        gpu_dist::GpuVecSet,
         pq_table::{PQConfig, PQTable},
         DistanceAlgorithm,
     },
     index_algorithm::{
-        candidate_pair::GroundTruth, ivf_index::GpuIVFCache, CandidatePair, HNSWIndex, IVFIndex,
-        LinearIndex,
+        candidate_pair::GroundTruth, CandidatePair, HNSWIndex, IVFIndex, LinearIndex,
     },
     prelude::*,
     scalar::Scalar,
     vec_set::VecSet,
 };
+#[cfg(feature = "gpu")]
+use lab_1806_vec_db::{distance::gpu_dist::GpuVecSet, index_algorithm::ivf_index::GpuIVFCache};
 use plotly::{Plot, Scatter, Trace};
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -145,7 +145,11 @@ enum DynamicIndex<T> {
     HNSW(HNSWIndex<T>),
     IVF(IVFIndex<T>),
     Linear(LinearIndex<T>),
+
+    #[cfg(feature = "gpu")]
     GpuLinear(LinearIndex<T>, GpuVecSet),
+
+    #[cfg(feature = "gpu")]
     GpuIVF(IVFIndex<T>, GpuIVFCache),
 }
 impl<T: Scalar> DynamicIndex<T> {
@@ -168,7 +172,11 @@ impl<T: Scalar> DynamicIndex<T> {
                 HNSW(index) => index.knn_with_ef(query, k, ef),
                 IVF(index) => index.knn_with_ef(query, k, ef),
                 Linear(index) => index.knn(query, k),
+
+                #[cfg(feature = "gpu")]
                 GpuLinear(index, gpu_cache) => index.gpu_knn(&gpu_cache, &query, k).unwrap(),
+
+                #[cfg(feature = "gpu")]
                 GpuIVF(index, gpu_cache) => {
                     index.gpu_knn_with_ef(&gpu_cache, &query, k, ef).unwrap()
                 }
@@ -180,7 +188,11 @@ impl<T: Scalar> DynamicIndex<T> {
             DynamicIndex::HNSW(_) => "HNSW".to_string(),
             DynamicIndex::IVF(_) => "IVF".to_string(),
             DynamicIndex::Linear(_) => "Linear".to_string(),
+
+            #[cfg(feature = "gpu")]
             DynamicIndex::GpuLinear(_, _) => "GpuLinear".to_string(),
+
+            #[cfg(feature = "gpu")]
             DynamicIndex::GpuIVF(_, _) => "GpuIVF".to_string(),
         }
     }
@@ -238,21 +250,29 @@ fn load_or_build_index<T: Scalar>(
             }
             IndexAlgorithmConfig::IVF(_) => {
                 let index = IVFIndex::load_with_external_vec_set(&config.index_cache, base_set)?;
+
+                #[cfg(feature = "gpu")]
                 if config.gpu.unwrap_or(false) {
                     let gpu_cache = index.build_gpu_cache()?;
                     DynamicIndex::GpuIVF(index, gpu_cache)
                 } else {
                     DynamicIndex::IVF(index)
                 }
+                #[cfg(not(feature = "gpu"))]
+                DynamicIndex::IVF(index)
             }
             IndexAlgorithmConfig::Linear => {
                 let index = LinearIndex::load_with_external_vec_set(&config.index_cache, base_set)?;
+
+                #[cfg(feature = "gpu")]
                 if config.gpu.unwrap_or(false) {
                     let gpu_cache = index.build_gpu_cache()?;
                     DynamicIndex::GpuLinear(index, gpu_cache)
                 } else {
                     DynamicIndex::Linear(index)
                 }
+                #[cfg(not(feature = "gpu"))]
+                DynamicIndex::Linear(index)
             }
         };
         let elapsed = start.elapsed().as_secs_f32();

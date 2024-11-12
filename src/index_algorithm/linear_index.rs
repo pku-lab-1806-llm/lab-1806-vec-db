@@ -2,15 +2,17 @@ use anyhow::Result;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "gpu")]
+use crate::distance::gpu_dist::GpuVecSet;
 use crate::{
-    distance::{gpu_dist::GpuVecSet, DistanceAdapter, DistanceAlgorithm},
+    distance::{DistanceAdapter, DistanceAlgorithm},
     index_algorithm::CandidatePair,
     scalar::Scalar,
     vec_set::VecSet,
 };
 use std::{ops::Index, path::Path};
 
-use super::{prelude::*, IndexGpuKNN, ResultSet};
+use super::{prelude::*, ResultSet};
 
 /// Linear index for the k-nearest neighbors search.
 /// The distance algorithm is configurable.
@@ -95,6 +97,7 @@ impl<T: Scalar> IndexPQ<T> for LinearIndex<T> {
     }
 }
 
+#[cfg(feature = "gpu")]
 impl<T: Scalar> IndexGpuKNN<T> for LinearIndex<T> {
     type GpuCache = GpuVecSet;
     fn build_gpu_cache(&self) -> Result<Self::GpuCache> {

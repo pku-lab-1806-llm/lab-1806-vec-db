@@ -30,6 +30,7 @@ impl<T> Index<usize> for VecSet<T> {
 }
 
 impl<T: Scalar> VecSet<T> {
+    #[cfg(feature = "gpu")]
     pub(crate) fn as_slice(&self) -> &[T] {
         &self.data
     }

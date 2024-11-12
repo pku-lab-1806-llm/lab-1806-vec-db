@@ -4,9 +4,10 @@ use anyhow::Result;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "gpu")]
+use crate::distance::gpu_dist::GpuVecSet;
 use crate::{
     distance::{
-        gpu_dist::GpuVecSet,
         k_means::{KMeans, KMeansConfig},
         DistanceAlgorithm,
     },
@@ -152,10 +153,14 @@ impl<T: Scalar> IndexKNNWithEf<T> for IVFIndex<T> {
         result_set.into_sorted_vec()
     }
 }
+
+#[cfg(feature = "gpu")]
 pub struct GpuIVFCache {
     pub centroids: GpuVecSet,
     pub clusters: Vec<GpuVecSet>,
 }
+
+#[cfg(feature = "gpu")]
 impl<T: Scalar> IndexGpuKNNWithEf<T> for IVFIndex<T> {
     fn gpu_knn_with_ef(
         &self,
@@ -191,6 +196,7 @@ impl<T: Scalar> IndexGpuKNNWithEf<T> for IVFIndex<T> {
     }
 }
 
+#[cfg(feature = "gpu")]
 impl<T: Scalar> IndexGpuKNN<T> for IVFIndex<T> {
     type GpuCache = GpuIVFCache;
     fn build_gpu_cache(&self) -> Result<Self::GpuCache> {

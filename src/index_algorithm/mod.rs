@@ -12,9 +12,11 @@ use crate::{
 pub mod prelude {
     // All Index Traits
     pub use super::{
-        IndexBuilder, IndexFromVecSet, IndexGpuKNN, IndexGpuKNNWithEf, IndexIter, IndexKNN,
-        IndexKNNWithEf, IndexPQ, IndexSerde, IndexSerdeExternalVecSet,
+        IndexBuilder, IndexFromVecSet, IndexIter, IndexKNN, IndexKNNWithEf, IndexPQ, IndexSerde,
+        IndexSerdeExternalVecSet,
     };
+    #[cfg(feature = "gpu")]
+    pub use super::{IndexGpuKNN, IndexGpuKNNWithEf};
 }
 
 pub mod candidate_pair;
@@ -149,6 +151,7 @@ pub trait IndexPQ<T: Scalar>: IndexKNN<T> {
         -> Vec<CandidatePair>;
 }
 
+#[cfg(feature = "gpu")]
 pub trait IndexGpuKNN<T: Scalar>: IndexIter<T> {
     type GpuCache;
     fn build_gpu_cache(&self) -> Result<Self::GpuCache>;
@@ -160,6 +163,8 @@ pub trait IndexGpuKNN<T: Scalar>: IndexIter<T> {
         k: usize,
     ) -> Result<Vec<CandidatePair>>;
 }
+
+#[cfg(feature = "gpu")]
 pub trait IndexGpuKNNWithEf<T: Scalar>: IndexGpuKNN<T> {
     /// Get the precise k-nearest neighbors on GPU with a search radius `ef`.
     fn gpu_knn_with_ef(

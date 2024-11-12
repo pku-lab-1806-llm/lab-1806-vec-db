@@ -9,7 +9,9 @@ use std::{
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use crate::distance::{gpu_dist::GpuScalar, DistanceScalar};
+#[cfg(feature = "gpu")]
+use crate::distance::gpu_dist::GpuScalar;
+use crate::distance::DistanceScalar;
 
 pub mod prelude {
     pub use super::{BinaryScalar, Scalar};
@@ -114,6 +116,11 @@ impl BinaryScalar for f32 {}
 /// Supported scalar types:
 /// - `u8`
 /// - `f32`
+
+#[cfg(feature = "gpu")]
 pub trait Scalar: BaseScalar + DistanceScalar + BinaryScalar + SerdeScalar + GpuScalar {}
+
+#[cfg(not(feature = "gpu"))]
+pub trait Scalar: BaseScalar + DistanceScalar + BinaryScalar + SerdeScalar {}
 impl Scalar for u8 {}
 impl Scalar for f32 {}

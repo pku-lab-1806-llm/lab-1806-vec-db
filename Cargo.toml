@@ -30,3 +30,6 @@ plotly = "0.10.0"
 [features]
 default = []
 gpu = ["candle-core"]
+
+[[example]]
+name = "bench"
