@@ -16,7 +16,7 @@ pub trait ThreadSave: Send + Sync {
         }
         self.save_to(&tmp);
         if tmp.is_file() {
-            std::fs::rename(&tmp, path).unwrap();
+            std::fs::copy(&tmp, path).unwrap();
         }
     }
 }
