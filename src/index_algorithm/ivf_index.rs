@@ -1,6 +1,7 @@
-use std::{collections::HashMap, ops::Index};
+use std::ops::Index;
 
 use rand::Rng;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -85,10 +86,12 @@ impl<T: Scalar> IndexFromVecSet<T> for IVFIndex<T> {
             None => KMeans::from_vec_set(&vec_set, k_means_config, rng),
         };
         let mut clusters = vec![vec![]; k];
-        let mut index_map = HashMap::new();
-        for (i, v) in vec_set.iter().enumerate() {
-            let idx = k_means.find_nearest(v);
-            index_map.insert(i, (idx, clusters[idx].len()));
+        let vec_refs = vec_set.iter().collect::<Vec<_>>();
+        let vec_centroid: Vec<usize> = vec_refs
+            .par_iter()
+            .map(|v| k_means.find_nearest(v))
+            .collect();
+        for (i, &idx) in vec_centroid.iter().enumerate() {
             clusters[idx].push(i);
         }
         let default_n_probes = 4;

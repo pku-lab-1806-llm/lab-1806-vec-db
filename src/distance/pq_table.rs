@@ -80,11 +80,12 @@ pub struct PQLookupTable<'a, T> {
     pq_table: &'a PQTable<T>,
     /// Size `(m * k,)`. For group `i` and centroid `c`, the cached value is at `i * k + c`.
     ///
-    /// Cache dot_product(v, c)
+    /// - L2Sqr: l2_sqr(v, c)
+    /// - Cosine: dot_product(v, c)
     lookup: Vec<f32>,
     /// Cache for distance calculation.
     ///
-    /// - L2Sqr: dot_product(v, v)
+    /// - L2Sqr: 0.0
     /// - Cosine: vec_norm(v)
     dist_cache: f32,
 }
@@ -112,7 +113,10 @@ pub struct PQTable<T> {
     pub group_k_means: Vec<KMeans<T>>,
     /// Dot product cache (flattened).
     /// Size `(m * k,)`.
-    pub dot_product_cache: Vec<f32>,
+    ///
+    /// - L2Sqr: 0
+    /// - Cosine: dot_product(c, c)
+    pub dist_cache: Vec<f32>,
 }
 
 impl<T: Scalar> PQTable<T> {
@@ -134,7 +138,7 @@ impl<T: Scalar> PQTable<T> {
         let dim = vec_set.dim();
         let d = dim / m;
         let mut group_k_means = Vec::with_capacity(m);
-        let mut dot_product_cache = Vec::with_capacity(m * k);
+        let mut dist_cache = Vec::with_capacity(m * k);
         for i in 0..m {
             let k_means_config = KMeansConfig {
                 k,
@@ -147,7 +151,10 @@ impl<T: Scalar> PQTable<T> {
             let k_means = KMeans::from_vec_set(k_means_vec_set, k_means_config, rng);
 
             for c in k_means.centroids.iter() {
-                dot_product_cache.push(T::dot_product(c, c));
+                dist_cache.push(match config.dist {
+                    L2Sqr => 0.0,
+                    Cosine => T::dot_product(c, c),
+                });
             }
             group_k_means.push(k_means);
         }
@@ -167,7 +174,7 @@ impl<T: Scalar> PQTable<T> {
             encoded_dim,
             encoded_vec_set,
             group_k_means,
-            dot_product_cache,
+            dist_cache,
         }
     }
 
@@ -184,13 +191,19 @@ impl<T: Scalar> PQTable<T> {
             let centroids = &k_means.centroids;
             let selected = d * i..d * (i + 1);
             let vs = &v[selected];
-            centroids
-                .iter()
-                .map(|c| T::dot_product(vs, c))
-                .for_each(|d| lookup.push(d));
+            match self.config.dist {
+                L2Sqr => centroids
+                    .iter()
+                    .map(|c| T::l2_sqr_distance(vs, c))
+                    .for_each(|d| lookup.push(d)),
+                Cosine => centroids
+                    .iter()
+                    .map(|c| T::dot_product(vs, c))
+                    .for_each(|d| lookup.push(d)),
+            }
         }
         let dist_cache = match self.config.dist {
-            L2Sqr => T::dot_product(v, v),
+            L2Sqr => 0.0,
             Cosine => T::vec_norm(v),
         };
         PQLookupTable {
@@ -228,15 +241,17 @@ impl<T: Scalar> DistanceAdapter<[u8], PQLookupTable<'_, T>> for DistanceAlgorith
 
         let lookup = &lookup_table.lookup;
 
-        let mut dot_product = 0.0;
+        let mut sum = 0.0;
         let mut centroid_dot_product = 0.0;
 
         let mut push_one = |i: usize, idx: usize| {
             if i >= m {
                 return;
             }
-            dot_product += lookup[i * k + idx];
-            centroid_dot_product += pq_table.dot_product_cache[i * k + idx];
+            sum += lookup[i * k + idx];
+            if config.dist == Cosine {
+                centroid_dot_product += pq_table.dist_cache[i * k + idx];
+            }
         };
 
         match n_bits {
@@ -264,12 +279,12 @@ impl<T: Scalar> DistanceAdapter<[u8], PQLookupTable<'_, T>> for DistanceAlgorith
         }
 
         match self {
-            L2Sqr => lookup_table.dist_cache + centroid_dot_product - 2.0 * dot_product,
+            L2Sqr => sum,
             Cosine => {
                 let norm0 = centroid_dot_product.sqrt();
                 let norm1 = lookup_table.dist_cache;
 
-                1.0 - dot_product / (norm0 * norm1).max(1e-10)
+                1.0 - sum / (norm0 * norm1).max(1e-10)
             }
         }
     }
