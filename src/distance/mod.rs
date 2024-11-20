@@ -1,6 +1,5 @@
 pub mod k_means;
 pub mod pq_table;
-
 use serde::{Deserialize, Serialize};
 
 pub mod prelude {
@@ -19,31 +18,27 @@ pub mod prelude {
 pub enum DistanceAlgorithm {
     /// L2 squared distance, AKA squared Euclidean distance.
     ///
-    /// Range: `[0.0, +inf]`
+    /// Range: 0.0..(inf)
     L2Sqr,
-    /// L2 distance, AKA Euclidean distance.
-    ///
-    /// Range: `[0.0, +inf]`
-    L2,
     /// Cosine distance.
     /// `cosine_distance(a, b) = 1 - dot_product(a, b) / (norm(a) * norm(b))`
     ///
-    /// Range: `[0.0, 2.0]`
+    /// Range: 0.0..2.0
     Cosine,
 }
 use DistanceAlgorithm::*;
+impl DistanceAlgorithm {
+    pub fn dist_cache<T: Scalar>(&self, a: &[T]) -> f32 {
+        match self {
+            L2Sqr => T::dot_product(a, a),
+            Cosine => T::vec_norm(a),
+        }
+    }
+}
 
-use crate::scalar::BaseScalar;
+use crate::scalar::{BaseScalar, Scalar};
 
 pub trait DistanceScalar: BaseScalar {
-    /// The *square* of the L2 distance.
-    fn l2_sqr_distance(a: &[Self], b: &[Self]) -> f32;
-
-    /// L2 distance.
-    fn l2_distance(a: &[Self], b: &[Self]) -> f32 {
-        Self::l2_sqr_distance(a, b).sqrt()
-    }
-
     /// The dot product of two vectors.
     fn dot_product(a: &[Self], b: &[Self]) -> f32;
 
@@ -52,9 +47,20 @@ pub trait DistanceScalar: BaseScalar {
         Self::dot_product(a, a).sqrt()
     }
 
+    /// L2 squared distance.
+    fn l2_sqr_distance(a: &[Self], b: &[Self]) -> f32 {
+        let ip_a = Self::dot_product(a, a);
+        let ip_b = Self::dot_product(b, b);
+        Self::l2_sqr_distance_cached(a, b, ip_a, ip_b)
+    }
+
+    /// L2 squared distance with pre-calculated inner products.
+    fn l2_sqr_distance_cached(a: &[Self], b: &[Self], ip_a: f32, ip_b: f32) -> f32 {
+        // (a-b)^2 = a^2 + b^2 - 2ab
+        ip_a + ip_b - 2.0 * Self::dot_product(a, b)
+    }
+
     /// Cosine distance.
-    /// `cosine_distance = 1 - dot_product / (norm_lhs * norm_rhs)`
-    /// Range: `[0.0, 2.0]`
     fn cosine_distance(a: &[Self], b: &[Self]) -> f32 {
         let norm_lhs = Self::vec_norm(a);
         let norm_rhs = Self::vec_norm(b);
@@ -63,25 +69,15 @@ pub trait DistanceScalar: BaseScalar {
 
     /// Cosine distance with pre-calculated norms.
     fn cosine_distance_cached(a: &[Self], b: &[Self], norm_a: f32, norm_b: f32) -> f32 {
-        let dot_product_sqr = Self::dot_product(a, b);
-        1.0 - dot_product_sqr / (norm_a * norm_b)
+        1.0 - Self::dot_product(a, b) / (norm_a * norm_b).max(1e-10)
     }
 }
 impl DistanceScalar for f32 {
-    fn l2_sqr_distance(a: &[Self], b: &[Self]) -> f32 {
-        a.iter().zip(b.iter()).map(|(x, y)| (x - y).powi(2)).sum()
-    }
     fn dot_product(a: &[Self], b: &[Self]) -> f32 {
         a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
     }
 }
 impl DistanceScalar for u8 {
-    fn l2_sqr_distance(a: &[Self], b: &[Self]) -> f32 {
-        a.iter()
-            .zip(b.iter())
-            .map(|(x, y)| (*x as f32 - *y as f32).powi(2))
-            .sum()
-    }
     fn dot_product(a: &[Self], b: &[Self]) -> f32 {
         a.iter()
             .zip(b.iter())
@@ -103,21 +99,23 @@ impl<T: DistanceScalar> DistanceAdapter<[T], [T]> for DistanceAlgorithm {
     fn distance(&self, a: &[T], b: &[T]) -> f32 {
         match self {
             L2Sqr => T::l2_sqr_distance(a, b),
-            L2 => T::l2_distance(a, b),
             Cosine => T::cosine_distance(a, b),
         }
     }
 }
 
-/// Distance adapter for vectors with pre-calculated norms.
+/// Distance adapter for vectors with pre-calculated values.
+///
+/// - For IPDist, no need to cache anything.
+/// - For L2Sqr, cache dot_product(a, a) and dot_product(b, b).
+/// - For Cosine, cache vec_norm(a) and vec_norm(b).
 impl<T: DistanceScalar> DistanceAdapter<(&[T], f32), (&[T], f32)> for DistanceAlgorithm {
     fn distance(&self, a: &(&[T], f32), b: &(&[T], f32)) -> f32 {
-        let (a, norm_a) = a;
-        let (b, norm_b) = b;
+        let (a, cache_a) = a;
+        let (b, cache_b) = b;
         match self {
-            L2Sqr => T::l2_sqr_distance(a, b),
-            L2 => T::l2_distance(a, b),
-            Cosine => T::cosine_distance_cached(a, b, *norm_a, *norm_b),
+            L2Sqr => T::l2_sqr_distance_cached(a, b, *cache_a, *cache_b),
+            Cosine => T::cosine_distance_cached(a, b, *cache_a, *cache_b),
         }
     }
 }

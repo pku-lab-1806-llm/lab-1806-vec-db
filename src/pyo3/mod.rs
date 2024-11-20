@@ -17,7 +17,6 @@ pub mod lab_1806_vec_db {
         use DistanceAlgorithm::*;
         match dist {
             "l2sqr" => Ok(L2Sqr),
-            "l2" => Ok(L2),
             "cosine" => Ok(Cosine),
             _ => Err(PyValueError::new_err("Invalid distance function")),
         }
@@ -26,7 +25,6 @@ pub mod lab_1806_vec_db {
         use DistanceAlgorithm::*;
         match dist {
             L2Sqr => "l2sqr",
-            L2 => "l2",
             Cosine => "cosine",
             #[allow(unreachable_patterns)]
             _ => panic!("Invalid distance function"),
@@ -35,11 +33,10 @@ pub mod lab_1806_vec_db {
 
     /// Calculate the distance between two vectors.
     ///
-    /// `dist` can be "l2sqr", "l2" or "cosine" (default: "cosine", for RAG).
+    /// `dist` can be "l2sqr" or "cosine" (default: "cosine", for RAG).
     ///
     ///
     /// - l2sqr: squared Euclidean distance
-    /// - l2: Euclidean distance
     /// - cosine: cosine distance (1 - cosine_similarity) [0.0, 2.0]
     ///
     /// Raises:

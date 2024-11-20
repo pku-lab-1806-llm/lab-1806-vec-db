@@ -17,9 +17,9 @@ use super::{prelude::*, ResultSet};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinearIndex<T> {
     /// The distance algorithm.
-    pub dist: DistanceAlgorithm,
+    pub(crate) dist: DistanceAlgorithm,
     /// The vector set.
-    pub vec_set: VecSet<T>,
+    pub(crate) vec_set: VecSet<T>,
 }
 impl<T: Scalar> Index<usize> for LinearIndex<T> {
     type Output = [T];
@@ -91,7 +91,7 @@ impl<T: Scalar> IndexPQ<T> for LinearIndex<T> {
             let d = self.dist.d(v, &lookup);
             pq_result.add(CandidatePair::new(i, d));
         }
-        pq_result.pq_resort(k, query, self, self.dist)
+        pq_result.pq_resort(k, |idx| self.dist.d(query, &self[idx]))
     }
 }
 

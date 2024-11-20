@@ -5,9 +5,9 @@ index_cache = "data/gist_hnsw.local.bin"
 bench_output = "data/bench.local.toml"
 
 [ef.range]
-start = 200
-end = 650
-step = 50
+start = 180
+end = 600
+step = 60
 
 [algorithm.HNSW]
 max_elements = 1000000
