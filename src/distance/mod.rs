@@ -27,8 +27,16 @@ pub enum DistanceAlgorithm {
     Cosine,
 }
 use DistanceAlgorithm::*;
+impl DistanceAlgorithm {
+    pub fn dist_cache<T: Scalar>(&self, a: &[T]) -> f32 {
+        match self {
+            L2Sqr => T::dot_product(a, a),
+            Cosine => T::vec_norm(a),
+        }
+    }
+}
 
-use crate::scalar::BaseScalar;
+use crate::scalar::{BaseScalar, Scalar};
 
 pub trait DistanceScalar: BaseScalar {
     /// The dot product of two vectors.

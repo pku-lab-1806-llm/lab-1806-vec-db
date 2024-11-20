@@ -331,7 +331,7 @@ impl<T: Scalar> HNSWIndex<T> {
         ef: usize,
         query: &[T],
     ) -> ResultSet {
-        let query_cache = self.calc_dist_cache(query);
+        let query_cache = self.config.dist.dist_cache(query);
         let dist_fn = |idx| self.dist_with_cache(idx, query, query_cache);
 
         self.search_on_level_fn(enter_point, level, ef, &dist_fn)
@@ -390,18 +390,12 @@ impl<T: Scalar> HNSWIndex<T> {
     fn inner_dist_fn(&self, idx0: usize, idx1: usize) -> f32 {
         self.dist_with_cache(idx0, &self[idx1], self.dist_cache[idx1])
     }
-    fn calc_dist_cache(&self, v: &[T]) -> f32 {
-        match self.config.dist {
-            DistanceAlgorithm::L2Sqr => T::dot_product(v, v),
-            DistanceAlgorithm::Cosine => T::vec_norm(v),
-        }
-    }
     /// Greedy search until reaching the base layer.
     ///
     /// - This does *NOT* search nearest vector on `target_level`.
     /// - Starts at enter_point. NEVER call this when adding a vector higher than enter_level.
     fn greedy_search_until_level(&self, target_level: usize, query: &[T]) -> usize {
-        let query_cache = self.calc_dist_cache(query);
+        let query_cache = self.config.dist.dist_cache(query);
         let dist_fn = |idx| self.dist_with_cache(idx, query, query_cache);
         self.greedy_search_until_level_fn(target_level, &dist_fn)
     }
@@ -413,7 +407,7 @@ impl<T: Scalar> HNSWIndex<T> {
             self.dist_cache = self
                 .vec_set
                 .iter()
-                .map(|v| self.calc_dist_cache(v))
+                .map(|v| self.config.dist.dist_cache(v))
                 .collect();
         }
     }
@@ -720,7 +714,7 @@ impl<T: Scalar> IndexPQ<T> for HNSWIndex<T> {
         let enter_point = self.greedy_search_until_level_fn(level, &dist_fn);
         let result = self.search_on_level_fn(enter_point, level, ef, &dist_fn);
 
-        let query_cache = self.calc_dist_cache(query);
+        let query_cache = self.config.dist.dist_cache(query);
         let index_dist = |idx| self.dist_with_cache(idx, query, query_cache);
         result.pq_resort(k, index_dist)
     }
