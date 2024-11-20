@@ -19,7 +19,7 @@ Low-level APIs are also provided. But before using them, make sure you know what
 
 `BareVecTable` is a low-level API designed for a single table without auto-saving or multi-threading support.
 
-`calc_dist` is a helper function to calculate the distance between two vectors. It supports "cosine", "l2sqr" and "l2", default to "cosine". To make sure smaller is closer, we make `cosine_dist = 1 - cosine_similarity`.
+`calc_dist` is a helper function to calculate the distance between two vectors. It supports "cosine" and "l2sqr", default to "cosine". To make sure smaller is closer, we make `cosine_dist = 1 - cosine_similarity`.
 
 ```py
 import os
