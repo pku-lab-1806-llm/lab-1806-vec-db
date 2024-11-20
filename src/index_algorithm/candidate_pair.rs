@@ -1,13 +1,9 @@
-use std::{collections::BTreeSet, ops::Index};
+use std::collections::BTreeSet;
 
 use anyhow::Result;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    distance::{DistanceAdapter, DistanceAlgorithm},
-    scalar::Scalar,
-};
 /// A pair of the index and the distance.
 /// For the response of the k-nearest neighbors search.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -86,12 +82,7 @@ impl ResultSet {
     }
 
     /// Pick at most m candidates as new neighbors heuristically.
-    pub fn heuristic<T: Scalar>(
-        self,
-        m: usize,
-        vec_set: &impl Index<usize, Output = [T]>,
-        dist: DistanceAlgorithm,
-    ) -> Vec<CandidatePair> {
+    pub fn heuristic(self, m: usize, dist_fn: impl Fn(usize, usize) -> f32) -> Vec<CandidatePair> {
         let mut neighbors: Vec<CandidatePair> = Vec::with_capacity(m);
 
         for pair in self.results {
@@ -99,8 +90,8 @@ impl ResultSet {
                 break;
             }
             let d = pair.distance();
-            let v = &vec_set[pair.index];
-            if neighbors.iter().all(|p| dist.d(v, &vec_set[p.index]) >= d) {
+            let v = pair.index;
+            if neighbors.iter().all(|p| dist_fn(v, p.index) >= d) {
                 neighbors.push(pair);
             }
         }
@@ -108,18 +99,10 @@ impl ResultSet {
     }
 
     /// Call this after PQ search to resort the result set.
-    pub fn pq_resort<T: Scalar>(
-        self,
-        k: usize,
-        query: &[T],
-        vec_set: &impl Index<usize, Output = [T]>,
-        dist: DistanceAlgorithm,
-    ) -> Vec<CandidatePair> {
+    pub fn pq_resort(self, k: usize, dist_fn: impl Fn(usize) -> f32) -> Vec<CandidatePair> {
         let mut result = Self::new(k);
         for p in self.results {
-            let v = &vec_set[p.index];
-            let d = dist.d(v, query);
-            result.add(CandidatePair::new(p.index, d));
+            result.add(CandidatePair::new(p.index, dist_fn(p.index)));
         }
         result.into_sorted_vec()
     }

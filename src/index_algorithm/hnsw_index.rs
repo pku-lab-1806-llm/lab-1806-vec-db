@@ -101,47 +101,48 @@ pub struct HNSWIndex<T> {
     /// The configuration of the HNSW algorithm.
     ///
     /// Inner configuration contains more computed values.
-    pub config: HNSWInnerConfig,
+    pub(crate) config: HNSWInnerConfig,
     /// The vector set. (capacity = max_elements)
-    pub vec_set: VecSet<T>,
+    pub(crate) vec_set: VecSet<T>,
     /// The level 0 links.
     /// Dims: (vec_idx, neighbor_idx) flattened.
     /// Size: len * max_M0.
     /// Capacity: max_elements * max_M0.
     ///
     /// `u32`: This is expensive. We can use a smaller integer type.
-    pub level0_links: Vec<u32>,
+    pub(crate) level0_links: Vec<u32>,
     /// The other links.
     /// Dims: (vec_idx, (level_idx - 1, neighbor_idx) flattened).
     /// Size: (len, vec_level * M).
     /// Capacity: (max_elements, _).
     ///
     /// `u32`: This is expensive. We can use a smaller integer type.
-    pub other_links: Vec<Vec<u32>>,
+    pub(crate) other_links: Vec<Vec<u32>>,
     /// The length of links.
     /// Dims: (vec_idx, level_idx).
     /// Size: (len, level).
     /// Capacity: (max_elements, _).
-    pub links_len: Vec<Vec<usize>>,
+    pub(crate) links_len: Vec<Vec<usize>>,
     /// The level of each vector. level is 0-indexed.
     ///
     /// Capacity: max_elements.
-    pub vec_level: Vec<usize>,
+    pub(crate) vec_level: Vec<usize>,
     /// The deleted mark of each vector.
     ///
     /// Capacity: max_elements.
-    pub deleted_mark: Vec<bool>,
+    pub(crate) deleted_mark: Vec<bool>,
     /// The number of vectors marked as deleted.
-    pub num_deleted: usize,
+    pub(crate) num_deleted: usize,
     /// The maximum level of the index.
-    pub enter_level: Option<usize>,
+    pub(crate) enter_level: Option<usize>,
     /// The enter point of the search.
-    pub enter_point: Option<usize>,
+    pub(crate) enter_point: Option<usize>,
     /// The norm cache of the vectors.
     ///
-    /// Only used for cosine distance.
+    /// - For L2Sqr, cache dot_product(a, a).
+    /// - For Cosine, cache vec_norm(a).
     #[serde(skip)]
-    pub norm_cache: Option<Vec<f32>>,
+    pub(crate) dist_cache: Vec<f32>,
 }
 impl<T: Scalar> HNSWIndex<T> {
     /// Generate a random level.
@@ -216,17 +217,17 @@ impl<T: Scalar> HNSWIndex<T> {
             return;
         }
         let v = &self[vec_idx];
-        let dist = self.config.dist;
+        let v_cache = self.dist_cache[vec_idx];
         let mut set = ResultSet::new(limit + 1);
         let mut add = |idx: usize| {
-            let d = dist.d(v, &self[idx]);
+            let d = self.dist_with_cache(idx, v, v_cache);
             set.add(CandidatePair::new(idx, d));
         };
         add(new_vec_idx);
         for &neighbor in self.get_links(vec_idx, level) {
             add(neighbor as usize);
         }
-        let links = set.heuristic(limit, &self.vec_set, dist);
+        let links = set.heuristic(limit, |a, b| self.inner_dist_fn(a, b));
         let links = links.iter().map(|p| p.index as u32).collect::<Vec<_>>();
         self.put_links(vec_idx, level, &links);
     }
@@ -236,10 +237,9 @@ impl<T: Scalar> HNSWIndex<T> {
             self.get_links_len_checked(vec_idx, level) == 0,
             "Links are not empty."
         );
-        let dist = self.config.dist;
         // Initial number of neighbors is limited to M, not max_M0 even at level 0.
         let m = self.config.m;
-        let neighbors = candidates.heuristic(m, &self.vec_set, dist);
+        let neighbors = candidates.heuristic(m, |a, b| self.inner_dist_fn(a, b));
         let neighbors = neighbors.iter().map(|p| p.index as u32).collect::<Vec<_>>();
         self.put_links(vec_idx, level, &neighbors);
         for neighbor in neighbors {
@@ -258,10 +258,10 @@ impl<T: Scalar> HNSWIndex<T> {
         self.links_len.push(vec![0; level + 1]);
         self.vec_level.push(level);
         self.deleted_mark.push(false);
-        self.norm_cache
-            .as_mut()
-            .map(|cache| cache.push(T::vec_norm(vec)));
-
+        self.dist_cache.push(match self.config.dist {
+            DistanceAlgorithm::L2Sqr => T::dot_product(vec, vec),
+            DistanceAlgorithm::Cosine => T::vec_norm(vec),
+        });
         idx
     }
     /// Delete a vector from the index by setting a deleted mark.
@@ -331,7 +331,9 @@ impl<T: Scalar> HNSWIndex<T> {
         ef: usize,
         query: &[T],
     ) -> ResultSet {
-        let dist_fn = |idx| self.dist_with_cache(idx, query);
+        let query_cache = self.calc_dist_cache(query);
+        let dist_fn = |idx| self.dist_with_cache(idx, query, query_cache);
+
         self.search_on_level_fn(enter_point, level, ef, &dist_fn)
     }
     /// Greedy search on a specific level.
@@ -380,18 +382,18 @@ impl<T: Scalar> HNSWIndex<T> {
         }
         cur_p
     }
-    fn dist_with_cache(&self, idx: usize, query: &[T]) -> f32 {
-        if self.config.dist == DistanceAlgorithm::Cosine {
-            let query_norm = T::vec_norm(query);
-            let norm = self
-                .norm_cache
-                .as_ref()
-                .map_or_else(|| T::vec_norm(&self[idx]), |cache| cache[idx]);
-            self.config
-                .dist
-                .d(&(query, query_norm), &(&self[idx], norm))
-        } else {
-            self.config.dist.d(&self[idx], query)
+    fn dist_with_cache(&self, idx: usize, query: &[T], query_cache: f32) -> f32 {
+        self.config
+            .dist
+            .d(&(&self[idx], self.dist_cache[idx]), &(query, query_cache))
+    }
+    fn inner_dist_fn(&self, idx0: usize, idx1: usize) -> f32 {
+        self.dist_with_cache(idx0, &self[idx1], self.dist_cache[idx1])
+    }
+    fn calc_dist_cache(&self, v: &[T]) -> f32 {
+        match self.config.dist {
+            DistanceAlgorithm::L2Sqr => T::dot_product(v, v),
+            DistanceAlgorithm::Cosine => T::vec_norm(v),
         }
     }
     /// Greedy search until reaching the base layer.
@@ -399,16 +401,20 @@ impl<T: Scalar> HNSWIndex<T> {
     /// - This does *NOT* search nearest vector on `target_level`.
     /// - Starts at enter_point. NEVER call this when adding a vector higher than enter_level.
     fn greedy_search_until_level(&self, target_level: usize, query: &[T]) -> usize {
-        let dist_fn = |idx| self.dist_with_cache(idx, query);
+        let query_cache = self.calc_dist_cache(query);
+        let dist_fn = |idx| self.dist_with_cache(idx, query, query_cache);
         self.greedy_search_until_level_fn(target_level, &dist_fn)
     }
     /// Ensure the norm cache for cosine distance.
     ///
     /// Call this after loading the index.
-    pub fn init_norm_cache_after_load(&mut self) {
-        if self.norm_cache.is_none() && self.config.dist == DistanceAlgorithm::Cosine {
-            let cache = self.vec_set.iter().map(T::vec_norm).collect();
-            self.norm_cache = Some(cache);
+    pub fn init_dist_cache_after_load(&mut self) {
+        if self.dist_cache.is_empty() {
+            self.dist_cache = self
+                .vec_set
+                .iter()
+                .map(|v| self.calc_dist_cache(v))
+                .collect();
         }
     }
     pub fn capacity(&self) -> usize {
@@ -433,7 +439,6 @@ impl<T: Scalar> HNSWIndex<T> {
         }
         self.reserve(n);
         let mut indices = Vec::with_capacity(n);
-        let dist = self.config.dist;
         for &vec in vec_list.iter() {
             let level = self.rand_level(rng);
             let idx = self.push_init(vec, level);
@@ -450,9 +455,9 @@ impl<T: Scalar> HNSWIndex<T> {
                     let enter_point = self.enter_point.unwrap();
                     let enter_level = self.enter_level.unwrap();
                     let mut cached_dist = Vec::new();
-                    for (&rhs_idx, &rhs_vec) in indices.iter().zip(vec_list.iter()) {
+                    for &rhs_idx in indices.iter() {
                         if rhs_idx < idx {
-                            cached_dist.push((rhs_idx, dist.d(vec, rhs_vec)));
+                            cached_dist.push((rhs_idx, self.inner_dist_fn(idx, rhs_idx)));
                         }
                     }
 
@@ -535,11 +540,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         let other_links = Vec::with_capacity(max_elements);
         let links_len = Vec::with_capacity(max_elements);
         let deleted_mark = Vec::with_capacity(max_elements);
-        let norm_cache = if dist == DistanceAlgorithm::Cosine {
-            Some(Vec::with_capacity(max_elements))
-        } else {
-            None
-        };
+        let dist_cache = Vec::with_capacity(max_elements);
 
         Self {
             config: HNSWInnerConfig {
@@ -563,7 +564,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
             num_deleted: 0,
             enter_level: None,
             enter_point: None,
-            norm_cache,
+            dist_cache,
         }
     }
     fn add(&mut self, vec: &[T], rng: &mut impl Rng) -> usize {
@@ -667,7 +668,7 @@ impl<T: Scalar> IndexSerde for HNSWIndex<T> {
         // In most case we load the index from a file for searching.
 
         // Init the norm cache for cosine distance.
-        self.init_norm_cache_after_load();
+        self.init_dist_cache_after_load();
     }
 }
 impl<T: Scalar> IndexSerdeExternalVecSet<T> for HNSWIndex<T> {
@@ -718,7 +719,10 @@ impl<T: Scalar> IndexPQ<T> for HNSWIndex<T> {
         let level = 0;
         let enter_point = self.greedy_search_until_level_fn(level, &dist_fn);
         let result = self.search_on_level_fn(enter_point, level, ef, &dist_fn);
-        result.pq_resort(k, query, self, dist)
+
+        let query_cache = self.calc_dist_cache(query);
+        let index_dist = |idx| self.dist_with_cache(idx, query, query_cache);
+        result.pq_resort(k, index_dist)
     }
 }
 
