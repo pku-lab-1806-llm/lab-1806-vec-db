@@ -17,7 +17,6 @@ pub mod lab_1806_vec_db {
         use DistanceAlgorithm::*;
         match dist {
             "l2sqr" => Ok(L2Sqr),
-            "l2" => Ok(L2),
             "cosine" => Ok(Cosine),
             _ => Err(PyValueError::new_err("Invalid distance function")),
         }
@@ -26,7 +25,6 @@ pub mod lab_1806_vec_db {
         use DistanceAlgorithm::*;
         match dist {
             L2Sqr => "l2sqr",
-            L2 => "l2",
             Cosine => "cosine",
             #[allow(unreachable_patterns)]
             _ => panic!("Invalid distance function"),

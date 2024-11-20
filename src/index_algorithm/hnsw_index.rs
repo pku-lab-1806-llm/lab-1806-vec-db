@@ -527,7 +527,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         let default_ef = 150;
         let inv_log_m = 1.0 / (m as f32).ln();
         let start_batch_since = 1000;
-        let inner_batch_size = 64;
+        let inner_batch_size = rayon::current_num_threads();
 
         let vec_set = VecSet::<T>::with_capacity(dim, max_elements);
         let level0_links = Vec::with_capacity(max_elements * max_m0);
@@ -739,7 +739,6 @@ mod test {
     #[test]
     pub fn hnsw_index_test() -> Result<()> {
         hnsw_index_test_with_dist(DistanceAlgorithm::L2Sqr)?;
-        hnsw_index_test_with_dist(DistanceAlgorithm::L2)?;
         hnsw_index_test_with_dist(DistanceAlgorithm::Cosine)?;
 
         Ok(())

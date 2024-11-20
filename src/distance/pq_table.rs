@@ -80,12 +80,13 @@ pub struct PQLookupTable<'a, T> {
     pq_table: &'a PQTable<T>,
     /// Size `(m * k,)`. For group `i` and centroid `c`, the cached value is at `i * k + c`.
     ///
-    /// - For L2Sqr and L2 distance, cache the L2Sqr distance between the centroid and the vector.
-    /// - For Cosine distance, cache the dot product of the centroid and the vector.
+    /// Cache dot_product(v, c)
     lookup: Vec<f32>,
-    /// Cached norm of the vector itself. Only used for the Cosine distance.
-    /// Otherwise, it is `0.0`.
-    norm: f32,
+    /// Cache for distance calculation.
+    ///
+    /// - L2Sqr: dot_product(v, v)
+    /// - Cosine: vec_norm(v)
+    dist_cache: f32,
 }
 
 /// The Product Quantization (PQ) table.
@@ -109,9 +110,8 @@ pub struct PQTable<T> {
     pub encoded_vec_set: VecSet<u8>,
     /// The k-means centroids for each group.
     pub group_k_means: Vec<KMeans<T>>,
-    /// The dot product of each centroid with itself (flattened).
-    /// Size `(m * k,)`, only used for the Cosine distance.
-    /// Otherwise, it is empty.
+    /// Dot product cache (flattened).
+    /// Size `(m * k,)`.
     pub dot_product_cache: Vec<f32>,
 }
 
@@ -134,27 +134,20 @@ impl<T: Scalar> PQTable<T> {
         let dim = vec_set.dim();
         let d = dim / m;
         let mut group_k_means = Vec::with_capacity(m);
-        let mut dot_product_cache = if config.dist == Cosine {
-            Vec::with_capacity(m * k)
-        } else {
-            Vec::new()
-        };
-        let mut k_means_config = KMeansConfig {
-            k,
-            max_iter: config.k_means_max_iter,
-            tol: config.k_means_tol,
-            dist: config.dist,
-            selected: None,
-        };
+        let mut dot_product_cache = Vec::with_capacity(m * k);
         for i in 0..m {
-            let selected = d * i..d * (i + 1);
-            k_means_config.selected = Some(selected);
+            let k_means_config = KMeansConfig {
+                k,
+                max_iter: config.k_means_max_iter,
+                tol: config.k_means_tol,
+                dist: config.dist,
+                selected: Some(d * i..d * (i + 1)),
+            };
             let k_means_vec_set = sub_vec_set.as_ref().unwrap_or(vec_set);
-            let k_means = KMeans::from_vec_set(k_means_vec_set, k_means_config.clone(), rng);
-            if config.dist == Cosine {
-                for c in k_means.centroids.iter() {
-                    dot_product_cache.push(T::dot_product(c, c))
-                }
+            let k_means = KMeans::from_vec_set(k_means_vec_set, k_means_config, rng);
+
+            for c in k_means.centroids.iter() {
+                dot_product_cache.push(T::dot_product(c, c));
             }
             group_k_means.push(k_means);
         }
@@ -180,11 +173,6 @@ impl<T: Scalar> PQTable<T> {
 
     /// Create flattened lookup table for the vector to be queried.
     /// Using the PQ in ADC (Asymmetric Distance Computation) algorithm.
-    ///
-    /// Size `(m * k,)`. For group `i` and centroid `c`, the cached value is at `i * k + c`.
-    ///
-    /// - For L2Sqr | L2, cache the L2Sqr distance between the centroid and the vector.
-    /// - For DotProduct | Cosine, cache the dot product of the centroid and the vector.
     pub fn create_lookup(&self, v: &[T]) -> PQLookupTable<'_, T> {
         assert_eq!(v.len(), self.dim);
         let m = self.config.m;
@@ -196,25 +184,19 @@ impl<T: Scalar> PQTable<T> {
             let centroids = &k_means.centroids;
             let selected = d * i..d * (i + 1);
             let vs = &v[selected];
-            match self.config.dist {
-                L2Sqr | L2 => centroids
-                    .iter()
-                    .map(|c| T::l2_sqr_distance(vs, c))
-                    .for_each(|d| lookup.push(d)),
-                Cosine => centroids
-                    .iter()
-                    .map(|c| T::dot_product(vs, c))
-                    .for_each(|d| lookup.push(d)),
-            };
+            centroids
+                .iter()
+                .map(|c| T::dot_product(vs, c))
+                .for_each(|d| lookup.push(d));
         }
-        let norm = match self.config.dist {
-            Cosine => T::dot_product(v, v).sqrt(),
-            _ => 0.0,
+        let dist_cache = match self.config.dist {
+            L2Sqr => T::dot_product(v, v),
+            Cosine => T::vec_norm(v),
         };
         PQLookupTable {
             pq_table: self,
             lookup,
-            norm,
+            dist_cache,
         }
     }
 
@@ -246,17 +228,15 @@ impl<T: Scalar> DistanceAdapter<[u8], PQLookupTable<'_, T>> for DistanceAlgorith
 
         let lookup = &lookup_table.lookup;
 
-        let mut sum = 0.0;
-        let mut norm0_sqr = 0.0;
+        let mut dot_product = 0.0;
+        let mut centroid_dot_product = 0.0;
 
         let mut push_one = |i: usize, idx: usize| {
             if i >= m {
                 return;
             }
-            sum += lookup[i * k + idx];
-            if *self == Cosine {
-                norm0_sqr += pq_table.dot_product_cache[i * k + idx];
-            }
+            dot_product += lookup[i * k + idx];
+            centroid_dot_product += pq_table.dot_product_cache[i * k + idx];
         };
 
         match n_bits {
@@ -284,14 +264,12 @@ impl<T: Scalar> DistanceAdapter<[u8], PQLookupTable<'_, T>> for DistanceAlgorith
         }
 
         match self {
-            L2Sqr => sum,
-            L2 => sum.sqrt(),
+            L2Sqr => lookup_table.dist_cache + centroid_dot_product - 2.0 * dot_product,
             Cosine => {
-                let dot_product = sum;
-                let norm0 = norm0_sqr.sqrt();
-                let norm1 = lookup_table.norm;
+                let norm0 = centroid_dot_product.sqrt();
+                let norm1 = lookup_table.dist_cache;
 
-                1.0 - dot_product / (norm0 * norm1)
+                1.0 - dot_product / (norm0 * norm1).max(1e-10)
             }
         }
     }
@@ -307,6 +285,7 @@ mod test {
     use super::*;
 
     fn pq_table_precise_test_base(dist: DistanceAlgorithm) {
+        println!("Distance Algorithm: {:?}", dist);
         // Test the PQ table with num_vec < k, so that the centroids are the same as the vectors.
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let dim = 8;
@@ -352,7 +331,6 @@ mod test {
     #[test]
     fn pq_table_precise_test() {
         pq_table_precise_test_base(L2Sqr);
-        pq_table_precise_test_base(L2);
         pq_table_precise_test_base(Cosine);
     }
 
@@ -418,7 +396,6 @@ mod test {
         }
 
         pq_table_test_base(&vec_set, L2Sqr)?;
-        pq_table_test_base(&vec_set, L2)?;
         pq_table_test_base(&vec_set, Cosine)?;
         Ok(())
     }

@@ -39,7 +39,7 @@ impl PartialOrd for CandidatePair {
 }
 impl Ord for CandidatePair {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        OrderedFloat(self.distance).cmp(&OrderedFloat(other.distance))
+        self.distance.cmp(&other.distance)
     }
 }
 
