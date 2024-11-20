@@ -562,7 +562,7 @@ dependencies = [
 
 [[package]]
 name = "lab-1806-vec-db"
-version = "0.3.6"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "base16ct",
