@@ -282,18 +282,23 @@ impl BenchResult {
             recall: Vec::new(),
         }
     }
-    pub fn trace(self) -> Box<dyn Trace> {
+    pub fn trace(&self) -> Box<dyn Trace> {
         let text = self
             .ef
             .iter()
             .map(|&ef| format!("ef={}", ef))
             .collect::<Vec<_>>();
-        Scatter::new(self.recall, self.search_time)
+        let throughput = self
+            .search_time
+            .iter()
+            .map(|&time| 1000.0 / time)
+            .collect::<Vec<_>>();
+        Scatter::new(self.recall.clone(), throughput)
             .text_array(text)
             .text_font(plotly::common::Font::new().size(10).family("Arial"))
             .text_position(plotly::common::Position::TopLeft)
             .mode(plotly::common::Mode::LinesMarkersText)
-            .name(self.label)
+            .name(self.label.clone())
     }
     pub fn push(&mut self, ef: usize, search_time: f32, recall: f32) {
         self.ef.push(ef);
@@ -324,7 +329,7 @@ impl ResultList {
         writer.write(content.as_bytes())?;
         Ok(())
     }
-    pub fn plot(self, multi_thread: bool, html_path: Option<impl AsRef<Path>>) -> Result<()> {
+    pub fn plot(self, html_path: Option<impl AsRef<Path>>) -> Result<()> {
         let mut plot = Plot::new();
         for result in self.results {
             plot.add_trace(result.trace());
@@ -333,11 +338,7 @@ impl ResultList {
         let layout = plotly::Layout::new()
             .title(plotly::common::Title::with_text(self.title))
             .x_axis(plotly::layout::Axis::new().title("Recall"))
-            .y_axis(plotly::layout::Axis::new().title(if multi_thread {
-                "Inverse Throughput(ms)"
-            } else {
-                "Search Time(ms)"
-            }))
+            .y_axis(plotly::layout::Axis::new().title("Throughput (1/s)"))
             .show_legend(true);
         plot.set_layout(layout);
 
@@ -369,7 +370,7 @@ fn main() -> Result<()> {
     let load_start = std::time::Instant::now();
     if args.plot_only {
         let result_list = ResultList::load(&args.bench_config_path)?;
-        result_list.plot(args.num_threads.is_some(), args.html.as_ref())?;
+        result_list.plot(args.html.as_ref())?;
         return Ok(());
     }
     let bench_config = BenchConfig::load_from_toml_file(&args.bench_config_path)?;
@@ -469,7 +470,7 @@ fn main() -> Result<()> {
     result_list.title = title;
     result_list.save(&out)?;
     println!("Saved results to {}.", out.display());
-    result_list.plot(args.num_threads.is_some(), args.html.as_ref())?;
+    result_list.plot(args.html.as_ref())?;
     Ok(())
 }
 // # Add `-r 20` or other repeat times to get more stable results.
