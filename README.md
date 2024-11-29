@@ -169,6 +169,67 @@ elif cmd == "len":
 # File appears before the program exits in all cases, even with Exception or KeyboardInterrupt
 ```
 
+### About multi-threading
+
+`VecDB` is thread-safe. You can use it in multiple threads, and it will handle the lock automatically.
+
+When methods on `VecDB` is called, GIL will be temporarily released, so other threads can run Python code.
+
+```py
+import random
+import threading
+import time
+
+from lab_1806_vec_db import VecDB
+
+# Add `std::thread::sleep(std::time::Duration::from_secs(1));` to VecDBManager::search().
+
+"""Sample output:
+0.0s: Before search 1
+0.6s: Before search 2
+1.0s: After search 1
+1.2s: Before search 3
+1.6s: After search 2
+1.8s: Before search 4
+2.2s: After search 3
+2.8s: After search 4
+"""
+
+db = VecDB("tmp/vec_db")
+
+db.create_table_if_not_exists("table1", 1)
+db.batch_add(
+    "table1",
+    [[random.random()] for _ in range(100)],
+    [{"id": str(i)} for i in range(100)],
+)
+
+count = 0
+start = time.time()
+
+
+def worker():
+    global count
+
+    count += 1
+    id = f"{count}"
+    print(f"{time.time()-start:0.1f}s: Before search {id}")
+    db.search("table1", [random.random()], 1)
+    print(f"{time.time()-start:0.1f}s: After search {id}")
+
+
+threads = []
+for _ in range(4):
+    t = threading.Thread(target=worker)
+    threads.append(t)
+    t.start()
+    time.sleep(0.6)
+
+for t in threads:
+    t.join()
+
+```
+
 ## Development with Rust
 
 ```bash

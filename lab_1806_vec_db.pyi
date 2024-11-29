@@ -84,6 +84,7 @@ class VecDB:
 
     Ensures:
     - Auto-save. The database will be saved to disk when necessary.
+    - Parallelism. `allow_threads` is used to allow multi-threading.
     - Thread-safe. Read and write operations are atomic.
     - Unique. Only one manager for each database.
     """
