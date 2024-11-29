@@ -2,6 +2,9 @@ import os
 
 from lab_1806_vec_db import VecDB
 
+# uv sync --reinstall-package lab_1806_vec_db
+# uv run -m examples.test_exception
+
 if os.path.exists("./tmp/vec_db"):
     for file in os.listdir("./tmp/vec_db"):
         os.remove(f"./tmp/vec_db/{file}")

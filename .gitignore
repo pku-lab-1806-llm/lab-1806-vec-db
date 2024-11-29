@@ -5,3 +5,4 @@ target/
 .venv/
 dist/
 tmp/
+__pycache__/
