@@ -2,6 +2,7 @@ pub mod config;
 pub mod database;
 pub mod distance;
 pub mod index_algorithm;
+#[cfg(feature = "pyo3")]
 mod pyo3;
 pub mod scalar;
 pub mod vec_set;

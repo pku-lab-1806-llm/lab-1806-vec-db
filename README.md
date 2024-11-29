@@ -205,7 +205,7 @@ scoop install uv
 
 # Run the Python test
 uv sync --reinstall-package lab_1806_vec_db
-uv run ./test_pyo3.py
+uv run -m examples.test_pyo3
 
 # Build the Python Wheel Release
 # This will be automatically run in GitHub Actions.
