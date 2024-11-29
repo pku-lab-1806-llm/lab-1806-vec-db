@@ -152,6 +152,7 @@ pub mod lab_1806_vec_db {
     ///
     /// Ensures:
     /// - Auto-save. The database will be saved to disk when necessary.
+    /// - Parallelism. `allow_threads` is used to allow multi-threading.
     /// - Thread-safe. Read and write operations are atomic.
     /// - Unique. Only one manager for each database.
     #[pyclass]
@@ -175,91 +176,109 @@ pub mod lab_1806_vec_db {
         #[pyo3(signature = (key, dim, dist="cosine"))]
         pub fn create_table_if_not_exists(
             &self,
+            py: Python,
             key: &str,
             dim: usize,
             dist: &str,
         ) -> PyResult<bool> {
-            let dist = distance_algorithm_from_str(&dist)?;
-            self.inner
-                .create_table_if_not_exists(key, dim, dist)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            py.allow_threads(|| {
+                let dist = distance_algorithm_from_str(&dist)?;
+                self.inner
+                    .create_table_if_not_exists(key, dim, dist)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
         }
         /// Get table info.
         ///
         /// Returns:
         ///    (dim, len, dist)
-        pub fn get_table_info(&self, key: String) -> PyResult<(usize, usize, String)> {
-            self.inner
-                .get_table_info(&key)
-                .map(|info| {
-                    (
-                        info.dim,
-                        info.len,
-                        distance_algorithm_to_str(info.dist).to_string(),
-                    )
-                })
-                .ok_or_else(|| PyRuntimeError::new_err("Table not found"))
+        pub fn get_table_info(&self, py: Python, key: String) -> PyResult<(usize, usize, String)> {
+            py.allow_threads(|| {
+                self.inner
+                    .get_table_info(&key)
+                    .map(|info| {
+                        (
+                            info.dim,
+                            info.len,
+                            distance_algorithm_to_str(info.dist).to_string(),
+                        )
+                    })
+                    .ok_or_else(|| PyRuntimeError::new_err("Table not found"))
+            })
         }
 
         /// Delete a table and wait for all operations to finish.
         /// Returns false if the table does not exist.
-        pub fn delete_table(&self, key: String) -> PyResult<bool> {
-            self.inner
-                .delete_table(&key)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        pub fn delete_table(&self, py: Python, key: String) -> PyResult<bool> {
+            py.allow_threads(|| {
+                self.inner
+                    .delete_table(&key)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
         }
 
         /// Get all table names.
-        pub fn get_all_keys(&self) -> Vec<String> {
-            self.inner.get_all_keys()
+        pub fn get_all_keys(&self, py: Python) -> Vec<String> {
+            py.allow_threads(|| self.inner.get_all_keys())
         }
 
         /// Returns a list of table keys that are cached.
-        pub fn get_cached_tables(&self) -> Vec<String> {
-            self.inner.get_cached_tables()
+        pub fn get_cached_tables(&self, py: Python) -> Vec<String> {
+            py.allow_threads(|| self.inner.get_cached_tables())
         }
         /// Remove a table from the cache.
         /// Does nothing if the table is not cached.
-        pub fn remove_cached_table(&self, key: &str) -> PyResult<()> {
-            self.inner
-                .remove_cached_table(key)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        pub fn remove_cached_table(&self, py: Python, key: &str) -> PyResult<()> {
+            py.allow_threads(|| {
+                self.inner
+                    .remove_cached_table(key)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
         }
 
         /// Add a vector to the table.
         /// Use `batch_add` for better performance.
         pub fn add(
             &self,
+            py: Python,
             key: &str,
             vec: Vec<f32>,
             metadata: BTreeMap<String, String>,
         ) -> PyResult<()> {
-            self.inner
-                .add(key, vec, metadata)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            py.allow_threads(|| {
+                self.inner
+                    .add(key, vec, metadata)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
         }
 
         /// Add multiple vectors to the table.
         pub fn batch_add(
             &self,
+            py: Python,
             key: &str,
             vec_list: Vec<Vec<f32>>,
             metadata_list: Vec<BTreeMap<String, String>>,
         ) -> PyResult<()> {
-            self.inner
-                .batch_add(key, vec_list, metadata_list)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            py.allow_threads(|| {
+                self.inner
+                    .batch_add(key, vec_list, metadata_list)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
         }
 
         /// Get the specified row by id.
         pub fn get_row_by_id(
             &self,
+            py: Python,
             key: &str,
             id: usize,
         ) -> PyResult<(Vec<f32>, BTreeMap<String, String>)> {
-            self.inner
-                .get_row_by_id(key, id)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            py.allow_threads(|| {
+                self.inner
+                    .get_row_by_id(key, id)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
         }
 
         /// Search for the nearest neighbors of a vector.
@@ -267,15 +286,18 @@ pub mod lab_1806_vec_db {
         #[pyo3(signature = (key, query, k, ef=None, upper_bound=None))]
         pub fn search(
             &self,
+            py: Python,
             key: &str,
             query: Vec<f32>,
             k: usize,
             ef: Option<usize>,
             upper_bound: Option<f32>,
         ) -> PyResult<Vec<(BTreeMap<String, String>, f32)>> {
-            self.inner
-                .search(key, &query, k, ef, upper_bound)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            py.allow_threads(|| {
+                self.inner
+                    .search(key, &query, k, ef, upper_bound)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
         }
 
         /// Search for the nearest neighbors of a vector in multiple tables.
@@ -283,15 +305,18 @@ pub mod lab_1806_vec_db {
         #[pyo3(signature = (key_list, query, k, ef=None, upper_bound=None))]
         pub fn join_search(
             &self,
+            py: Python,
             key_list: BTreeSet<String>,
             query: Vec<f32>,
             k: usize,
             ef: Option<usize>,
             upper_bound: Option<f32>,
         ) -> PyResult<Vec<(String, BTreeMap<String, String>, f32)>> {
-            self.inner
-                .join_search(&key_list, &query, k, ef, upper_bound)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            py.allow_threads(|| {
+                self.inner
+                    .join_search(&key_list, &query, k, ef, upper_bound)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
         }
     }
 }

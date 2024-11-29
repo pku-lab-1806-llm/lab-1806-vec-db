@@ -2,6 +2,9 @@ import os
 
 from lab_1806_vec_db import BareVecTable, VecDB, calc_dist
 
+# uv sync --reinstall-package lab_1806_vec_db
+# uv run -m examples.test_pyo3
+
 
 def test_calc_dist():
     print("\n[Test] calc_dist")
