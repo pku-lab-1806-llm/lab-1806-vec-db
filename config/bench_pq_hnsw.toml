@@ -12,7 +12,6 @@ step = 60
 [algorithm.HNSW]
 max_elements = 1000000
 ef_construction = 200
-M = 16
 
 [PQ]
 pq_cache = "data/gist_pq.local.bin"

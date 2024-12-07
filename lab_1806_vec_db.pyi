@@ -18,13 +18,14 @@ class BareVecTable:
 
     Prefer using VecDB to manage multiple tables.
     """
-    def __init__(self, dim: int, dist: str = "cosine") -> None:
+    def __init__(self, dim: int, dist: str = "cosine", ef_c: int | None = None) -> None:
         """
         Create a new Table. (Using HNSW internally)
 
         Args:
             dim (int): Dimension of the vectors.
             dist (str): Distance function. See `calc_dist` for details.
+            ef_c (int): ef_construction parameter for HNSW. (default: 100, recommended: 100-200)
 
         Raises:
             ValueError: If the distance function is invalid.
@@ -95,7 +96,7 @@ class VecDB:
         ...
 
     def create_table_if_not_exists(
-        self, name: str, dim: int, dist: str = "cosine"
+        self, name: str, dim: int, dist: str = "cosine", ef_c: int | None = None
     ) -> bool:
         """Create a new table if it does not exist.
 
@@ -103,6 +104,7 @@ class VecDB:
             key (str): The table name.
             dim (int): Dimension of the vectors.
             dist (str): Distance function. See `calc_dist` for details.
+            ef_c (int): ef_construction parameter for HNSW. (default: 100, recommended: 100-200)
 
         Raises:
             ValueError: If the distance function is invalid.

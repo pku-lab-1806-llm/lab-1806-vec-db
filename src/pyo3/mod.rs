@@ -60,14 +60,14 @@ pub mod lab_1806_vec_db {
     #[pymethods]
     impl BareVecTable {
         #[new]
-        #[pyo3(signature = (dim, dist="cosine"))]
+        #[pyo3(signature = (dim, dist="cosine", ef_c=None))]
         /// Create a new Table. (Using HNSW internally)
         ///
         /// Raises:
         ///     ValueError: If the distance function is invalid.
-        pub fn new(dim: usize, dist: &str) -> PyResult<Self> {
+        pub fn new(dim: usize, dist: &str, ef_c: Option<usize>) -> PyResult<Self> {
             let dist = distance_algorithm_from_str(dist)?;
-            let inner = MetadataIndex::new(dim, dist);
+            let inner = MetadataIndex::new(dim, dist, ef_c);
             Ok(Self { inner })
         }
 
@@ -173,18 +173,19 @@ pub mod lab_1806_vec_db {
         ///
         /// Raises:
         ///     ValueError: If the distance function is invalid.
-        #[pyo3(signature = (key, dim, dist="cosine"))]
+        #[pyo3(signature = (key, dim, dist="cosine", ef_c=None))]
         pub fn create_table_if_not_exists(
             &self,
             py: Python,
             key: &str,
             dim: usize,
             dist: &str,
+            ef_c: Option<usize>,
         ) -> PyResult<bool> {
             py.allow_threads(|| {
                 let dist = distance_algorithm_from_str(&dist)?;
                 self.inner
-                    .create_table_if_not_exists(key, dim, dist)
+                    .create_table_if_not_exists(key, dim, dist, ef_c)
                     .map_err(|e| PyRuntimeError::new_err(e.to_string()))
             })
         }

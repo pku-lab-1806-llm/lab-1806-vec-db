@@ -27,7 +27,7 @@ pub fn default_max_elements() -> usize {
 
 /// The default number of neighbors to search during construction.
 pub fn default_ef_construction() -> usize {
-    200
+    100
 }
 
 /// The default number of neighbors to keep for each vector.
@@ -522,8 +522,8 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
             eprintln!("M parameter exceeds 10_000 may lead to adverse effects.");
         }
         let max_m0 = m * 2;
-        let ef_construction = config.ef_construction.max(m);
-        let default_ef = 150;
+        let ef_construction = config.ef_construction.max(max_m0);
+        let default_ef = ef_construction / 2;
         let inv_log_m = 1.0 / (m as f32).ln();
         let start_batch_since = 1000;
         let inner_batch_size = rayon::current_num_threads();
@@ -756,11 +756,7 @@ mod test {
         let raw_vec_set = VecSet::<f32>::load_with(&config)?;
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
 
-        let config = HNSWConfig {
-            max_elements: 0, // Test auto reallocation.
-            ef_construction: 200,
-            M: 16,
-        };
+        let config = HNSWConfig::default();
 
         // Limit the dimension for testing.
         let clipped_dim = raw_vec_set.dim().min(12);
