@@ -42,8 +42,11 @@ pub struct MetadataIndex {
 }
 impl MetadataIndex {
     /// Create a new index.
-    pub fn new(dim: usize, dist: DistanceAlgorithm) -> Self {
-        let config = HNSWConfig::default();
+    pub fn new(dim: usize, dist: DistanceAlgorithm, ef_c: Option<usize>) -> Self {
+        let mut config = HNSWConfig::default();
+        if let Some(ef_c) = ef_c {
+            config.ef_construction = ef_c;
+        }
         let rng = rand::SeedableRng::from_entropy();
         Self {
             metadata: Vec::new(),
@@ -204,9 +207,10 @@ impl VecTableManager {
         dim: usize,
         dist: DistanceAlgorithm,
         drop_signal_sender: std::sync::mpsc::Sender<()>,
+        ef_c: Option<usize>,
     ) -> Self {
         let file = Self::file_path_of(&dir, &key);
-        let index = MetadataIndex::new(dim, dist);
+        let index = MetadataIndex::new(dim, dist, ef_c);
         let index = Arc::new(RwLock::new(index));
         let manager = Self::new_manager(file, &index);
         manager.mark_modified();
@@ -356,6 +360,7 @@ impl VecDBManager {
         key: &str,
         dim: usize,
         dist: DistanceAlgorithm,
+        ef_c: Option<usize>,
     ) -> Result<bool> {
         let (mut brief, mut tables) = self.get_locks_by_order();
         if brief.tables.contains_key(key) {
@@ -367,7 +372,7 @@ impl VecDBManager {
         self.brief_manager.mark_modified();
 
         let (sender, receiver) = mpsc::channel();
-        let table = VecTableManager::new(&self.dir, &key, dim, dist, sender);
+        let table = VecTableManager::new(&self.dir, &key, dim, dist, sender, ef_c);
         let table = Arc::new(table);
         tables.insert(key.to_string(), (receiver, table));
         Ok(true)
@@ -595,7 +600,8 @@ mod test {
         thread::scope(|s| {
             s.spawn(|| {
                 let key_a = "table_a";
-                db.create_table_if_not_exists(key_a, dim, dist).unwrap();
+                db.create_table_if_not_exists(key_a, dim, dist, None)
+                    .unwrap();
                 s_a.send(()).unwrap();
                 db.add(key_a, vec![1.0, 0.0, 0.0, 0.0], metadata("a"))
                     .unwrap();
@@ -607,7 +613,8 @@ mod test {
             });
             s.spawn(|| {
                 let key_b = "table_b";
-                db.create_table_if_not_exists(key_b, dim, dist).unwrap();
+                db.create_table_if_not_exists(key_b, dim, dist, None)
+                    .unwrap();
                 db.batch_add(
                     key_b,
                     vec![

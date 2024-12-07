@@ -10,9 +10,7 @@ end = 360
 step = 40
 
 [algorithm.HNSW]
-max_elements = 10000
-ef_construction = 200
-M = 16
+# Use default values
 
 [PQ]
 pq_cache = "data/gist_10000_pq.local.bin"
