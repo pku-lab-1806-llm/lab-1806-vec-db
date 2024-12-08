@@ -211,7 +211,7 @@ impl<T: Scalar> HNSWIndex<T> {
         let dist_fn = |a, b| self.inner_dist_fn(a, b);
         let mut set = ResultSet::new(limit + 1);
         for index in links.iter().map(|&idx| idx as usize) {
-            let distance = dist_fn(new_vec_idx, index);
+            let distance = dist_fn(vec_idx, index);
             set.add(CandidatePair::new(index, distance));
         }
         let links = set.heuristic(limit, dist_fn);
@@ -409,7 +409,7 @@ impl<T: Scalar> HNSWIndex<T> {
         if self.len() < self.config.start_batch_since {
             1
         } else {
-            (self.len() / 10).min(1000)
+            (self.len() / 10).min(512)
         }
     }
     /// Batch add vectors to the index.
