@@ -409,7 +409,7 @@ impl<T: Scalar> HNSWIndex<T> {
         if self.len() < self.config.start_batch_since {
             1
         } else {
-            (self.len() / 10).min(512)
+            (self.len() / 10).min(1000)
         }
     }
     /// Batch add vectors to the index.
