@@ -406,12 +406,12 @@ impl<T: Scalar> HNSWIndex<T> {
         self.links_len.reserve(additional);
     }
     fn next_batch_size(&self) -> usize {
+        let n = self.len();
         let m = self.config.start_batch_since;
-        if self.len() < m {
-            1
-        } else {
-            (self.len() / 10).min(m)
+        if n < m {
+            return 1;
         }
+        (n / 10).min(m).min(self.dim())
     }
     /// Add vectors in a chunk in parallel.
     fn add_parallel(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize> {
