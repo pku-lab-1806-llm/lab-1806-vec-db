@@ -25,7 +25,7 @@ class BareVecTable:
         Args:
             dim (int): Dimension of the vectors.
             dist (str): Distance function. See `calc_dist` for details.
-            ef_c (int): ef_construction parameter for HNSW. (default: 100, recommended: 100-200)
+            ef_c (int): ef_construction parameter for HNSW. (default: 200, recommended: 40-200)
 
         Raises:
             ValueError: If the distance function is invalid.
@@ -104,7 +104,7 @@ class VecDB:
             key (str): The table name.
             dim (int): Dimension of the vectors.
             dist (str): Distance function. See `calc_dist` for details.
-            ef_c (int): ef_construction parameter for HNSW. (default: 100, recommended: 100-200)
+            ef_c (int): ef_construction parameter for HNSW. (default: 200, recommended: 40-200)
 
         Raises:
             ValueError: If the distance function is invalid.

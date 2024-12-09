@@ -413,8 +413,8 @@ impl<T: Scalar> HNSWIndex<T> {
             (self.len() / 10).min(m)
         }
     }
-    /// Batch add vectors to the index.
-    fn inner_chunk_add(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize> {
+    /// Add vectors in a chunk in parallel.
+    fn add_parallel(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize> {
         let n = vec_list.len();
         if self.len() < self.config.start_batch_since || n == 1 {
             // At the beginning, we choose to add vectors one by one.
@@ -476,6 +476,7 @@ impl<T: Scalar> HNSWIndex<T> {
         }
         indices
     }
+    /// Split the batch add into smaller chunks to add in parallel.
     fn inner_batch_add(
         &mut self,
         vec_list: &[&[T]],
@@ -487,7 +488,7 @@ impl<T: Scalar> HNSWIndex<T> {
         let mut result = Vec::with_capacity(n);
         while cur < vec_list.len() {
             let next = (cur + self.next_batch_size()).min(n);
-            result.extend(self.inner_chunk_add(&vec_list[cur..next], rng));
+            result.extend(self.add_parallel(&vec_list[cur..next], rng));
             cur = next;
             pos_callback(cur);
         }
