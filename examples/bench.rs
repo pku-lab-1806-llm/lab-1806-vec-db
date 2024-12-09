@@ -109,7 +109,7 @@ struct Args {
     #[clap(short, long, default_value = "1")]
     repeat_times: usize,
     #[clap(short = 't', long)]
-    multi_thread: bool,
+    multi_threading: bool,
 }
 
 struct AvgRecorder {
@@ -409,7 +409,7 @@ fn main() -> Result<()> {
                 let result_set = index.knn_with_ef(query, k, ef, &pq);
                 gnd.recall(&result_set)
             };
-            let recall = if args.multi_thread {
+            let recall = if args.multi_threading {
                 test_refs.par_iter().map(bench_one).collect::<Vec<_>>()
             } else {
                 test_refs.iter().map(bench_one).collect::<Vec<_>>()
@@ -430,7 +430,7 @@ fn main() -> Result<()> {
         bench_result.push(ef, search_time, recall);
     }
     println!("Finished benchmarking.");
-    let (title, out) = if args.multi_thread {
+    let (title, out) = if args.multi_threading {
         let title = format!("Bench ({} elements, multi-threading)", base_size);
         let out = PathBuf::from(bench_output);
         let out = out.with_file_name(format!(
