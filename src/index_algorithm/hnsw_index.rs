@@ -3,10 +3,11 @@ use std::{
     collections::{BTreeSet, HashSet},
     ops::Index,
     path::Path,
-    thread, vec,
+    vec,
 };
 
 use rand::Rng;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -27,7 +28,7 @@ pub fn default_max_elements() -> usize {
 
 /// The default number of neighbors to search during construction.
 pub fn default_ef_construction() -> usize {
-    100
+    200
 }
 
 /// The default number of neighbors to keep for each vector.
@@ -92,8 +93,6 @@ pub struct HNSWInnerConfig {
     pub inv_log_m: f32,
     /// The threshold to start batch operations.
     pub start_batch_since: usize,
-    /// The inner batch size for batch operations.
-    pub inner_batch_size: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,10 +126,6 @@ pub struct HNSWIndex<T> {
     ///
     /// Capacity: max_elements.
     pub(crate) vec_level: Vec<usize>,
-    /// The deleted mark of each vector.
-    ///
-    /// Capacity: max_elements.
-    pub(crate) deleted_mark: Vec<bool>,
     /// The number of vectors marked as deleted.
     pub(crate) num_deleted: usize,
     /// The maximum level of the index.
@@ -205,34 +200,46 @@ impl<T: Scalar> HNSWIndex<T> {
         self.get_links_mut(vec_idx, level).clone_from_slice(links);
     }
     /// Try to push a link to a vector at a specific level.
-    ///
     /// Or re-arrange the links heuristically if the links are full.
-    fn push_link_or_heuristic(&mut self, vec_idx: usize, level: usize, new_vec_idx: usize) {
-        let len = self.get_links_len_checked(vec_idx, level);
+    fn arrange_links(&self, vec_idx: usize, level: usize, new_vec_idx: usize) -> Vec<u32> {
         let limit = self.get_links_limit(level);
-        if len < limit {
-            // Enough space to push the new link.
-            self.links_len[vec_idx][level] += 1;
-            *self.get_links_mut(vec_idx, level).last_mut().unwrap() = new_vec_idx as u32;
-            return;
+        let mut links = self.get_links(vec_idx, level).to_vec();
+        links.push(new_vec_idx as u32);
+        if links.len() <= limit {
+            return links;
         }
-        let v = &self[vec_idx];
-        let v_cache = self.dist_cache[vec_idx];
+        let dist_fn = |a, b| self.inner_dist_fn(a, b);
         let mut set = ResultSet::new(limit + 1);
-        let mut add = |idx: usize| {
-            let d = self.dist_with_cache(idx, v, v_cache);
-            set.add(CandidatePair::new(idx, d));
-        };
-        add(new_vec_idx);
-        for &neighbor in self.get_links(vec_idx, level) {
-            add(neighbor as usize);
+        for index in links.iter().map(|&idx| idx as usize) {
+            let distance = dist_fn(vec_idx, index);
+            set.add(CandidatePair::new(index, distance));
         }
-        let links = set.heuristic(limit, |a, b| self.inner_dist_fn(a, b));
-        let links = links.iter().map(|p| p.index as u32).collect::<Vec<_>>();
-        self.put_links(vec_idx, level, &links);
+        let links = set.heuristic(limit, dist_fn);
+        links.iter().map(|p| p.index as u32).collect()
     }
-    /// Connect new links to a vector at a specific level. (Used during adding a vector)
-    fn connect_new_links(&mut self, vec_idx: usize, level: usize, candidates: ResultSet) {
+    /// Arrange links in parallel.
+    /// arranges: (vec_idx, level, new_vec_idx) need to be re-arranged.
+    fn arrange_parallel(&mut self, arranges: &Vec<(usize, usize, usize)>) {
+        let links = arranges
+            .par_iter()
+            .map(|&(vec_idx, level, new_vec_idx)| {
+                let links = self.arrange_links(vec_idx, level, new_vec_idx);
+                (vec_idx, level, links)
+            })
+            .collect::<Vec<_>>();
+
+        for (vec_idx, level, links) in links {
+            self.put_links(vec_idx, level, &links);
+        }
+    }
+    /// Connect new links to a vector at a specific level.
+    /// Returns (vec_idx, level, new_vec_idx) need to be re-arranged.
+    fn heuristic_for_new(
+        &mut self,
+        vec_idx: usize,
+        level: usize,
+        candidates: ResultSet,
+    ) -> Vec<(usize, usize, usize)> {
         assert!(
             self.get_links_len_checked(vec_idx, level) == 0,
             "Links are not empty."
@@ -242,9 +249,10 @@ impl<T: Scalar> HNSWIndex<T> {
         let neighbors = candidates.heuristic(m, |a, b| self.inner_dist_fn(a, b));
         let neighbors = neighbors.iter().map(|p| p.index as u32).collect::<Vec<_>>();
         self.put_links(vec_idx, level, &neighbors);
-        for neighbor in neighbors {
-            self.push_link_or_heuristic(neighbor as usize, level, vec_idx);
-        }
+        return neighbors
+            .iter()
+            .map(|&neighbor| (neighbor as usize, level, vec_idx))
+            .collect();
     }
     /// Push a vector to the index and initialize:
     /// vec_set, level0_links, other_links, links_len, vec_level, deleted_mark, norm_cache.
@@ -257,32 +265,11 @@ impl<T: Scalar> HNSWIndex<T> {
         self.other_links.push(vec![0; self.config.m * level]);
         self.links_len.push(vec![0; level + 1]);
         self.vec_level.push(level);
-        self.deleted_mark.push(false);
         self.dist_cache.push(match self.config.dist {
             DistanceAlgorithm::L2Sqr => T::dot_product(vec, vec),
             DistanceAlgorithm::Cosine => T::vec_norm(vec),
         });
         idx
-    }
-    /// Delete a vector from the index by setting a deleted mark.
-    pub fn soft_delete(&mut self, idx: usize) {
-        if self.is_soft_deleted(idx) {
-            return;
-        }
-        self.deleted_mark[idx] = true;
-        self.num_deleted += 1;
-    }
-    /// Restore a vector from deleted by clearing the deleted mark.
-    pub fn restore_soft_deleted(&mut self, idx: usize) {
-        if !self.is_soft_deleted(idx) {
-            return;
-        }
-        self.deleted_mark[idx] = false;
-        self.num_deleted -= 1;
-    }
-    /// Check if a vector has deleted mark.
-    pub fn is_soft_deleted(&self, idx: usize) -> bool {
-        self.deleted_mark[idx]
     }
 
     fn search_on_level_fn(
@@ -299,9 +286,7 @@ impl<T: Scalar> HNSWIndex<T> {
         // Insert the enter point.
         visited.insert(enter_point);
         let enter_pair = CandidatePair::new(enter_point, dist_fn(enter_point));
-        if !self.is_soft_deleted(enter_point) {
-            result.add(enter_pair.clone());
-        }
+        result.add(enter_pair.clone());
         queue.insert(enter_pair);
         while let Some(pair) = queue.pop_first() {
             if !result.check_candidate(&pair) {
@@ -315,9 +300,7 @@ impl<T: Scalar> HNSWIndex<T> {
                 visited.insert(new_p);
                 let new_d = dist_fn(new_p);
                 let new_pair = CandidatePair::new(new_p, new_d);
-                if !self.is_soft_deleted(new_p) {
-                    result.add(new_pair.clone());
-                }
+                result.add(new_pair.clone());
                 queue.insert(new_pair);
             }
         }
@@ -421,12 +404,19 @@ impl<T: Scalar> HNSWIndex<T> {
         self.vec_level.reserve(additional);
         self.other_links.reserve(additional);
         self.links_len.reserve(additional);
-        self.deleted_mark.reserve(additional);
     }
-    /// Batch add vectors to the index.
-    fn inner_batch_add(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize> {
+    fn next_batch_size(&self) -> usize {
+        let m = self.config.start_batch_since;
+        if self.len() < m {
+            1
+        } else {
+            (self.len() / 10).min(m)
+        }
+    }
+    /// Add vectors in a chunk in parallel.
+    fn add_parallel(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize> {
         let n = vec_list.len();
-        if self.len() < self.config.start_batch_since || n < 3 {
+        if self.len() < self.config.start_batch_since || n == 1 {
             // At the beginning, we choose to add vectors one by one.
             // Or if vec_list is too small, batch add is not efficient.
             return vec_list.iter().map(|vec| self.add(vec, rng)).collect();
@@ -438,52 +428,43 @@ impl<T: Scalar> HNSWIndex<T> {
             let idx = self.push_init(vec, level);
             indices.push(idx);
         }
-        let (sender, receiver) = std::sync::mpsc::channel();
-        thread::scope(|s| {
-            for idx in indices.iter() {
-                s.spawn(|| {
-                    let idx = *idx;
-                    let level = self.vec_level[idx];
-                    let vec = &self[idx];
-                    // Index is not null, so unwrap is safe.
-                    let enter_point = self.enter_point.unwrap();
-                    let enter_level = self.enter_level.unwrap();
-                    let mut cached_dist = Vec::new();
-                    for &rhs_idx in indices.iter() {
-                        if rhs_idx < idx {
-                            cached_dist.push((rhs_idx, self.inner_dist_fn(idx, rhs_idx)));
-                        }
-                    }
+        let candidates = indices
+            .par_iter()
+            .map(|&idx| {
+                let vec = &self[idx];
+                let level = self.vec_level[idx];
+                let enter_point = self.enter_point.unwrap();
+                let enter_level = self.enter_level.unwrap();
+                let mut cur_p = if level < enter_level {
+                    self.greedy_search_until_level(level, vec)
+                } else {
+                    enter_point
+                };
+                let ef = self.config.ef_construction;
+                let mut result = Vec::new();
+                for level in (0..=level.min(enter_level)).rev() {
+                    let mut candidates = self.search_on_level(cur_p, level, ef, vec);
+                    // Choose the nearest neighbor as the enter point of the next level.
+                    cur_p = candidates.results.first().unwrap().index;
+                    indices
+                        .iter()
+                        .filter(|&&rhs_idx| rhs_idx < idx && self.vec_level[rhs_idx] >= level)
+                        .for_each(|&rhs_idx| {
+                            let d = self.inner_dist_fn(idx, rhs_idx);
+                            candidates.add(CandidatePair::new(rhs_idx, d));
+                        });
+                    result.push((level, candidates));
+                }
+                (idx, result)
+            })
+            .collect::<Vec<_>>();
+        for (idx, levels) in candidates {
+            let arranges = levels
+                .into_iter()
+                .flat_map(|(level, candidates)| self.heuristic_for_new(idx, level, candidates))
+                .collect::<Vec<_>>();
 
-                    let mut cur_p = if level < enter_level {
-                        self.greedy_search_until_level(level, vec)
-                    } else {
-                        enter_point
-                    };
-                    let ef = self.config.ef_construction;
-                    for level in (0..=level.min(enter_level)).rev() {
-                        let mut candidates = self.search_on_level(cur_p, level, ef, vec);
-                        // Choose the nearest neighbor as the enter point of the next level.
-                        cur_p = candidates.results.first().unwrap().index;
-                        for &(rhs_idx, rhs_dist) in cached_dist.iter() {
-                            if self.vec_level[rhs_idx] < level {
-                                continue;
-                            }
-                            // Consider the new vector as a candidate.
-                            let new_pair = CandidatePair::new(rhs_idx, rhs_dist);
-                            candidates.add(new_pair);
-                        }
-                        sender.send((idx, level, candidates)).unwrap();
-                    }
-                });
-            }
-        });
-        // Drop the sender to close the channel.
-        drop(sender);
-        let mut candidates = receiver.iter().collect::<Vec<_>>();
-        candidates.sort_by_key(|&(idx, level, _)| (idx, level));
-        for (idx, level, candidates) in candidates {
-            self.connect_new_links(idx, level, candidates);
+            self.arrange_parallel(&arranges);
         }
         for &idx in indices.iter() {
             let level = self.vec_level[idx];
@@ -494,6 +475,24 @@ impl<T: Scalar> HNSWIndex<T> {
             }
         }
         indices
+    }
+    /// Split the batch add into smaller chunks to add in parallel.
+    fn inner_batch_add(
+        &mut self,
+        vec_list: &[&[T]],
+        rng: &mut impl Rng,
+        pos_callback: impl Fn(usize) -> (),
+    ) -> Vec<usize> {
+        let mut cur = 0;
+        let n = vec_list.len();
+        let mut result = Vec::with_capacity(n);
+        while cur < vec_list.len() {
+            let next = (cur + self.next_batch_size()).min(n);
+            result.extend(self.add_parallel(&vec_list[cur..next], rng));
+            cur = next;
+            pos_callback(cur);
+        }
+        result
     }
 }
 impl<T: Scalar> Index<usize> for HNSWIndex<T> {
@@ -526,14 +525,12 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         let default_ef = ef_construction / 2;
         let inv_log_m = 1.0 / (m as f32).ln();
         let start_batch_since = 1000;
-        let inner_batch_size = rayon::current_num_threads();
 
-        let vec_set = VecSet::<T>::with_capacity(dim, max_elements);
+        let vec_set: VecSet<T> = VecSet::<T>::with_capacity(dim, max_elements);
         let level0_links = Vec::with_capacity(max_elements * max_m0);
         let vec_level = Vec::with_capacity(max_elements);
         let other_links = Vec::with_capacity(max_elements);
         let links_len = Vec::with_capacity(max_elements);
-        let deleted_mark = Vec::with_capacity(max_elements);
         let dist_cache = Vec::with_capacity(max_elements);
 
         Self {
@@ -547,14 +544,12 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
                 default_ef,
                 inv_log_m,
                 start_batch_since,
-                inner_batch_size,
             },
             vec_set,
             level0_links,
             other_links,
             links_len,
             vec_level,
-            deleted_mark,
             num_deleted: 0,
             enter_level: None,
             enter_point: None,
@@ -586,7 +581,8 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
             let candidates = self.search_on_level(cur_p, level, ef, vec);
             // Choose the nearest neighbor as the enter point of the next level.
             cur_p = candidates.results.first().unwrap().index;
-            self.connect_new_links(idx, level, candidates);
+            let arranges = self.heuristic_for_new(idx, level, candidates);
+            self.arrange_parallel(&arranges);
         }
 
         // Update the enter point if the new vector is closer to the query.
@@ -597,24 +593,26 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
         idx
     }
     fn batch_add(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize> {
-        vec_list
-            .chunks(self.config.inner_batch_size)
-            .flat_map(|chunk| self.inner_batch_add(chunk, rng))
-            .collect()
+        self.inner_batch_add(vec_list, rng, |_| {})
     }
     fn batch_add_process(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize> {
-        use indicatif::{ProgressIterator, ProgressStyle};
+        use indicatif::ProgressStyle;
 
         let style = ProgressStyle::default_bar()
-                    .template("[{elapsed_precise} ~ ETA {eta}] {bar:40.cyan/blue} {pos:>7}/{len} batches, {per_sec:2}")
-                    .unwrap()
-                    .progress_chars("##-");
+            .template(
+                "[{elapsed_precise}|ETA {eta}] {bar:40.cyan/blue} {pos:<8}/{len}|{per_sec:>15}",
+            )
+            .unwrap()
+            .progress_chars("##-");
 
-        vec_list
-            .chunks(self.config.inner_batch_size)
-            .progress_with_style(style)
-            .flat_map(|chunk| self.inner_batch_add(chunk, rng))
-            .collect()
+        let n = vec_list.len();
+        let progress_bar = indicatif::ProgressBar::new(n as u64);
+        progress_bar.set_style(style);
+        let pos_callback = |cur| {
+            progress_bar.set_position(cur as u64);
+        };
+
+        self.inner_batch_add(vec_list, rng, pos_callback)
     }
     fn build_on_vec_set(
         vec_set: impl Borrow<VecSet<T>>,

@@ -99,6 +99,9 @@ struct Args {
     /// Plot the result only
     #[clap(short, long)]
     plot_only: bool,
+    /// Force to rebuild the index and PQTable
+    #[clap(short, long)]
+    force_rebuild: bool,
     /// Save the plot to a html file
     #[clap(long)]
     html: Option<String>,
@@ -172,6 +175,7 @@ fn load_or_build_pq<T: Scalar>(
     config: &BenchConfig,
     base_set: &VecSet<T>,
     rng: &mut impl Rng,
+    force_rebuild: bool,
 ) -> Result<Option<PQTable<T>>> {
     let (config, pq_cache) = match &config.pq {
         Some(pq_config) => (
@@ -188,7 +192,7 @@ fn load_or_build_pq<T: Scalar>(
         None => return Ok(None),
     };
     let path = Path::new(&pq_cache);
-    if path.exists() {
+    if path.exists() && !force_rebuild {
         println!("Trying to load PQTable from {}...", pq_cache);
         let pq_table = PQTable::load(&path)?;
         println!("PQTable loaded.");
@@ -208,10 +212,11 @@ fn load_or_build_index<T: Scalar>(
     config: BenchConfig,
     base_set: VecSet<T>,
     rng: &mut impl Rng,
+    force_rebuild: bool,
 ) -> Result<DynamicIndex<T>> {
     let path = Path::new(&config.index_cache);
 
-    if path.exists() {
+    if path.exists() && !force_rebuild {
         println!("Trying to load index from {}...", path.display());
         let start = std::time::Instant::now();
         let index = match config.algorithm {
@@ -391,9 +396,9 @@ fn main() -> Result<()> {
     let ef = bench_config.ef.clone();
     let bench_output = bench_config.bench_output.clone();
 
-    let pq = load_or_build_pq(&bench_config, &base_set, &mut rng)?;
-
-    let index = load_or_build_index(bench_config, base_set, &mut rng)?;
+    let force_rebuild = args.force_rebuild;
+    let pq = load_or_build_pq(&bench_config, &base_set, &mut rng, force_rebuild)?;
+    let index = load_or_build_index(bench_config, base_set, &mut rng, force_rebuild)?;
 
     let mut bench_result = BenchResult::new(label);
 

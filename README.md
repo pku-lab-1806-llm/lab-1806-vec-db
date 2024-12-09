@@ -288,8 +288,10 @@ Check the comments at the end of the source files for the usage.
 Download Gist1M dataset from:
 
 - Official: <http://corpus-texmex.irisa.fr/>
-- Ours: **Recommended** faster, and already converted to the binary format. We also provide pre-built config file & ground truth & HNSW index.
+- Ours: **Recommended** faster, and already converted to the binary format.
 
   <https://huggingface.co/datasets/pku-lab-1806-llm/gist-for-lab-1806-vec-db>
 
 Then, you can run the examples to test the database.
+
+Note that pre-built index file may be outdated and failed to load. You can build it yourself.
