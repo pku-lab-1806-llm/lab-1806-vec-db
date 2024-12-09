@@ -407,11 +407,14 @@ impl<T: Scalar> HNSWIndex<T> {
     }
     fn next_batch_size(&self) -> usize {
         let n = self.len();
-        let m = self.config.start_batch_since;
-        if n < m {
+        if n < self.config.start_batch_since {
             return 1;
         }
-        (n / 10).min(m).min(self.dim())
+        // Larger dim / More threads -> larger batch size.
+        // And never exceed 1/m of the current size.
+        self.dim()
+            .max(rayon::current_num_threads())
+            .min(n / self.config.m)
     }
     /// Add vectors in a chunk in parallel.
     fn add_parallel(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize> {
