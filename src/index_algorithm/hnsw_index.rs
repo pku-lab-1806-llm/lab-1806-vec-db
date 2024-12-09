@@ -406,10 +406,11 @@ impl<T: Scalar> HNSWIndex<T> {
         self.links_len.reserve(additional);
     }
     fn next_batch_size(&self) -> usize {
-        if self.len() < self.config.start_batch_since {
+        let m = self.config.start_batch_since;
+        if self.len() < m {
             1
         } else {
-            (self.len() / 10).min(1000)
+            (self.len() / 10).min(m)
         }
     }
     /// Batch add vectors to the index.
