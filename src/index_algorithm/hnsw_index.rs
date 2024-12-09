@@ -201,12 +201,13 @@ impl<T: Scalar> HNSWIndex<T> {
     }
     /// Try to push a link to a vector at a specific level.
     /// Or re-arrange the links heuristically if the links are full.
-    fn arrange_links(&self, vec_idx: usize, level: usize, new_vec_idx: usize) -> Vec<u32> {
+    fn arrange_links(&mut self, vec_idx: usize, level: usize, new_vec_idx: usize) {
         let limit = self.get_links_limit(level);
         let mut links = self.get_links(vec_idx, level).to_vec();
         links.push(new_vec_idx as u32);
         if links.len() <= limit {
-            return links;
+            self.put_links(vec_idx, level, &links);
+            return;
         }
         let dist_fn = |a, b| self.inner_dist_fn(a, b);
         let mut set = ResultSet::new(limit + 1);
@@ -214,32 +215,15 @@ impl<T: Scalar> HNSWIndex<T> {
             let distance = dist_fn(vec_idx, index);
             set.add(CandidatePair::new(index, distance));
         }
-        let links = set.heuristic(limit, dist_fn);
-        links.iter().map(|p| p.index as u32).collect()
-    }
-    /// Arrange links in parallel.
-    /// arranges: (vec_idx, level, new_vec_idx) need to be re-arranged.
-    fn arrange_parallel(&mut self, arranges: &Vec<(usize, usize, usize)>) {
-        let links = arranges
-            .par_iter()
-            .map(|&(vec_idx, level, new_vec_idx)| {
-                let links = self.arrange_links(vec_idx, level, new_vec_idx);
-                (vec_idx, level, links)
-            })
+        let links = set
+            .heuristic(limit, dist_fn)
+            .iter()
+            .map(|p| p.index as u32)
             .collect::<Vec<_>>();
-
-        for (vec_idx, level, links) in links {
-            self.put_links(vec_idx, level, &links);
-        }
+        self.put_links(vec_idx, level, &links);
     }
     /// Connect new links to a vector at a specific level.
-    /// Returns (vec_idx, level, new_vec_idx) need to be re-arranged.
-    fn heuristic_for_new(
-        &mut self,
-        vec_idx: usize,
-        level: usize,
-        candidates: ResultSet,
-    ) -> Vec<(usize, usize, usize)> {
+    fn connect_new_links(&mut self, vec_idx: usize, level: usize, candidates: ResultSet) {
         assert!(
             self.get_links_len_checked(vec_idx, level) == 0,
             "Links are not empty."
@@ -249,10 +233,9 @@ impl<T: Scalar> HNSWIndex<T> {
         let neighbors = candidates.heuristic(m, |a, b| self.inner_dist_fn(a, b));
         let neighbors = neighbors.iter().map(|p| p.index as u32).collect::<Vec<_>>();
         self.put_links(vec_idx, level, &neighbors);
-        return neighbors
-            .iter()
-            .map(|&neighbor| (neighbor as usize, level, vec_idx))
-            .collect();
+        for &neighbor in neighbors.iter() {
+            self.arrange_links(neighbor as usize, level, vec_idx);
+        }
     }
     /// Push a vector to the index and initialize:
     /// vec_set, level0_links, other_links, links_len, vec_level, deleted_mark, norm_cache.
@@ -410,11 +393,7 @@ impl<T: Scalar> HNSWIndex<T> {
         if n < self.config.start_batch_since {
             return 1;
         }
-        // Larger dim / More threads -> larger batch size.
-        // And never exceed 1/m of the current size.
-        self.dim()
-            .max(rayon::current_num_threads())
-            .min(n / self.config.m)
+        (rayon::current_num_threads() * 4).min(n / self.config.m)
     }
     /// Add vectors in a chunk in parallel.
     fn add_parallel(&mut self, vec_list: &[&[T]], rng: &mut impl Rng) -> Vec<usize> {
@@ -462,12 +441,9 @@ impl<T: Scalar> HNSWIndex<T> {
             })
             .collect::<Vec<_>>();
         for (idx, levels) in candidates {
-            let arranges = levels
-                .into_iter()
-                .flat_map(|(level, candidates)| self.heuristic_for_new(idx, level, candidates))
-                .collect::<Vec<_>>();
-
-            self.arrange_parallel(&arranges);
+            for (level, candidates) in levels {
+                self.connect_new_links(idx, level, candidates);
+            }
         }
         for &idx in indices.iter() {
             let level = self.vec_level[idx];
@@ -584,8 +560,7 @@ impl<T: Scalar> IndexBuilder<T> for HNSWIndex<T> {
             let candidates = self.search_on_level(cur_p, level, ef, vec);
             // Choose the nearest neighbor as the enter point of the next level.
             cur_p = candidates.results.first().unwrap().index;
-            let arranges = self.heuristic_for_new(idx, level, candidates);
-            self.arrange_parallel(&arranges);
+            self.connect_new_links(idx, level, candidates);
         }
 
         // Update the enter point if the new vector is closer to the query.

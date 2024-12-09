@@ -6,7 +6,7 @@ from lab_1806_vec_db import VecDB
 
 # 1. Add `std::thread::sleep(std::time::Duration::from_secs(1));` to VecDBManager::search() before `Ok(table.search(query, k, ef, upper_bound))`.
 # 2. Run `uv sync --reinstall-package lab_1806_vec_db` to reinstall the package.
-# 3. Run `uv run -m examples.test_multi_threads` to test multi-threads search.
+# 3. Run `uv run -m examples.test_multi_threads` to test multi-threading search.
 
 """Sample output:
 0.0s: Before search 1

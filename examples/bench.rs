@@ -2,8 +2,6 @@ use std::{
     io::Write,
     ops::AddAssign,
     path::{Path, PathBuf},
-    sync::mpsc,
-    thread,
 };
 
 use anyhow::Result;
@@ -15,7 +13,8 @@ use lab_1806_vec_db::{
         DistanceAlgorithm,
     },
     index_algorithm::{
-        candidate_pair::GroundTruth, CandidatePair, HNSWIndex, IVFIndex, LinearIndex,
+        candidate_pair::{GroundTruth, GroundTruthRow},
+        CandidatePair, HNSWIndex, IVFIndex, LinearIndex,
     },
     prelude::*,
     scalar::Scalar,
@@ -23,6 +22,7 @@ use lab_1806_vec_db::{
 };
 use plotly::{Plot, Scatter, Trace};
 use rand::{Rng, SeedableRng};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -108,12 +108,8 @@ struct Args {
     /// Repeat times for more stable results
     #[clap(short, long, default_value = "1")]
     repeat_times: usize,
-    /// Number of threads, recommended to be the number of physical cores.
-    ///
-    /// Generally, multi-threading is disabled for benchmarking,
-    /// but it is common in real applications, so you can try it here.
-    #[clap(short, long)]
-    num_threads: Option<usize>,
+    #[clap(short = 't', long)]
+    multi_thread: bool,
 }
 
 struct AvgRecorder {
@@ -408,40 +404,18 @@ fn main() -> Result<()> {
 
         let start = std::time::Instant::now();
         for _ in 0..args.repeat_times {
-            if let Some(num_threads) = args.num_threads {
-                let (sender, receiver) = mpsc::channel();
-                thread::scope(|s| {
-                    for idx in 0..num_threads {
-                        let (test_set, gnd, pq, index) = (&test_set, &gnd, &pq, &index);
-                        let sender = sender.clone();
-                        s.spawn(move || {
-                            let mut thread_recorder = AvgRecorder::new();
-                            for (query, gnd) in test_set
-                                .iter()
-                                .zip(gnd.iter())
-                                .skip(idx)
-                                .step_by(num_threads)
-                            {
-                                let result_set = index.knn_with_ef(query, k, ef, &pq);
-
-                                let recall = gnd.recall(&result_set);
-                                thread_recorder.add(recall);
-                            }
-                            sender.send(thread_recorder).unwrap();
-                        });
-                    }
-                });
-                for thread_recorder in receiver.iter().take(num_threads) {
-                    avg_recall.add(thread_recorder.avg());
-                }
+            let test_refs = test_set.iter().zip(gnd.iter()).collect::<Vec<_>>();
+            let bench_one = |(query, gnd): &(&[f32], &GroundTruthRow)| {
+                let result_set = index.knn_with_ef(query, k, ef, &pq);
+                gnd.recall(&result_set)
+            };
+            let recall = if args.multi_thread {
+                test_refs.par_iter().map(bench_one).collect::<Vec<_>>()
             } else {
-                for (query, gnd) in test_set.iter().zip(gnd.iter()) {
-                    // benchmark here
-                    let result_set = index.knn_with_ef(query, k, ef, &pq);
-
-                    let recall = gnd.recall(&result_set);
-                    avg_recall.add(recall);
-                }
+                test_refs.iter().map(bench_one).collect::<Vec<_>>()
+            };
+            for recall in recall {
+                avg_recall.add(recall);
             }
         }
         let elapsed = start.elapsed().as_secs_f32();
@@ -456,12 +430,11 @@ fn main() -> Result<()> {
         bench_result.push(ef, search_time, recall);
     }
     println!("Finished benchmarking.");
-    let (title, out) = if let Some(num_threads) = args.num_threads {
-        let title = format!("Bench ({} elements, {} threads)", base_size, num_threads);
+    let (title, out) = if args.multi_thread {
+        let title = format!("Bench ({} elements, multi-threading)", base_size);
         let out = PathBuf::from(bench_output);
         let out = out.with_file_name(format!(
-            "t{}_{}",
-            num_threads,
+            "t_{}",
             out.file_name().unwrap_or_default().to_string_lossy(),
         ));
         (title, out)
@@ -482,5 +455,5 @@ fn main() -> Result<()> {
 // cargo r -r --example bench -- config/bench_hnsw.toml
 // cargo r -r --example bench -- config/bench_pq_hnsw.toml
 
-// # Test the multi-threading performance, replace search_time field with inverse_throughput.
-// cargo r -r --example bench -- config/bench_hnsw.toml -n 64 -r 10
+// # Test the multi-threading performance
+// cargo r -r --example bench -- config/bench_hnsw.toml -t -r 10
