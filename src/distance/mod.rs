@@ -1,3 +1,4 @@
+pub mod batch_distance;
 pub mod k_means;
 pub mod pq_table;
 use serde::{Deserialize, Serialize};
@@ -106,7 +107,6 @@ impl<T: DistanceScalar> DistanceAdapter<[T], [T]> for DistanceAlgorithm {
 
 /// Distance adapter for vectors with pre-calculated values.
 ///
-/// - For IPDist, no need to cache anything.
 /// - For L2Sqr, cache dot_product(a, a) and dot_product(b, b).
 /// - For Cosine, cache vec_norm(a) and vec_norm(b).
 impl<T: DistanceScalar> DistanceAdapter<(&[T], f32), (&[T], f32)> for DistanceAlgorithm {
