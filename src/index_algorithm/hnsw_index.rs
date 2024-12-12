@@ -705,7 +705,7 @@ mod test {
 
     use crate::{
         config::VecDataConfig,
-        index_algorithm::{linear_index, IndexFromVecSet},
+        index_algorithm::{flat_index, IndexFromVecSet},
     };
 
     use super::*;
@@ -743,9 +743,9 @@ mod test {
             vec_set.push(&vec[..clipped_dim]);
         }
 
-        // Test the HNSWIndex by comparing with LinearIndex.
+        // Test the HNSWIndex by comparing with FlatIndex.
         let index = HNSWIndex::<f32>::build_on_vec_set(&vec_set, dist, config, false, &mut rng);
-        let linear_index = linear_index::LinearIndex::from_vec_set(vec_set, dist, (), &mut rng);
+        let flat_index = flat_index::FlatIndex::from_vec_set(vec_set, dist, (), &mut rng);
 
         // Save and load the index. >>>>
         println!("Saving the index...");
@@ -774,9 +774,9 @@ mod test {
         );
 
         let result = index.knn(&index[query_index], k);
-        let linear_result = linear_index.knn(&linear_index[query_index], k);
+        let flat_result = flat_index.knn(&flat_index[query_index], k);
 
-        for (res, l_res) in result.iter().zip(linear_result.iter()) {
+        for (res, l_res) in result.iter().zip(flat_result.iter()) {
             println!("Index: {}, Distance: {}", res.index, res.distance);
             println!("Vector: {}", clip_msg(&format!("{:?}", &index[res.index])));
             assert_eq!(res.index, l_res.index, "Index mismatch");
