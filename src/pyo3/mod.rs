@@ -6,7 +6,7 @@ pub mod lab_1806_vec_db {
     use crate::prelude::*;
     use pyo3::exceptions::{PyRuntimeError, PyValueError};
     use serde::{Deserialize, Serialize};
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::BTreeMap;
 
     use super::*;
 
@@ -60,14 +60,14 @@ pub mod lab_1806_vec_db {
     #[pymethods]
     impl BareVecTable {
         #[new]
-        #[pyo3(signature = (dim, dist="cosine", ef_c=None))]
+        #[pyo3(signature = (dim, dist="cosine"))]
         /// Create a new Table. (Using HNSW internally)
         ///
         /// Raises:
         ///     ValueError: If the distance function is invalid.
-        pub fn new(dim: usize, dist: &str, ef_c: Option<usize>) -> PyResult<Self> {
+        pub fn new(dim: usize, dist: &str) -> PyResult<Self> {
             let dist = distance_algorithm_from_str(dist)?;
-            let inner = MetadataVecTable::new(dim, dist, ef_c);
+            let inner = MetadataVecTable::new(dim, dist);
             Ok(Self { inner })
         }
 
@@ -123,13 +123,6 @@ pub mod lab_1806_vec_db {
             self.inner.batch_add(vec_list, metadata_list);
         }
 
-        /// Get the specified row by id.
-        pub fn get_row_by_id(&self, id: usize) -> PyResult<(Vec<f32>, BTreeMap<String, String>)> {
-            self.inner
-                .get_row_by_id(id)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
-        }
-
         /// Search for the nearest neighbors of a vector.
         ///
         /// Returns a list of (metadata, distance) pairs.
@@ -173,19 +166,18 @@ pub mod lab_1806_vec_db {
         ///
         /// Raises:
         ///     ValueError: If the distance function is invalid.
-        #[pyo3(signature = (key, dim, dist="cosine", ef_c=None))]
+        #[pyo3(signature = (key, dim, dist="cosine"))]
         pub fn create_table_if_not_exists(
             &self,
             py: Python,
             key: &str,
             dim: usize,
             dist: &str,
-            ef_c: Option<usize>,
         ) -> PyResult<bool> {
             py.allow_threads(|| {
                 let dist = distance_algorithm_from_str(&dist)?;
                 self.inner
-                    .create_table_if_not_exists(key, dim, dist, ef_c)
+                    .create_table_if_not_exists(key, dim, dist)
                     .map_err(|e| PyRuntimeError::new_err(e.to_string()))
             })
         }
@@ -268,20 +260,6 @@ pub mod lab_1806_vec_db {
             })
         }
 
-        /// Get the specified row by id.
-        pub fn get_row_by_id(
-            &self,
-            py: Python,
-            key: &str,
-            id: usize,
-        ) -> PyResult<(Vec<f32>, BTreeMap<String, String>)> {
-            py.allow_threads(|| {
-                self.inner
-                    .get_row_by_id(key, id)
-                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
-            })
-        }
-
         /// Search for the nearest neighbors of a vector.
         /// Returns a list of (metadata, distance) pairs.
         #[pyo3(signature = (key, query, k, ef=None, upper_bound=None))]
@@ -297,25 +275,6 @@ pub mod lab_1806_vec_db {
             py.allow_threads(|| {
                 self.inner
                     .search(key, &query, k, ef, upper_bound)
-                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
-            })
-        }
-
-        /// Search for the nearest neighbors of a vector in multiple tables.
-        /// Returns a list of (table_name, metadata, distance) pairs.
-        #[pyo3(signature = (key_list, query, k, ef=None, upper_bound=None))]
-        pub fn join_search(
-            &self,
-            py: Python,
-            key_list: BTreeSet<String>,
-            query: Vec<f32>,
-            k: usize,
-            ef: Option<usize>,
-            upper_bound: Option<f32>,
-        ) -> PyResult<Vec<(String, BTreeMap<String, String>, f32)>> {
-            py.allow_threads(|| {
-                self.inner
-                    .join_search(&key_list, &query, k, ef, upper_bound)
                     .map_err(|e| PyRuntimeError::new_err(e.to_string()))
             })
         }
