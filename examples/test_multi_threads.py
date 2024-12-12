@@ -22,6 +22,7 @@ from lab_1806_vec_db import VecDB
 db = VecDB("tmp/vec_db")
 
 db.create_table_if_not_exists("table1", 1)
+db.build_hnsw_index("table1")
 db.batch_add(
     "table1",
     [[random.random()] for _ in range(100)],

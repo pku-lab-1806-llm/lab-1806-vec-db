@@ -18,14 +18,13 @@ class BareVecTable:
 
     Prefer using VecDB to manage multiple tables.
     """
-    def __init__(self, dim: int, dist: str = "cosine", ef_c: int | None = None) -> None:
+    def __init__(self, dim: int, dist: str = "cosine") -> None:
         """
         Create a new Table. (Using HNSW internally)
 
         Args:
             dim (int): Dimension of the vectors.
             dist (str): Distance function. See `calc_dist` for details.
-            ef_c (int): ef_construction parameter for HNSW. (default: 200, recommended: 40-200)
 
         Raises:
             ValueError: If the distance function is invalid.
@@ -53,19 +52,15 @@ class BareVecTable:
         """Save the index to disk."""
         ...
 
-    def add(self, vec: list[float], metadata: dict[str, str]):
+    def add(self, vec: list[float], metadata: dict[str, str]) -> None:
         """Add a vector to the index.
         Use `batch_add` for better performance."""
         ...
 
     def batch_add(
         self, vec_list: list[list[float]], metadata_list: list[dict[str, str]]
-    ):
+    ) -> None:
         """Add multiple vectors to the index."""
-        ...
-
-    def get_row_by_id(self, id: int) -> tuple[list[float], dict[str, str]]:
-        """Get a vector and metadata by id."""
         ...
 
     def search(
@@ -77,6 +72,22 @@ class BareVecTable:
     ) -> list[tuple[dict[str, str], float]]:
         """Search for the nearest neighbors of a vector.
         Returns a list of (metadata, distance) pairs."""
+        ...
+
+    def build_hnsw_index(self, ef_construction: int | None = None) -> None:
+        """Build HNSW index for the table."""
+        ...
+
+    def clear_hnsw_index(self) -> None:
+        """Clear HNSW index for the table."""
+        ...
+
+    def has_hnsw_index(self) -> bool:
+        """Check if the table has HNSW index."""
+        ...
+
+    def delete(self, pattern: dict[str, str]) -> None:
+        """Delete vectors with metadata that match the pattern."""
         ...
 
 class VecDB:
@@ -96,7 +107,7 @@ class VecDB:
         ...
 
     def create_table_if_not_exists(
-        self, name: str, dim: int, dist: str = "cosine", ef_c: int | None = None
+        self, key: str, dim: int, dist: str = "cosine"
     ) -> bool:
         """Create a new table if it does not exist.
 
@@ -104,7 +115,6 @@ class VecDB:
             key (str): The table name.
             dim (int): Dimension of the vectors.
             dist (str): Distance function. See `calc_dist` for details.
-            ef_c (int): ef_construction parameter for HNSW. (default: 200, recommended: 40-200)
 
         Raises:
             ValueError: If the distance function is invalid.
@@ -139,19 +149,19 @@ class VecDB:
         Does nothing if the table is not cached."""
         ...
 
-    def add(self, key: str, vec: list[float], metadata: dict[str, str]):
+    def add(self, key: str, vec: list[float], metadata: dict[str, str]) -> None:
         """Add a vector to the table.
         Use `batch_add` for better performance."""
         ...
 
     def batch_add(
         self, key: str, vec_list: list[list[float]], metadata_list: list[dict[str, str]]
-    ):
+    ) -> None:
         """Add multiple vectors to the table."""
         ...
 
-    def get_row_by_id(self, key: str, id: int) -> tuple[list[float], dict[str, str]]:
-        """Get a vector and metadata by id."""
+    def delete(self, key: str, pattern: dict[str, str]) -> None:
+        """Delete vectors with metadata that match the pattern."""
         ...
 
     def search(
@@ -166,14 +176,14 @@ class VecDB:
         Returns a list of (metadata, distance) pairs."""
         ...
 
-    def join_search(
-        self,
-        key_list: set[str],
-        query: list[float],
-        k: int,
-        ef: int | None = None,
-        upper_bound: float | None = None,
-    ) -> list[tuple[str, dict[str, str], float]]:
-        """Search for the nearest neighbors of a vector in multiple tables.
-        Returns a list of (table_name, metadata, distance) pairs."""
+    def build_hnsw_index(self, key: str, ef_construction: int | None = None) -> None:
+        """Build HNSW index for the table."""
+        ...
+
+    def clear_hnsw_index(self, key: str) -> None:
+        """Clear HNSW index for the table."""
+        ...
+
+    def has_hnsw_index(self, key: str) -> bool:
+        """Check if the table has HNSW index."""
         ...
