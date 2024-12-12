@@ -21,6 +21,14 @@ pub struct FlatIndex<T> {
     /// The vector set.
     pub(crate) vec_set: VecSet<T>,
 }
+impl<T: Scalar> FlatIndex<T> {
+    pub fn new(dim: usize, dist: DistanceAlgorithm) -> Self {
+        Self {
+            dist,
+            vec_set: VecSet::new(dim, vec![]),
+        }
+    }
+}
 impl<T: Scalar> Index<usize> for FlatIndex<T> {
     type Output = [T];
 

@@ -123,6 +123,14 @@ impl<T: Scalar> VecSet<T> {
         }
     }
 
+    pub fn swap_remove(&mut self, index: usize) {
+        assert!(index < self.len());
+        let last = self.pop_last().unwrap();
+        if index < self.len() {
+            self.put(index, &last);
+        }
+    }
+
     /// Convert the `VecSet` to a `VecSet` with a different scalar type.
     ///
     /// The conversion is done by casting the scalar values to `f32` and then to the target type `U`.
