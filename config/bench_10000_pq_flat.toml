@@ -1,13 +1,13 @@
-label = "Linear+PQ"
+label = "Flat+PQ"
 dist = "L2Sqr"
 gnd_path = "data/gnd_10000.local.bin"
-index_cache = "data/gist_10000_pq_linear.local.bin"
+index_cache = "data/gist_10000_pq_flat.local.bin"
 bench_output = "data/bench_10000.local.toml"
 
 [ef]
 list = [100, 200]
 
-[algorithm.Linear]
+[algorithm.Flat]
 
 
 [PQ]

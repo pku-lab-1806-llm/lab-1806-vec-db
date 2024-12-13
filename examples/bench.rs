@@ -14,7 +14,7 @@ use lab_1806_vec_db::{
     },
     index_algorithm::{
         candidate_pair::{GroundTruth, GroundTruthRow},
-        CandidatePair, HNSWIndex, IVFIndex, LinearIndex,
+        CandidatePair, FlatIndex, HNSWIndex, IVFIndex,
     },
     prelude::*,
     scalar::Scalar,
@@ -91,7 +91,7 @@ impl BenchConfig {
     }
 }
 
-/// Generate ground truth for the test set by LinearIndex
+/// Generate ground truth for the test set by FlatIndex
 #[derive(Parser)]
 struct Args {
     /// Path to the benchmark config file
@@ -140,7 +140,7 @@ impl AddAssign for AvgRecorder {
 enum DynamicIndex<T> {
     HNSW(HNSWIndex<T>),
     IVF(IVFIndex<T>),
-    Linear(LinearIndex<T>),
+    Flat(FlatIndex<T>),
 }
 impl<T: Scalar> DynamicIndex<T> {
     pub fn knn_with_ef(
@@ -153,7 +153,7 @@ impl<T: Scalar> DynamicIndex<T> {
         use DynamicIndex::*;
         match (self, pq) {
             (HNSW(index), Some(pq)) => index.knn_pq(query, k, ef, pq),
-            (Linear(index), Some(pq)) => index.knn_pq(query, k, ef, pq),
+            (Flat(index), Some(pq)) => index.knn_pq(query, k, ef, pq),
             (HNSW(index), _) => index.knn_with_ef(query, k, ef),
             (IVF(index), _) => index.knn_with_ef(query, k, ef),
             _ => unimplemented!("({:?}, {:?}) is not implemented.", self.index_name(), pq),
@@ -163,7 +163,7 @@ impl<T: Scalar> DynamicIndex<T> {
         match self {
             DynamicIndex::HNSW(_) => "HNSW".to_string(),
             DynamicIndex::IVF(_) => "IVF".to_string(),
-            DynamicIndex::Linear(_) => "Linear".to_string(),
+            DynamicIndex::Flat(_) => "Flat".to_string(),
         }
     }
 }
@@ -224,9 +224,9 @@ fn load_or_build_index<T: Scalar>(
                 let index = IVFIndex::load_with_external_vec_set(&config.index_cache, base_set)?;
                 DynamicIndex::IVF(index)
             }
-            IndexAlgorithmConfig::Linear => {
-                let index = LinearIndex::load_with_external_vec_set(&config.index_cache, base_set)?;
-                DynamicIndex::Linear(index)
+            IndexAlgorithmConfig::Flat => {
+                let index = FlatIndex::load_with_external_vec_set(&config.index_cache, base_set)?;
+                DynamicIndex::Flat(index)
             }
         };
         let elapsed = start.elapsed().as_secs_f32();
@@ -250,11 +250,11 @@ fn load_or_build_index<T: Scalar>(
                 let index = index.save_without_vec_set(&path)?;
                 DynamicIndex::IVF(index)
             }
-            IndexAlgorithmConfig::Linear => {
-                let index = LinearIndex::from_vec_set(base_set, dist, (), rng);
+            IndexAlgorithmConfig::Flat => {
+                let index = FlatIndex::from_vec_set(base_set, dist, (), rng);
                 println!("Saving index to {}...", path.display());
                 let index = index.save_without_vec_set(&path)?;
-                DynamicIndex::Linear(index)
+                DynamicIndex::Flat(index)
             }
         };
         let elapsed = start.elapsed().as_secs_f32();

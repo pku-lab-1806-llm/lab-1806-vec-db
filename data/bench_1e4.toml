@@ -46,7 +46,7 @@ recall = [
 ]
 
 [[results]]
-label = "Linear+PQ"
+label = "Flat+PQ"
 ef = [100, 200]
 search_time = [2.1455020904541016, 2.221201181411743]
 recall = [0.9923004508018494, 0.997400164604187]

@@ -20,13 +20,13 @@ pub mod prelude {
 pub mod candidate_pair;
 pub mod hnsw_index;
 pub mod ivf_index;
-pub mod linear_index;
+pub mod flat_index;
 // All Index Algorithms & Candidate Tools
 pub use self::{
     candidate_pair::{CandidatePair, ResultSet},
     hnsw_index::{HNSWConfig, HNSWIndex},
     ivf_index::{IVFConfig, IVFIndex},
-    linear_index::LinearIndex,
+    flat_index::FlatIndex,
 };
 
 /// The trait for index that can be accessed by the index.

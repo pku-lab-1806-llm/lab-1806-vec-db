@@ -3,14 +3,14 @@ use clap::Parser;
 use lab_1806_vec_db::{
     config::{DataType, VecDataConfig},
     distance::DistanceAlgorithm,
-    index_algorithm::{candidate_pair::GroundTruth, LinearIndex},
+    index_algorithm::{candidate_pair::GroundTruth, FlatIndex},
     prelude::*,
     vec_set::VecSet,
 };
 use rand::SeedableRng;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
-/// Generate ground truth for the test set by LinearIndex
+/// Generate ground truth for the test set by FlatIndex
 #[derive(Parser)]
 struct Args {
     /// Dimension of the vectors
@@ -47,7 +47,7 @@ fn main() -> Result<()> {
     let mut rng = rand::rngs::StdRng::seed_from_u64(42);
     let k = 10;
 
-    let index = LinearIndex::from_vec_set(base_set, dist, (), &mut rng);
+    let index = FlatIndex::from_vec_set(base_set, dist, (), &mut rng);
     let test_set = VecSet::<f32>::load_with(&test_config)?;
     println!("Loaded test set (size: {}).", test_set.len());
 
