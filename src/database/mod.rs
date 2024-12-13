@@ -1,10 +1,9 @@
 use anyhow::{anyhow, bail, Result};
 use fs2::FileExt;
-use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     fs::File,
     io::BufReader,
     path::{Path, PathBuf},
@@ -662,62 +661,6 @@ impl VecDBManager {
 
         Ok(table.search(query, k, ef, upper_bound))
     }
-
-    /// Search vector in multiple tables.
-    ///
-    /// Returns the results as a tuple of (table_key, metadata, distance).
-    pub fn join_search(
-        &self,
-        keys: &BTreeSet<String>,
-        query: &[f32],
-        k: usize,
-        ef: Option<usize>,
-        upper_bound: Option<f32>,
-    ) -> Result<Vec<(String, BTreeMap<String, String>, f32)>> {
-        let selected_tables = {
-            let (brief, mut tables) = self.get_locks_by_order();
-            let mut selected_tables = Vec::new();
-            for key in keys {
-                let table = self.get_table_with_lock(key, &brief, &mut tables)?;
-                if let Some(info) = brief.tables.get(key) {
-                    if info.dim != query.len() {
-                        bail!(
-                            "Dimension mismatch for table {} ({} != {})",
-                            key,
-                            info.dim,
-                            query.len()
-                        );
-                    }
-                }
-                selected_tables.push((key.clone(), table));
-            }
-            selected_tables
-        };
-
-        let (sender, receiver) = std::sync::mpsc::channel();
-        let idx_list = (0..selected_tables.len()).collect::<Vec<_>>();
-        std::thread::scope(|s| {
-            for idx in idx_list.iter() {
-                let (key, table) = &selected_tables[*idx];
-                s.spawn(|| {
-                    let results = table.search(query, k, ef, upper_bound);
-                    let results: Vec<(String, BTreeMap<String, String>, f32)> = results
-                        .into_iter()
-                        .map(|(metadata, dist)| (key.clone(), metadata, dist))
-                        .collect();
-                    sender.send(results).unwrap();
-                });
-            }
-        });
-        drop(sender);
-        let mut results = Vec::new();
-        for r in receiver {
-            results.extend(r);
-        }
-        results.sort_by_key(|(_, _, dist)| OrderedFloat(*dist));
-        results.truncate(k);
-        Ok(results)
-    }
 }
 impl Drop for VecDBManager {
     fn drop(&mut self) {
@@ -801,19 +744,6 @@ mod test {
         });
         let c_result = r_c.recv().unwrap();
         assert_eq!(c_result, vec!["c".to_string()]);
-
-        let results = db.join_search(
-            &BTreeSet::from(["table_a".to_string(), "table_b".to_string()]),
-            &[1.0, 0.0, 0.0, 0.0],
-            2,
-            None,
-            None,
-        )?;
-        let results = results
-            .into_iter()
-            .map(|(_, m, _)| m["name"].clone())
-            .collect::<Vec<_>>();
-        assert_eq!(results, vec![String::from("a"), String::from("a'")]);
 
         Ok(())
     }
