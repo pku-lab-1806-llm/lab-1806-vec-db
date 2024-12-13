@@ -53,10 +53,10 @@ db.add("table_1", [1.0, 0.0, 0.0, 0.0], {"content": "a"})
 db.add("table_1", [0.0, 1.0, 0.0, 0.0], {"content": "b"})
 db.build_hnsw_index("table_1")
 db.add("table_1", [0.0, 0.0, 1.0, 0.0], {"content": "c"})
-db.add("table_1", [0.0, 0.0, 1.0, 1.0], {"content": "oops"})
+db.add("table_1", [0.0, 0.0, 1.0, 1.0], {"content": "d", "type": "oops"})
 assert db.has_hnsw_index("table_1"), "Add operation should not clear HNSW index"
 
-db.delete("table_1", {"content": "oops"})
+db.delete("table_1", {"type": "oops"})
 assert not db.has_hnsw_index(
     "table_1"
 ), "HNSW index should be cleared when a vector is deleted"
