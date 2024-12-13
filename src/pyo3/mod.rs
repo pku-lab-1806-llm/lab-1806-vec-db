@@ -136,6 +136,27 @@ pub mod lab_1806_vec_db {
         ) -> Vec<(BTreeMap<String, String>, f32)> {
             self.inner.search(&query, k, ef, upper_bound)
         }
+
+        /// Build HNSW index for the table.
+        #[pyo3(signature = (ef_construction=None))]
+        pub fn build_hnsw_index(&mut self, ef_construction: Option<usize>) {
+            self.inner.build_hnsw_index(ef_construction);
+        }
+
+        /// Clear HNSW index for the table.
+        pub fn clear_hnsw_index(&mut self) {
+            self.inner.clear_hnsw_index();
+        }
+
+        /// Check if the table has HNSW index.
+        pub fn has_hnsw_index(&self) -> bool {
+            self.inner.has_hnsw_index()
+        }
+
+        /// Delete vectors with metadata that match the pattern.
+        pub fn delete(&mut self, pattern: BTreeMap<String, String>) {
+            self.inner.delete(&pattern);
+        }
     }
 
     /// Vector Database.
@@ -260,6 +281,20 @@ pub mod lab_1806_vec_db {
             })
         }
 
+        /// Delete vectors with metadata that match the pattern.
+        pub fn delete(
+            &self,
+            py: Python,
+            key: &str,
+            pattern: BTreeMap<String, String>,
+        ) -> PyResult<()> {
+            py.allow_threads(|| {
+                self.inner
+                    .delete(key, &pattern)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
+        }
+
         /// Search for the nearest neighbors of a vector.
         /// Returns a list of (metadata, distance) pairs.
         #[pyo3(signature = (key, query, k, ef=None, upper_bound=None))]
@@ -275,6 +310,39 @@ pub mod lab_1806_vec_db {
             py.allow_threads(|| {
                 self.inner
                     .search(key, &query, k, ef, upper_bound)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
+        }
+
+        /// Build HNSW index for the table.
+        #[pyo3(signature = (key, ef_construction=None))]
+        pub fn build_hnsw_index(
+            &self,
+            py: Python,
+            key: &str,
+            ef_construction: Option<usize>,
+        ) -> PyResult<()> {
+            py.allow_threads(|| {
+                self.inner
+                    .build_hnsw_index(key, ef_construction)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
+        }
+
+        /// Clear HNSW index for the table.
+        pub fn clear_hnsw_index(&self, py: Python, key: &str) -> PyResult<()> {
+            py.allow_threads(|| {
+                self.inner
+                    .clear_hnsw_index(key)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
+        }
+
+        /// Check if the table has HNSW index.
+        pub fn has_hnsw_index(&self, py: Python, key: &str) -> PyResult<bool> {
+            py.allow_threads(|| {
+                self.inner
+                    .has_hnsw_index(key)
                     .map_err(|e| PyRuntimeError::new_err(e.to_string()))
             })
         }
