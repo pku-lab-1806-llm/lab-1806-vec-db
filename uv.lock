@@ -3,7 +3,7 @@ requires-python = ">=3.8, <3.12"
 
 [[package]]
 name = "lab-1806-vec-db"
-version = "0.5.2"
+version = "0.5.3"
 source = { editable = "." }
 
 [package.dev-dependencies]
