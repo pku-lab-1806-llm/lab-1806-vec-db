@@ -24,7 +24,8 @@ pub fn acquire_lock(lock_file: impl AsRef<Path>) -> Result<File> {
         .write(true)
         .create(true)
         .open(lock_file.as_ref())?;
-    file.lock_exclusive()?;
+    file.try_lock_exclusive()
+        .map_err(|_| anyhow!("Failed to acquire lock for VecDBManager"))?;
     Ok(file)
 }
 
