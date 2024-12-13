@@ -2,7 +2,7 @@ use pyo3::prelude::*;
 
 #[pymodule]
 pub mod lab_1806_vec_db {
-    use crate::database::{MetadataIndex, VecDBManager};
+    use crate::database::{MetadataVecTable, VecDBManager};
     use crate::prelude::*;
     use pyo3::exceptions::{PyRuntimeError, PyValueError};
     use serde::{Deserialize, Serialize};
@@ -54,7 +54,7 @@ pub mod lab_1806_vec_db {
     #[pyclass]
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct BareVecTable {
-        pub(crate) inner: MetadataIndex,
+        pub(crate) inner: MetadataVecTable,
     }
 
     #[pymethods]
@@ -67,7 +67,7 @@ pub mod lab_1806_vec_db {
         ///     ValueError: If the distance function is invalid.
         pub fn new(dim: usize, dist: &str, ef_c: Option<usize>) -> PyResult<Self> {
             let dist = distance_algorithm_from_str(dist)?;
-            let inner = MetadataIndex::new(dim, dist, ef_c);
+            let inner = MetadataVecTable::new(dim, dist, ef_c);
             Ok(Self { inner })
         }
 
@@ -93,7 +93,7 @@ pub mod lab_1806_vec_db {
         #[staticmethod]
         pub fn load(path: &str) -> PyResult<Self> {
             let inner =
-                MetadataIndex::load(path).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+                MetadataVecTable::load(path).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
             Ok(Self { inner })
         }
 

@@ -13,7 +13,7 @@ use std::{
 use thread_save::ThreadSave;
 
 use crate::{
-    index_algorithm::{HNSWConfig, HNSWIndex},
+    index_algorithm::{CandidatePair, FlatIndex, HNSWConfig, HNSWIndex},
     prelude::*,
 };
 
@@ -35,37 +35,88 @@ pub fn sha256_hex(data: &[u8]) -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MetadataIndex {
+pub enum OptHNSWIndex {
+    Flat(FlatIndex<f32>),
+    HNSW(HNSWIndex<f32>),
+}
+impl OptHNSWIndex {
+    pub fn new(dim: usize, dist: DistanceAlgorithm) -> Self {
+        Self::Flat(FlatIndex::new(dim, dist))
+    }
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Flat(index) => index.len(),
+            Self::HNSW(index) => index.len(),
+        }
+    }
+    pub fn dim(&self) -> usize {
+        match self {
+            Self::Flat(index) => index.dim(),
+            Self::HNSW(index) => index.dim(),
+        }
+    }
+    pub fn dist(&self) -> DistanceAlgorithm {
+        match self {
+            Self::Flat(index) => index.dist,
+            Self::HNSW(index) => index.config.dist,
+        }
+    }
+    pub fn add(&mut self, vec: &[f32], rng: &mut impl rand::Rng) -> usize {
+        match self {
+            Self::Flat(index) => index.vec_set.push(vec),
+            Self::HNSW(index) => index.add(vec, rng),
+        }
+    }
+    pub fn batch_add(&mut self, vec_list: &[&[f32]], rng: &mut impl rand::Rng) -> Vec<usize> {
+        match self {
+            Self::Flat(index) => vec_list.iter().map(|vec| index.vec_set.push(vec)).collect(),
+            Self::HNSW(index) => index.batch_add(vec_list, rng),
+        }
+    }
+    pub fn init_after_load(&mut self) {
+        match self {
+            Self::Flat(index) => index.init_after_load(),
+            Self::HNSW(index) => index.init_after_load(),
+        }
+    }
+    pub fn knn(&self, query: &[f32], k: usize) -> Vec<CandidatePair> {
+        match self {
+            Self::Flat(index) => index.knn(query, k),
+            Self::HNSW(index) => index.knn(query, k),
+        }
+    }
+    pub fn knn_with_ef(&self, query: &[f32], k: usize, ef: usize) -> Vec<CandidatePair> {
+        match self {
+            Self::Flat(index) => index.knn(query, k),
+            Self::HNSW(index) => index.knn_with_ef(query, k, ef),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetadataVecTable {
     metadata: Vec<BTreeMap<String, String>>,
-    inner: HNSWIndex<f32>,
+    inner: OptHNSWIndex,
     #[serde(skip, default = "rand::SeedableRng::from_entropy")]
     rng: rand::rngs::StdRng,
 }
-impl MetadataIndex {
+impl MetadataVecTable {
     /// Create a new index.
-    pub fn new(dim: usize, dist: DistanceAlgorithm, ef_c: Option<usize>) -> Self {
-        let mut config = HNSWConfig::default();
-        if let Some(ef_c) = ef_c {
-            config.ef_construction = ef_c;
-        }
-        let rng = rand::SeedableRng::from_entropy();
+    pub fn new(dim: usize, dist: DistanceAlgorithm) -> Self {
         Self {
             metadata: Vec::new(),
-            inner: HNSWIndex::new(dim, dist, config),
-            rng,
+            inner: OptHNSWIndex::new(dim, dist),
+            rng: rand::SeedableRng::from_entropy(),
         }
+    }
+    pub fn len(&self) -> usize {
+        self.inner.len()
     }
     pub fn dim(&self) -> usize {
         self.inner.dim()
     }
     pub fn dist(&self) -> DistanceAlgorithm {
-        self.inner.config.dist
-    }
-    pub fn get_row_by_id(&self, id: usize) -> Result<(Vec<f32>, BTreeMap<String, String>)> {
-        if id >= self.len() {
-            bail!("Index out of range");
-        }
-        Ok((self.inner[id].to_vec(), self.metadata[id].clone()))
+        self.inner.dist()
     }
     /// Load an index from a file.
     pub fn load(file: impl AsRef<Path>) -> Result<Self> {
@@ -101,9 +152,51 @@ impl MetadataIndex {
         self.inner.batch_add(&vec_list, &mut self.rng);
     }
 
-    /// Get the total number of vectors.
-    pub fn len(&self) -> usize {
-        self.inner.len()
+    pub fn build_hnsw_index(&mut self, ef_construction: Option<usize>) {
+        if let OptHNSWIndex::Flat(flat) = &self.inner {
+            let vec_set = &flat.vec_set;
+            let dist = flat.dist;
+            let mut config = HNSWConfig::default();
+            config.max_elements = vec_set.len();
+            if let Some(ef_construction) = ef_construction {
+                config.ef_construction = ef_construction;
+            }
+            let hnsw = HNSWIndex::build_on_vec_set(vec_set, dist, config, false, &mut self.rng);
+            self.inner = OptHNSWIndex::HNSW(hnsw);
+        }
+    }
+    pub fn clear_hnsw_index(&mut self) {
+        if let OptHNSWIndex::HNSW(hnsw) = &self.inner {
+            let mut flat = FlatIndex::new(self.inner.dim(), self.inner.dist());
+            flat.vec_set = hnsw.vec_set.clone();
+            self.inner = OptHNSWIndex::Flat(flat);
+        }
+    }
+    pub fn has_hnsw_index(&self) -> bool {
+        matches!(self.inner, OptHNSWIndex::HNSW(_))
+    }
+
+    pub fn delete(&mut self, pattern: &BTreeMap<String, String>) {
+        fn match_metadata(
+            metadata: &BTreeMap<String, String>,
+            pattern: &BTreeMap<String, String>,
+        ) -> bool {
+            pattern.iter().all(|(k, v)| metadata.get(k) == Some(v))
+        }
+        self.clear_hnsw_index();
+        let matches = self
+            .metadata
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| match_metadata(m, pattern))
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+        if let OptHNSWIndex::Flat(flat) = &mut self.inner {
+            for i in matches.into_iter().rev() {
+                self.metadata.swap_remove(i);
+                flat.vec_set.swap_remove(i);
+            }
+        }
     }
 
     /// Search for the nearest vectors to query.
@@ -129,7 +222,7 @@ impl MetadataIndex {
     }
 }
 
-impl ThreadSave for RwLock<MetadataIndex> {
+impl ThreadSave for RwLock<MetadataVecTable> {
     fn save_to(&self, path: impl AsRef<Path>) {
         self.read().unwrap().save(path).unwrap();
     }
@@ -140,6 +233,7 @@ pub struct VecTableBrief {
     pub dim: usize,
     pub len: usize,
     pub dist: DistanceAlgorithm,
+    pub hnsw_index: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,9 +247,8 @@ impl VecDBBrief {
             tables: BTreeMap::new(),
         }
     }
-    pub fn insert(&mut self, key: &str, dim: usize, len: usize, dist: DistanceAlgorithm) {
-        self.tables
-            .insert(key.to_string(), VecTableBrief { dim, len, dist });
+    pub fn insert(&mut self, key: &str, brief: VecTableBrief) {
+        self.tables.insert(key.to_string(), brief);
     }
     pub fn remove(&mut self, key: &str) {
         self.tables.remove(key);
@@ -183,8 +276,8 @@ impl ThreadSave for Mutex<VecDBBrief> {
 /// - Thread-safe. Read and write operations are protected by a RwLock.
 /// - Unique. Only one manager for each table.
 struct VecTableManager {
-    manager: thread_save::ThreadSavingManager<RwLock<MetadataIndex>>,
-    index: Arc<RwLock<MetadataIndex>>,
+    manager: thread_save::ThreadSavingManager<RwLock<MetadataVecTable>>,
+    index: Arc<RwLock<MetadataVecTable>>,
     drop_signal_sender: mpsc::Sender<()>,
 }
 impl VecTableManager {
@@ -194,8 +287,8 @@ impl VecTableManager {
     }
     fn new_manager(
         file: PathBuf,
-        index: &Arc<RwLock<MetadataIndex>>,
-    ) -> thread_save::ThreadSavingManager<RwLock<MetadataIndex>> {
+        index: &Arc<RwLock<MetadataVecTable>>,
+    ) -> thread_save::ThreadSavingManager<RwLock<MetadataVecTable>> {
         thread_save::ThreadSavingManager::new(
             index.clone(),
             file,
@@ -208,10 +301,9 @@ impl VecTableManager {
         dim: usize,
         dist: DistanceAlgorithm,
         drop_signal_sender: std::sync::mpsc::Sender<()>,
-        ef_c: Option<usize>,
     ) -> Self {
         let file = Self::file_path_of(&dir, &key);
-        let index = MetadataIndex::new(dim, dist, ef_c);
+        let index = MetadataVecTable::new(dim, dist);
         let index = Arc::new(RwLock::new(index));
         let manager = Self::new_manager(file, &index);
         manager.mark_modified();
@@ -227,7 +319,7 @@ impl VecTableManager {
         drop_signal_sender: std::sync::mpsc::Sender<()>,
     ) -> Result<Self> {
         let file = Self::file_path_of(&dir, &key);
-        let index = MetadataIndex::load(&file)?;
+        let index = MetadataVecTable::load(&file)?;
         let index = Arc::new(RwLock::new(index));
         let manager = Self::new_manager(file, &index);
         Ok(Self {
@@ -236,8 +328,9 @@ impl VecTableManager {
             drop_signal_sender,
         })
     }
-    pub fn get_row_by_id(&self, id: usize) -> Result<(Vec<f32>, BTreeMap<String, String>)> {
-        self.index.read().unwrap().get_row_by_id(id)
+    pub fn len(&self) -> usize {
+        let index = self.index.read().unwrap();
+        index.len()
     }
     /// Add a vector with metadata to the table.
     ///
@@ -254,6 +347,26 @@ impl VecTableManager {
         let mut index = self.index.write().unwrap();
         index.batch_add(vec_list, metadata_list);
         self.manager.mark_modified();
+    }
+    /// Delete vectors with metadata that match the pattern.
+    pub fn delete(&self, pattern: &BTreeMap<String, String>) {
+        let mut index = self.index.write().unwrap();
+        index.delete(pattern);
+        self.manager.mark_modified();
+    }
+    pub fn build_hnsw_index(&self, ef_construction: Option<usize>) {
+        let mut index = self.index.write().unwrap();
+        index.build_hnsw_index(ef_construction);
+        self.manager.mark_modified();
+    }
+    pub fn clear_hnsw_index(&self) {
+        let mut index = self.index.write().unwrap();
+        index.clear_hnsw_index();
+        self.manager.mark_modified();
+    }
+    pub fn has_hnsw_index(&self) -> bool {
+        let index = self.index.read().unwrap();
+        index.has_hnsw_index()
     }
     /// Search vector in the table.
     pub fn search(
@@ -361,7 +474,6 @@ impl VecDBManager {
         key: &str,
         dim: usize,
         dist: DistanceAlgorithm,
-        ef_c: Option<usize>,
     ) -> Result<bool> {
         let (mut brief, mut tables) = self.get_locks_by_order();
         if brief.tables.contains_key(key) {
@@ -369,11 +481,19 @@ impl VecDBManager {
                 .get_table_with_lock(key, &brief, &mut tables)
                 .map(|_| false);
         }
-        brief.insert(&key, dim, 0, dist);
+        brief.insert(
+            &key,
+            VecTableBrief {
+                dim,
+                len: 0,
+                dist,
+                hnsw_index: false,
+            },
+        );
         self.brief_manager.mark_modified();
 
         let (sender, receiver) = mpsc::channel();
-        let table = VecTableManager::new(&self.dir, &key, dim, dist, sender, ef_c);
+        let table = VecTableManager::new(&self.dir, &key, dim, dist, sender);
         let table = Arc::new(table);
         tables.insert(key.to_string(), (receiver, table));
         Ok(true)
@@ -399,6 +519,7 @@ impl VecDBManager {
         std::fs::remove_file(table_file)?;
         Ok(true)
     }
+    /// Returns the brief of a table.
     pub fn get_table_info(&self, key: &str) -> Option<VecTableBrief> {
         let (brief, _tables) = self.get_locks_by_order();
         brief.tables.get(key).cloned()
@@ -421,8 +542,7 @@ impl VecDBManager {
     }
 
     /// Add a vector with metadata to a table.
-    ///
-    /// Signal the brief manager after the operation.
+    /// Compatible with HNSW index.
     pub fn add(&self, key: &str, vec: Vec<f32>, metadata: BTreeMap<String, String>) -> Result<()> {
         let table = {
             let (mut brief, mut tables) = self.get_locks_by_order();
@@ -445,8 +565,7 @@ impl VecDBManager {
     }
 
     /// Add vectors with metadata to a table.
-    ///
-    /// Signal the brief manager after the operation.
+    /// Compatible with HNSW index.
     pub fn batch_add(
         &self,
         key: &str,
@@ -476,16 +595,53 @@ impl VecDBManager {
         Ok(())
     }
 
-    pub fn get_row_by_id(
-        &self,
-        key: &str,
-        id: usize,
-    ) -> Result<(Vec<f32>, BTreeMap<String, String>)> {
+    /// Build a HNSW index for a table. Does nothing if the table already has a HNSW index.
+    pub fn build_hnsw_index(&self, key: &str, ef_construction: Option<usize>) -> Result<()> {
+        let table = {
+            let (mut brief, mut tables) = self.get_locks_by_order();
+            if let Some(info) = brief.tables.get_mut(key) {
+                info.hnsw_index = true;
+                self.brief_manager.mark_modified();
+            }
+            self.get_table_with_lock(key, &brief, &mut tables)?
+        };
+        table.build_hnsw_index(ef_construction);
+        Ok(())
+    }
+    /// Clear the HNSW index of a table. Does nothing if the table does not have a HNSW index.
+    pub fn clear_hnsw_index(&self, key: &str) -> Result<()> {
+        let table = {
+            let (mut brief, mut tables) = self.get_locks_by_order();
+            if let Some(info) = brief.tables.get_mut(key) {
+                info.hnsw_index = false;
+                self.brief_manager.mark_modified();
+            }
+            self.get_table_with_lock(key, &brief, &mut tables)?
+        };
+        table.clear_hnsw_index();
+        Ok(())
+    }
+    /// Returns whether the table has a HNSW index.
+    pub fn has_hnsw_index(&self, key: &str) -> Result<bool> {
         let table = {
             let (brief, mut tables) = self.get_locks_by_order();
             self.get_table_with_lock(key, &brief, &mut tables)?
         };
-        table.get_row_by_id(id)
+        Ok(table.has_hnsw_index())
+    }
+
+    /// Delete vectors with metadata that match the pattern.
+    /// This breaks the HNSW index.
+    pub fn delete(&self, key: &str, pattern: &BTreeMap<String, String>) -> Result<()> {
+        let (mut brief, mut tables) = self.get_locks_by_order();
+        let table = self.get_table_with_lock(key, &brief, &mut tables)?;
+        table.delete(pattern);
+        if let Some(info) = brief.tables.get_mut(key) {
+            info.len = table.len();
+            info.hnsw_index = false;
+            self.brief_manager.mark_modified();
+        }
+        Ok(())
     }
 
     /// Search vector in a table.
@@ -601,11 +757,11 @@ mod test {
         thread::scope(|s| {
             s.spawn(|| {
                 let key_a = "table_a";
-                db.create_table_if_not_exists(key_a, dim, dist, None)
-                    .unwrap();
+                db.create_table_if_not_exists(key_a, dim, dist).unwrap();
                 s_a.send(()).unwrap();
                 db.add(key_a, vec![1.0, 0.0, 0.0, 0.0], metadata("a"))
                     .unwrap();
+                db.build_hnsw_index(key_a, None).unwrap();
                 db.add(key_a, vec![0.0, 1.0, 0.0, 0.0], metadata("b"))
                     .unwrap();
                 db.add(key_a, vec![0.0, 0.0, 1.0, 0.0], metadata("c"))
@@ -614,8 +770,8 @@ mod test {
             });
             s.spawn(|| {
                 let key_b = "table_b";
-                db.create_table_if_not_exists(key_b, dim, dist, None)
-                    .unwrap();
+                db.create_table_if_not_exists(key_b, dim, dist).unwrap();
+                db.build_hnsw_index(key_b, None).unwrap();
                 db.batch_add(
                     key_b,
                     vec![
