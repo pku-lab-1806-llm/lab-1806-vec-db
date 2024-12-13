@@ -15,11 +15,7 @@ pip install lab-1806-vec-db
 
 `VecDB` is recommended for most cases as a high-level API.
 
-Low-level APIs are also provided. But before using them, make sure you know what you are doing.
-
-`BareVecTable` is a low-level API designed for a single table without auto-saving or multi-threading support.
-
-`calc_dist` is a helper function to calculate the distance between two vectors. It supports "cosine" and "l2sqr", default to "cosine". To make sure smaller is closer, we make `cosine_dist = 1 - cosine_similarity`.
+If the default Flat index cannot meet your performance requirements, you can call `build_hnsw_index()` when creating a table or adding data. But the delete operation will clear the established HNSW index.
 
 ```py
 from lab_1806_vec_db import VecDB, calc_dist
@@ -74,12 +70,6 @@ assert result[0][0]["content"] == "a", "Test failed"
 print("Test passed")
 
 ```
-
-### About auto-saving
-
-Safe to interrupt the process on Python Level at any time with Exception or KeyboardInterrupt.
-
-See [test_exception.py](./examples/test_exception.py) for an example.
 
 ### About multi-threading
 
@@ -144,6 +134,20 @@ for t in threads:
     t.join()
 
 ```
+
+### About low-level APIs
+
+Low-level APIs are also provided. But before using them, make sure you know what you are doing.
+
+`BareVecTable` is a low-level API designed for a single table without auto-saving or multi-threading support.
+
+`calc_dist` is a helper function to calculate the distance between two vectors. It supports "cosine" and "l2sqr", default to "cosine". To make sure smaller is closer, we make `cosine_dist = 1 - cosine_similarity`.
+
+### About auto-saving
+
+Safe to interrupt the process on Python Level at any time with Exception or KeyboardInterrupt.
+
+See [test_exception.py](./examples/test_exception.py) for an example.
 
 ## Development with Rust
 
