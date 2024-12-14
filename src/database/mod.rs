@@ -536,7 +536,13 @@ mod test {
 
         let len_a = db.get_len("table_a")?;
         db.build_pq_table("table_a", 2, len_a)?;
-        let results = db.search("table_a", &[0.0, 0.0, 1.0, 0.0], 3, None, Some(0.5))?;
+        let results = db.search(
+            "table_a",
+            &[0.0, 0.0, 1.0, 0.0],
+            len_a,
+            Some(len_a),
+            Some(0.5),
+        )?;
         let c_results: Vec<String> = results
             .into_iter()
             .map(|(m, _)| m["name"].clone())
