@@ -29,12 +29,15 @@ pub fn acquire_lock(lock_file: impl AsRef<Path>) -> Result<File> {
     Ok(file)
 }
 
-/// Sanitize a key for use in file names.
-/// Replace "<>:/\|?*" with "_".
+/// Sanitize a key to use in filenames.
+/// Allowed characters: [a-zA-Z0-9_-] and Unicode characters.
+/// Disallowed characters: control characters, whitespace, and ASCII characters other than [a-zA-Z0-9_-].
+/// Replace disallowed characters with '_'.
 pub fn sanitize_key(key: &str) -> String {
     key.chars()
         .map(|c| match c {
-            '<' | '>' | ':' | '/' | '\\' | '|' | '?' | '*' => '_',
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' => c,
+            _ if c.is_control() || c.is_whitespace() || c.is_ascii() => '_',
             _ => c,
         })
         .collect()
@@ -89,7 +92,7 @@ impl VecDBBrief {
             let mut index = 0;
             loop {
                 let filename = filename_with(&base, index);
-                if !set.insert(filename.clone()) {
+                if set.insert(filename.clone()) {
                     return filename;
                 }
                 index += 1;
@@ -100,10 +103,12 @@ impl VecDBBrief {
             .insert(key.to_string(), VecTableBrief::new(filename.clone()));
         filename
     }
-    pub fn remove(&mut self, key: &str) {
-        self.tables
-            .remove(key)
-            .map(|brief| self.filename_set.remove(&brief.filename));
+    pub fn remove(&mut self, key: &str) -> Option<VecTableBrief> {
+        let brief = self.tables.remove(key);
+        if let Some(brief) = &brief {
+            self.filename_set.remove(&brief.filename);
+        }
+        brief
     }
     pub fn load(file: impl AsRef<Path>) -> Result<Self> {
         let content = std::fs::read_to_string(file)?;
@@ -137,15 +142,10 @@ impl ThreadSave for Mutex<VecDBBrief> {
 /// - Thread-safe. Read and write operations are protected by a RwLock.
 /// - Unique. Only one manager for each table.
 struct VecTableManager {
-    index: ThreadSavingManager<RwLock<MetadataVecTable>>,
-    drop_signal_sender: mpsc::Sender<()>,
+    pub(crate) index: ThreadSavingManager<RwLock<MetadataVecTable>>,
+    pub(crate) drop_signal_sender: mpsc::Sender<()>,
 }
 impl VecTableManager {
-    /// Get the file path of a table.
-    fn file_path_of(dir: impl AsRef<Path>, key: &str) -> PathBuf {
-        let hex_key = sha256_hex(key.as_bytes());
-        dir.as_ref().join(format!("{}.db", hex_key))
-    }
     fn thread_saving_duration() -> Duration {
         Duration::from_secs(60)
     }
@@ -262,17 +262,14 @@ pub struct VecDBManager {
     lock_file: File,
 }
 impl VecDBManager {
-    /// Get the file path of the brief.
-    fn brief_file_path(dir: impl AsRef<Path>) -> PathBuf {
-        dir.as_ref().join("brief.toml")
-    }
     /// Create a new VecDBManager.
     pub fn new(dir: impl AsRef<Path>) -> Result<Self> {
         let dir = dir.as_ref().to_path_buf();
         if !dir.exists() {
             std::fs::create_dir_all(&dir)?;
         }
-        let brief_file = Self::brief_file_path(&dir);
+        let lock_file = acquire_lock(dir.join("db.lock"))?;
+        let brief_file = dir.join("brief.toml");
         let (brief, mark) = if brief_file.exists() {
             (VecDBBrief::load(&brief_file)?, false)
         } else {
@@ -284,7 +281,7 @@ impl VecDBManager {
             std::time::Duration::from_secs(5),
             mark,
         );
-        let lock_file = acquire_lock(dir.join("db.lock"))?;
+        // panic!("brief: {:?}", brief.lock());
         Ok(Self {
             dir,
             brief,
@@ -355,18 +352,18 @@ impl VecDBManager {
     /// Delete a table.
     pub fn delete_table(&self, key: &str) -> Result<bool> {
         let (mut brief, mut tables) = self.get_locks_by_order();
-        if !brief.tables.contains_key(key) {
-            return Ok(false);
-        }
-        brief.remove(key);
+        let table_brief = match brief.remove(key) {
+            Some(brief) => brief,
+            None => return Ok(false),
+        };
         if let Some((receiver, table)) = tables.remove(key) {
             // Wait for other threads to finish.
             drop(table);
             receiver.recv().unwrap();
         }
         // Remove the file.
-        let table_file = VecTableManager::file_path_of(&self.dir, key);
-        std::fs::remove_file(table_file)?;
+        let path = self.dir.join(&table_brief.filename);
+        std::fs::remove_file(&path)?;
         Ok(true)
     }
     /// Get a table with the correct locks.
@@ -518,7 +515,7 @@ mod test {
                 s_a.send(()).unwrap();
             });
             s.spawn(|| {
-                let key_b = "table_b";
+                let key_b = "<表:b>"; // key with special characters
                 db.create_table_if_not_exists(key_b, dim, dist).unwrap();
                 db.build_hnsw_index(key_b, None).unwrap();
                 db.batch_add(
