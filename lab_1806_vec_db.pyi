@@ -43,12 +43,16 @@ class VecDB:
         """
         ...
 
-    def get_table_info(self, key: str) -> tuple[int, int, str]:
-        """Get table info.
+    def get_len(self, key: str) -> int:
+        """Get the number of vectors in the table."""
+        ...
 
-        Returns:
-            (dim, len, dist)
-        """
+    def get_dim(self, key: str) -> int:
+        """Get the dimension of the vectors in the table."""
+        ...
+
+    def get_dist(self, key: str) -> str:
+        """Get the distance function of the table."""
         ...
 
     def delete_table(self, key: str) -> bool:

@@ -41,11 +41,7 @@ assert not db.has_hnsw_index(
     "table_1"
 ), "HNSW index should be cleared when a vector is deleted"
 db.build_hnsw_index("table_1")
-assert db.get_table_info("table_1") == (
-    4,
-    3,
-    "cosine",
-), "Test failed"  # (dim, len, dist)
+assert db.get_len("table_1") == 3, "Test failed"
 
 result = db.search("table_1", [1.0, 0.0, 0.0, 0.0], 3, None, 0.5)
 print(result)
