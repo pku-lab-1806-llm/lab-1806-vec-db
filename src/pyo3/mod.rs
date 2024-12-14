@@ -73,14 +73,17 @@ pub mod lab_1806_vec_db {
         #[pyo3(signature = (key, dim, dist="cosine"))]
         pub fn create_table_if_not_exists(
             &self,
+            py: Python,
             key: &str,
             dim: usize,
             dist: &str,
         ) -> PyResult<bool> {
-            let dist = distance_algorithm_from_str(&dist)?;
-            self.inner
-                .create_table_if_not_exists(key, dim, dist)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            py.allow_threads(|| {
+                let dist = distance_algorithm_from_str(dist)?;
+                self.inner
+                    .create_table_if_not_exists(key, dim, dist)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
         }
 
         /// Get all table names.
@@ -93,10 +96,12 @@ pub mod lab_1806_vec_db {
         }
         /// Delete a table and wait for all operations to finish.
         /// Returns false if the table does not exist.
-        pub fn delete_table(&self, key: String) -> PyResult<bool> {
-            self.inner
-                .delete_table(&key)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        pub fn delete_table(&self, py: Python, key: String) -> PyResult<bool> {
+            py.allow_threads(|| {
+                self.inner
+                    .delete_table(&key)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
         }
 
         /// Returns a list of table keys that are cached.
@@ -109,35 +114,42 @@ pub mod lab_1806_vec_db {
         }
         /// Remove a table from the cache.
         /// Does nothing if the table is not cached.
-        pub fn remove_cached_table(&self, key: &str) -> PyResult<()> {
-            self.inner
-                .remove_cached_table(key)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        pub fn remove_cached_table(&self, py: Python, key: &str) -> PyResult<()> {
+            py.allow_threads(|| {
+                self.inner
+                    .remove_cached_table(key)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
         }
 
         /// Get the number of vectors in the table.
-        pub fn get_len(&self, key: &str) -> PyResult<usize> {
-            self.inner
-                .get_len(key)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        pub fn get_len(&self, py: Python, key: &str) -> PyResult<usize> {
+            py.allow_threads(|| {
+                self.inner
+                    .get_len(key)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
         }
         /// Get the dimension of the vectors in the table.
-        pub fn get_dim(&self, key: &str) -> PyResult<usize> {
-            self.inner
-                .get_dim(key)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        pub fn get_dim(&self, py: Python, key: &str) -> PyResult<usize> {
+            py.allow_threads(|| {
+                self.inner
+                    .get_dim(key)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
         }
         /// Get the distance algorithm used by the table.
-        pub fn get_dist(&self, key: &str) -> PyResult<String> {
-            self.inner
-                .get_dist(key)
-                .map(|dist| distance_algorithm_to_str(dist).to_string())
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        pub fn get_dist(&self, py: Python, key: &str) -> PyResult<String> {
+            py.allow_threads(|| {
+                self.inner
+                    .get_dist(key)
+                    .map(|dist| distance_algorithm_to_str(dist).to_string())
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
         }
 
         /// Add a vector to the table.
         /// Use `batch_add` for better performance.
-        /// **Note**: This releases the GIL.
         pub fn add(
             &self,
             py: Python,
@@ -153,7 +165,6 @@ pub mod lab_1806_vec_db {
         }
 
         /// Add multiple vectors to the table.
-        /// **Note**: This releases the GIL.
         pub fn batch_add(
             &self,
             py: Python,
@@ -170,7 +181,6 @@ pub mod lab_1806_vec_db {
 
         /// Delete vectors with metadata that match the pattern.
         /// Returns the number of vectors deleted.
-        /// **Note**: This releases the GIL.
         pub fn delete(
             &self,
             py: Python,
@@ -186,7 +196,6 @@ pub mod lab_1806_vec_db {
 
         /// Search for the nearest neighbors of a vector.
         /// Returns a list of (metadata, distance) pairs.
-        /// **Note**: This releases the GIL.
         #[pyo3(signature = (key, query, k, ef=None, upper_bound=None))]
         pub fn search(
             &self,
@@ -205,7 +214,6 @@ pub mod lab_1806_vec_db {
         }
 
         /// Build HNSW index for the table.
-        /// **Note**: This releases the GIL.
         #[pyo3(signature = (key, ef_construction=None))]
         pub fn build_hnsw_index(
             &self,
@@ -221,7 +229,6 @@ pub mod lab_1806_vec_db {
         }
 
         /// Clear HNSW index for the table.
-        /// **Note**: This releases the GIL.
         pub fn clear_hnsw_index(&self, py: Python, key: &str) -> PyResult<()> {
             py.allow_threads(|| {
                 self.inner
@@ -231,14 +238,15 @@ pub mod lab_1806_vec_db {
         }
 
         /// Check if the table has HNSW index.
-        pub fn has_hnsw_index(&self, key: &str) -> PyResult<bool> {
-            self.inner
-                .has_hnsw_index(key)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        pub fn has_hnsw_index(&self, py: Python, key: &str) -> PyResult<bool> {
+            py.allow_threads(|| {
+                self.inner
+                    .has_hnsw_index(key)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
         }
 
         /// Build PQ table for the table.
-        /// **Note**: This releases the GIL.
         #[pyo3(signature = (key, m, train_size))]
         pub fn build_pq_table(
             &self,
@@ -255,7 +263,6 @@ pub mod lab_1806_vec_db {
         }
 
         /// Clear PQ table for the table.
-        /// **Note**: This releases the GIL.
         pub fn clear_pq_table(&self, py: Python, key: &str) -> PyResult<()> {
             py.allow_threads(|| {
                 self.inner
@@ -265,10 +272,12 @@ pub mod lab_1806_vec_db {
         }
 
         /// Check if the table has PQ table.
-        pub fn has_pq_table(&self, key: &str) -> PyResult<bool> {
-            self.inner
-                .has_pq_table(key)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        pub fn has_pq_table(&self, py: Python, key: &str) -> PyResult<bool> {
+            py.allow_threads(|| {
+                self.inner
+                    .has_pq_table(key)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
         }
     }
 }
