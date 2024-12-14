@@ -15,7 +15,10 @@ pip install lab-1806-vec-db
 
 `VecDB` is recommended for most cases as a high-level API.
 
-If the default Flat index cannot meet your performance requirements, you can call `build_hnsw_index()` when creating a table or adding data. But the delete operation will clear the established HNSW index.
+If the default Flat index cannot meet your performance requirements, try:
+
+- Call `build_hnsw_index()` when creating a table or adding data. But the delete operation will clear the established HNSW index.
+- Call `build_pq_index()` when all the data is added. But any write operation will clear the established PQ index.
 
 ```py
 from lab_1806_vec_db import VecDB, calc_dist
