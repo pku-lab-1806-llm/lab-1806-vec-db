@@ -136,7 +136,7 @@ impl MetadataVecTable {
     }
 
     /// Delete vectors with metadata that match the pattern.
-    pub fn delete(&mut self, pattern: &BTreeMap<String, String>) {
+    pub fn delete(&mut self, pattern: &BTreeMap<String, String>) -> usize {
         fn match_metadata(
             metadata: &BTreeMap<String, String>,
             pattern: &BTreeMap<String, String>,
@@ -152,12 +152,14 @@ impl MetadataVecTable {
             .filter(|(_, m)| match_metadata(m, pattern))
             .map(|(i, _)| i)
             .collect::<Vec<_>>();
+        let n = matches.len();
         if let DynamicIndex::Flat(flat) = &mut self.inner {
             for i in matches.into_iter().rev() {
                 self.metadata.swap_remove(i);
                 flat.vec_set.swap_remove(i);
             }
         }
+        n
     }
 
     /// Search for the nearest vectors to a query.

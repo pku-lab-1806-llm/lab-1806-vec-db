@@ -1,6 +1,6 @@
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Condvar, Mutex},
+    sync::{Arc, Condvar, Mutex, RwLock},
     thread, time,
 };
 
@@ -34,9 +34,11 @@ pub struct ThreadSavingManager<T: ThreadSave + 'static> {
 
 impl<T: ThreadSave + 'static> ThreadSavingManager<T> {
     /// Create a new auto-saving manager.
-    pub fn new(obj: Arc<T>, target: PathBuf, interval: time::Duration) -> Self {
-        let mark = Arc::new(Mutex::new(false));
+    pub fn new(obj: T, target: impl AsRef<Path>, interval: time::Duration, mark: bool) -> Self {
+        let mark = Arc::new(Mutex::new(mark));
         let stop_cond = (Arc::new(Mutex::new(false)), Arc::new(Condvar::new()));
+        let obj = Arc::new(obj);
+        let target = target.as_ref().to_path_buf();
         {
             let obj = obj.clone();
             let target = target.clone();
@@ -86,14 +88,47 @@ impl<T: ThreadSave + 'static> ThreadSavingManager<T> {
             cond.notify_one();
         }
     }
-    /// Mark the object as modified.
-    pub fn mark_modified(&self) {
-        let mut mark = self.mark.lock().unwrap();
-        *mark = true;
-    }
 }
 impl<T: ThreadSave + 'static> Drop for ThreadSavingManager<T> {
     fn drop(&mut self) {
         self.sync_save(true);
+    }
+}
+impl<T> ThreadSavingManager<RwLock<T>>
+where
+    RwLock<T>: ThreadSave + 'static,
+{
+    /// Create a new auto-saving manager for a RwLock.
+    pub fn new_rw(obj: T, target: impl AsRef<Path>, interval: time::Duration, mark: bool) -> Self {
+        Self::new(RwLock::new(obj), target, interval, mark)
+    }
+    pub fn read(&self) -> std::sync::RwLockReadGuard<'_, T> {
+        self.obj.read().unwrap()
+    }
+    pub fn write(&self) -> std::sync::RwLockWriteGuard<'_, T> {
+        let mut mark = self.mark.lock().unwrap();
+        let guard = self.obj.write().unwrap();
+        *mark = true;
+        guard
+    }
+}
+impl<T> ThreadSavingManager<Mutex<T>>
+where
+    Mutex<T>: ThreadSave + 'static,
+{
+    /// Create a new auto-saving manager for a Mutex.
+    pub fn new_mutex(
+        obj: T,
+        target: impl AsRef<Path>,
+        interval: time::Duration,
+        mark: bool,
+    ) -> Self {
+        Self::new(Mutex::new(obj), target, interval, mark)
+    }
+    pub fn lock(&self) -> std::sync::MutexGuard<'_, T> {
+        let mut mark = self.mark.lock().unwrap();
+        let guard = self.obj.lock().unwrap();
+        *mark = true;
+        guard
     }
 }
