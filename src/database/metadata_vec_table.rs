@@ -108,6 +108,8 @@ impl MetadataVecTable {
             bail!("Cannot build PQ table for an empty table");
         } else if self.len() < train_size {
             bail!("Train size is larger than the number of vectors in the table");
+        } else if train_size == 0 {
+            bail!("Train size cannot be zero");
         } else if self.dim() % m != 0 {
             bail!("PQ table requires the dimension to be a multiple of m");
         }
