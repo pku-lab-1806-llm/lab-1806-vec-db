@@ -12,8 +12,10 @@ use std::{
 use thread_save::ThreadSave;
 
 use crate::{
+    distance::pq_table::{PQConfig, PQTable},
     index_algorithm::{CandidatePair, FlatIndex, HNSWConfig, HNSWIndex},
     prelude::*,
+    vec_set::VecSet,
 };
 
 pub mod thread_save;
@@ -45,19 +47,20 @@ impl OptHNSWIndex {
     pub fn new(dim: usize, dist: DistanceAlgorithm) -> Self {
         Self::Flat(FlatIndex::new(dim, dist))
     }
+    /// Get the VecSet of the index.
+    pub fn vec_set(&self) -> &VecSet<f32> {
+        match &self {
+            OptHNSWIndex::Flat(flat) => &flat.vec_set,
+            OptHNSWIndex::HNSW(hnsw) => &hnsw.vec_set,
+        }
+    }
     /// Get the number of vectors in the index.
     pub fn len(&self) -> usize {
-        match self {
-            Self::Flat(index) => index.len(),
-            Self::HNSW(index) => index.len(),
-        }
+        self.vec_set().len()
     }
     /// Get the dimension of the vectors in the index.
     pub fn dim(&self) -> usize {
-        match self {
-            Self::Flat(index) => index.dim(),
-            Self::HNSW(index) => index.dim(),
-        }
+        self.vec_set().dim()
     }
     /// Get the distance algorithm used by the index.
     pub fn dist(&self) -> DistanceAlgorithm {
@@ -101,12 +104,26 @@ impl OptHNSWIndex {
             Self::HNSW(index) => index.knn_with_ef(query, k, ef),
         }
     }
+    /// Perform k-nearest neighbors search with a PQ table.
+    pub fn knn_pq(
+        &self,
+        query: &[f32],
+        k: usize,
+        ef: usize,
+        pq_table: &PQTable<f32>,
+    ) -> Vec<CandidatePair> {
+        match self {
+            Self::Flat(index) => index.knn_pq(query, k, ef, pq_table),
+            Self::HNSW(index) => index.knn_pq(query, k, ef, pq_table),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetadataVecTable {
     metadata: Vec<BTreeMap<String, String>>,
     inner: OptHNSWIndex,
+    pq_table: Option<PQTable<f32>>,
     #[serde(skip, default = "rand::SeedableRng::from_entropy")]
     rng: rand::rngs::StdRng,
 }
@@ -116,6 +133,7 @@ impl MetadataVecTable {
         Self {
             metadata: Vec::new(),
             inner: OptHNSWIndex::new(dim, dist),
+            pq_table: None,
             rng: rand::SeedableRng::from_entropy(),
         }
     }
@@ -149,6 +167,7 @@ impl MetadataVecTable {
 
     /// Add a vector with metadata to the table.
     pub fn add(&mut self, vec: Vec<f32>, metadata: BTreeMap<String, String>) {
+        self.clear_pq_table();
         self.metadata.push(metadata);
         self.inner.add(&vec, &mut self.rng);
     }
@@ -160,6 +179,7 @@ impl MetadataVecTable {
         metadata_list: Vec<BTreeMap<String, String>>,
     ) {
         assert_eq!(vec_list.len(), metadata_list.len());
+        self.clear_pq_table();
         self.metadata.extend(metadata_list);
         let vec_list: Vec<_> = vec_list.iter().map(|v| v.as_slice()).collect();
         self.inner.batch_add(&vec_list, &mut self.rng);
@@ -191,6 +211,38 @@ impl MetadataVecTable {
     pub fn has_hnsw_index(&self) -> bool {
         matches!(self.inner, OptHNSWIndex::HNSW(_))
     }
+    /// Build a PQ table for the table.
+    pub fn build_pq_table(&mut self, m: usize, train_size: usize) -> Result<()> {
+        if self.len() == 0 {
+            bail!("Cannot build PQ table for an empty table");
+        } else if self.len() < train_size {
+            bail!("Train size is larger than the number of vectors in the table");
+        } else if self.dim() % m != 0 {
+            bail!("PQ table requires the dimension to be a multiple of m");
+        }
+        let config = PQConfig {
+            dist: self.dist(),
+            n_bits: 4,
+            m,
+            k_means_max_iter: 20,
+            k_means_tol: 1e-6,
+            k_means_size: Some(train_size),
+        };
+        self.pq_table = Some(PQTable::from_vec_set(
+            self.inner.vec_set(),
+            config,
+            &mut self.rng,
+        ));
+        Ok(())
+    }
+    /// Clear the PQ table for the table.
+    pub fn clear_pq_table(&mut self) {
+        self.pq_table = None;
+    }
+    /// Check if the table has a PQ table.
+    pub fn has_pq_table(&self) -> bool {
+        self.pq_table.is_some()
+    }
 
     /// Delete vectors with metadata that match the pattern.
     pub fn delete(&mut self, pattern: &BTreeMap<String, String>) {
@@ -201,6 +253,7 @@ impl MetadataVecTable {
             pattern.iter().all(|(k, v)| metadata.get(k) == Some(v))
         }
         self.clear_hnsw_index();
+        self.clear_pq_table();
         let matches = self
             .metadata
             .iter()
@@ -218,6 +271,9 @@ impl MetadataVecTable {
 
     /// Search for the nearest vectors to a query.
     /// Return a list of (metadata, distance) pairs.
+    /// - When only Flat index is available, use the Flat index for search and ignore ef.
+    /// - When HNSW index is available, use the HNSW index for search.
+    /// - When PQ table is available, and ef is specified, use the PQ table for search.
     pub fn search(
         &self,
         query: &[f32],
@@ -225,9 +281,10 @@ impl MetadataVecTable {
         ef: Option<usize>,
         upper_bound: Option<f32>,
     ) -> Vec<(BTreeMap<String, String>, f32)> {
-        let results = match ef {
-            Some(ef) => self.inner.knn_with_ef(&query, k, ef),
-            None => self.inner.knn(&query, k),
+        let results = match (ef, &self.pq_table) {
+            (Some(ef), Some(pq_table)) => self.inner.knn_pq(&query, k, ef, pq_table),
+            (Some(ef), _) => self.inner.knn_with_ef(&query, k, ef),
+            _ => self.inner.knn(&query, k),
         };
         let upper_bound = upper_bound.unwrap_or(std::f32::INFINITY);
         results
@@ -249,7 +306,6 @@ pub struct VecTableBrief {
     pub dim: usize,
     pub len: usize,
     pub dist: DistanceAlgorithm,
-    pub hnsw_index: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -348,10 +404,13 @@ impl VecTableManager {
             drop_signal_sender,
         })
     }
-    /// Get the number of vectors in the table.
-    pub fn len(&self) -> usize {
+    pub fn brief(&self) -> VecTableBrief {
         let index = self.index.read().unwrap();
-        index.len()
+        VecTableBrief {
+            dim: index.dim(),
+            len: index.len(),
+            dist: index.dist(),
+        }
     }
     /// Add a vector with metadata to the table.
     pub fn add(&self, vec: Vec<f32>, metadata: BTreeMap<String, String>) {
@@ -387,6 +446,24 @@ impl VecTableManager {
     pub fn has_hnsw_index(&self) -> bool {
         let index = self.index.read().unwrap();
         index.has_hnsw_index()
+    }
+    /// Build a PQ table for the table.
+    pub fn build_pq_table(&self, m: usize, train_size: usize) -> Result<()> {
+        let mut index = self.index.write().unwrap();
+        index.build_pq_table(m, train_size)?;
+        self.manager.mark_modified();
+        Ok(())
+    }
+    /// Clear the PQ table for the table.
+    pub fn clear_pq_table(&self) {
+        let mut index = self.index.write().unwrap();
+        index.clear_pq_table();
+        self.manager.mark_modified();
+    }
+    /// Check if the table has a PQ table.
+    pub fn has_pq_table(&self) -> bool {
+        let index = self.index.read().unwrap();
+        index.has_pq_table()
     }
     /// Search for the nearest vectors to a query.
     /// Return a list of (metadata, distance) pairs.
@@ -501,18 +578,10 @@ impl VecDBManager {
         let (mut brief, mut tables) = self.get_locks_by_order();
         if brief.tables.contains_key(key) {
             return self
-                .get_table_with_lock(key, &brief, &mut tables)
+                .get_table_with_lock(key, &mut brief, &mut tables)
                 .map(|_| false);
         }
-        brief.insert(
-            &key,
-            VecTableBrief {
-                dim,
-                len: 0,
-                dist,
-                hnsw_index: false,
-            },
-        );
+        brief.insert(&key, VecTableBrief { dim, len: 0, dist });
         self.brief_manager.mark_modified();
 
         let (sender, receiver) = mpsc::channel();
@@ -548,7 +617,7 @@ impl VecDBManager {
     fn get_table_with_lock(
         &self,
         key: &str,
-        brief: &MutexGuard<'_, VecDBBrief>,
+        brief: &mut MutexGuard<'_, VecDBBrief>,
         tables: &mut MutexGuard<'_, BTreeMap<String, (mpsc::Receiver<()>, Arc<VecTableManager>)>>,
     ) -> Result<Arc<VecTableManager>> {
         if !brief.tables.contains_key(key) {
@@ -557,6 +626,8 @@ impl VecDBManager {
         if !tables.contains_key(key) {
             let (sender, receiver) = mpsc::channel();
             let table = VecTableManager::load(&self.dir, key, sender)?;
+            brief.insert(key, table.brief());
+            self.brief_manager.mark_modified();
             tables.insert(key.to_string(), (receiver, Arc::new(table)));
         }
         Ok(tables[key].1.clone())
@@ -578,7 +649,7 @@ impl VecDBManager {
                     );
                 }
             }
-            self.get_table_with_lock(key, &brief, &mut tables)?
+            self.get_table_with_lock(key, &mut brief, &mut tables)?
         };
         table.add(vec, metadata);
         Ok(())
@@ -608,7 +679,7 @@ impl VecDBManager {
                     );
                 }
             }
-            self.get_table_with_lock(key, &brief, &mut tables)?
+            self.get_table_with_lock(key, &mut brief, &mut tables)?
         };
         table.batch_add(vec_list, metadata_list);
         Ok(())
@@ -618,11 +689,7 @@ impl VecDBManager {
     pub fn build_hnsw_index(&self, key: &str, ef_construction: Option<usize>) -> Result<()> {
         let table = {
             let (mut brief, mut tables) = self.get_locks_by_order();
-            if let Some(info) = brief.tables.get_mut(key) {
-                info.hnsw_index = true;
-                self.brief_manager.mark_modified();
-            }
-            self.get_table_with_lock(key, &brief, &mut tables)?
+            self.get_table_with_lock(key, &mut brief, &mut tables)?
         };
         table.build_hnsw_index(ef_construction);
         Ok(())
@@ -631,11 +698,7 @@ impl VecDBManager {
     pub fn clear_hnsw_index(&self, key: &str) -> Result<()> {
         let table = {
             let (mut brief, mut tables) = self.get_locks_by_order();
-            if let Some(info) = brief.tables.get_mut(key) {
-                info.hnsw_index = false;
-                self.brief_manager.mark_modified();
-            }
-            self.get_table_with_lock(key, &brief, &mut tables)?
+            self.get_table_with_lock(key, &mut brief, &mut tables)?
         };
         table.clear_hnsw_index();
         Ok(())
@@ -643,27 +706,51 @@ impl VecDBManager {
     /// Check if a table has an HNSW index.
     pub fn has_hnsw_index(&self, key: &str) -> Result<bool> {
         let table = {
-            let (brief, mut tables) = self.get_locks_by_order();
-            self.get_table_with_lock(key, &brief, &mut tables)?
+            let (mut brief, mut tables) = self.get_locks_by_order();
+            self.get_table_with_lock(key, &mut brief, &mut tables)?
         };
         Ok(table.has_hnsw_index())
+    }
+
+    pub fn build_pq_table(&self, key: &str, m: usize, train_size: usize) -> Result<()> {
+        let table = {
+            let (mut brief, mut tables) = self.get_locks_by_order();
+            self.get_table_with_lock(key, &mut brief, &mut tables)?
+        };
+        table.build_pq_table(m, train_size)?;
+        Ok(())
+    }
+    pub fn clear_pq_table(&self, key: &str) -> Result<()> {
+        let table = {
+            let (mut brief, mut tables) = self.get_locks_by_order();
+            self.get_table_with_lock(key, &mut brief, &mut tables)?
+        };
+        table.clear_pq_table();
+        Ok(())
+    }
+    pub fn has_pq_table(&self, key: &str) -> Result<bool> {
+        let table = {
+            let (mut brief, mut tables) = self.get_locks_by_order();
+            self.get_table_with_lock(key, &mut brief, &mut tables)?
+        };
+        Ok(table.has_pq_table())
     }
 
     /// Delete vectors with metadata that match the pattern.
     pub fn delete(&self, key: &str, pattern: &BTreeMap<String, String>) -> Result<()> {
         let (mut brief, mut tables) = self.get_locks_by_order();
-        let table = self.get_table_with_lock(key, &brief, &mut tables)?;
+        let table = self.get_table_with_lock(key, &mut brief, &mut tables)?;
         table.delete(pattern);
-        if let Some(info) = brief.tables.get_mut(key) {
-            info.len = table.len();
-            info.hnsw_index = false;
-            self.brief_manager.mark_modified();
-        }
+        brief.insert(key, table.brief());
+        self.brief_manager.mark_modified();
         Ok(())
     }
 
     /// Search for the nearest vectors to a query.
     /// Return a list of (metadata, distance) pairs.
+    /// - When only Flat index is available, use the Flat index for search and ignore ef.
+    /// - When HNSW index is available, use the HNSW index for search.
+    /// - When PQ table is available, and ef is specified, use the PQ table for search.
     pub fn search(
         &self,
         key: &str,
@@ -673,8 +760,8 @@ impl VecDBManager {
         upper_bound: Option<f32>,
     ) -> Result<Vec<(BTreeMap<String, String>, f32)>> {
         let table = {
-            let (brief, mut tables) = self.get_locks_by_order();
-            self.get_table_with_lock(key, &brief, &mut tables)?
+            let (mut brief, mut tables) = self.get_locks_by_order();
+            self.get_table_with_lock(key, &mut brief, &mut tables)?
         };
 
         Ok(table.search(query, k, ef, upper_bound))
