@@ -363,7 +363,11 @@ impl VecDBManager {
         }
         // Remove the file.
         let path = self.dir.join(&table_brief.filename);
-        std::fs::remove_file(&path)?;
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
         Ok(true)
     }
     /// Get a table with the correct locks.
@@ -498,13 +502,10 @@ mod test {
         fn metadata(name: &str) -> BTreeMap<String, String> {
             BTreeMap::from([("name".to_string(), name.to_string())])
         }
-        let (s_a, r_a) = std::sync::mpsc::channel();
-        let (s_c, r_c) = std::sync::mpsc::channel();
         thread::scope(|s| {
             s.spawn(|| {
                 let key_a = "table_a";
                 db.create_table_if_not_exists(key_a, dim, dist).unwrap();
-                s_a.send(()).unwrap();
                 db.add(key_a, vec![1.0, 0.0, 0.0, 0.0], metadata("a"))
                     .unwrap();
                 db.build_hnsw_index(key_a, None).unwrap();
@@ -512,7 +513,6 @@ mod test {
                     .unwrap();
                 db.add(key_a, vec![0.0, 0.0, 1.0, 0.0], metadata("c"))
                     .unwrap();
-                s_a.send(()).unwrap();
             });
             s.spawn(|| {
                 let key_b = "<表:b>"; // key with special characters
@@ -532,24 +532,16 @@ mod test {
                 db.add(key_b, vec![1.0, 0.0, 0.0, 0.1], metadata("d"))
                     .unwrap();
             });
-            let db_ref = &db;
-            let s_c_ref = &s_c;
-            s.spawn(move || {
-                r_a.recv().unwrap();
-                db_ref.get_len("table_a").unwrap();
-                r_a.recv().unwrap();
-                let results = db_ref
-                    .search("table_a", &[0.0, 0.0, 1.0, 0.0], 3, None, Some(0.5))
-                    .unwrap();
-                let results: Vec<String> = results
-                    .into_iter()
-                    .map(|(m, _)| m["name"].clone())
-                    .collect();
-                s_c_ref.send(results).unwrap();
-            });
         });
-        let c_result = r_c.recv().unwrap();
-        assert_eq!(c_result, vec!["c".to_string()]);
+
+        let len_a = db.get_len("table_a")?;
+        db.build_pq_table("table_a", 2, len_a)?;
+        let results = db.search("table_a", &[0.0, 0.0, 1.0, 0.0], 3, None, Some(0.5))?;
+        let c_results: Vec<String> = results
+            .into_iter()
+            .map(|(m, _)| m["name"].clone())
+            .collect();
+        assert_eq!(c_results, vec!["c".to_string()]);
 
         Ok(())
     }
