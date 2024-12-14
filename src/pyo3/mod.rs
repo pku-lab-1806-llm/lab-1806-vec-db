@@ -2,7 +2,7 @@ use pyo3::prelude::*;
 
 #[pymodule]
 pub mod lab_1806_vec_db {
-    use crate::database::{MetadataVecTable, VecDBManager};
+    use crate::database::{metadata_vec_table::MetadataVecTable, VecDBManager};
     use crate::prelude::*;
     use pyo3::exceptions::{PyRuntimeError, PyValueError};
     use serde::{Deserialize, Serialize};
