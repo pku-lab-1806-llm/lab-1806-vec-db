@@ -29,7 +29,7 @@ pub fn acquire_lock(lock_file: impl AsRef<Path>) -> Result<File> {
     Ok(file)
 }
 
-/// Sanitize a key to use in filenames.
+/// Sanitize a key to use in filenames with a length limit of 16 characters.
 /// Allowed characters: [a-zA-Z0-9_-] and Unicode characters.
 /// Disallowed characters: control characters, whitespace, and ASCII characters other than [a-zA-Z0-9_-].
 /// Replace disallowed characters with '_'.
@@ -40,6 +40,7 @@ pub fn sanitize_key(key: &str) -> String {
             _ if c.is_control() || c.is_whitespace() || c.is_ascii() => '_',
             _ => c,
         })
+        .take(16)
         .collect()
 }
 
@@ -533,6 +534,11 @@ mod test {
                     .unwrap();
             });
         });
+
+        assert!(
+            db.create_table_if_not_exists("<表_b>", dim, dist)?,
+            "Cannot create table with similar name"
+        );
 
         let len_a = db.get_len("table_a")?;
         db.build_pq_table("table_a", 2, len_a)?;
