@@ -132,7 +132,7 @@ class VecDB:
         Args:
             train_proportion: The proportion of vectors used for training. Range: (0.0, 1.0), default is 0.1.
             n_bits: The number of bits per sub-vector, can be 4 or 8, default is 4.
-            m: The number of sub-vectors, default is ceil(dim / 3).
+            m: The number of sub-vectors, Range: 1..=dim, default is ceil(dim / 3).
         """
         ...
 
