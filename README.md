@@ -2,14 +2,15 @@
 
 Lab 1806 Vector Database.
 
+See Rust source code at [GitHub lab-1806-vec-db](https://github.com/pku-lab-1806-llm/lab-1806-vec-db)
+
 ## Getting Started with Python
 
+Get the latest version from [PyPI lab-1806-vec-db](https://pypi.org/project/lab-1806-vec-db/).
+
 ```bash
-# See https://pypi.org/project/lab-1806-vec-db/
 pip install lab-1806-vec-db
 ```
-
-**Warning**: All the arguments are positional, **DO NOT** use keyword arguments like `upper_bound=0.5`.
 
 ### Basic Usage
 
@@ -20,30 +21,14 @@ If the default Flat index cannot meet your performance requirements, try:
 - Call `build_hnsw_index()` when creating a table or adding data. But the delete operation will clear the established HNSW index.
 - Call `build_pq_index()` when all the data is added. But any write operation will clear the established PQ index.
 
+**Warning**: All the arguments are positional, **DO NOT** use keyword arguments like `upper_bound=0.5`.
+
 ```py
-from lab_1806_vec_db import VecDB, calc_dist
+from lab_1806_vec_db import VecDB
 
 # uv sync --reinstall-package lab_1806_vec_db
 # uv run -m examples.test_pyo3
 
-# ==== [Test] calc_dist ====
-print("\n[Test] calc_dist")
-a = [0.3, 0.4]
-b = [0.4, 0.3]
-
-# norm_a = sqrt(0.3^2 + 0.4^2) = 0.5
-# norm_b = sqrt(0.4^2 + 0.3^2) = 0.5
-# dot_product = 0.3 * 0.4 + 0.4 * 0.3 = 0.24
-# cosine_dist = 1 - (a dot b) / (|a| * |b|)
-#             = 1 - 0.24 / (0.5 * 0.5) = 0.04
-
-cosine_dist = calc_dist(a, b)
-print(f"{cosine_dist=}")
-assert abs(cosine_dist - 0.04) < 1e-6, "Test failed"
-
-
-# ==== [Test] VecDB ====
-print("\n[Test] VecDB")
 db = VecDB("./tmp/vec_db")
 for key in db.get_all_keys():
     db.delete_table(key)
@@ -60,12 +45,13 @@ db.add("table_1", [0.0, 0.0, 1.0, 1.0], {"content": "d", "type": "oops"})
 assert db.has_hnsw_index("table_1"), "Add operation should not clear HNSW index"
 
 db.delete("table_1", {"type": "oops"})
+assert db.get_len("table_1") == 3, "Test failed"
 assert not db.has_hnsw_index(
     "table_1"
 ), "HNSW index should be cleared when a vector is deleted"
-db.build_hnsw_index("table_1")
-assert db.get_len("table_1") == 3, "Test failed"
 
+db.build_hnsw_index("table_1")
+db.build_pq_table("table_1")
 result = db.search("table_1", [1.0, 0.0, 0.0, 0.0], 3, None, 0.5)
 print(result)
 assert len(result) == 1, "Test failed"
@@ -80,62 +66,9 @@ print("Test passed")
 
 When methods on `VecDB` is called, GIL will be temporarily released, so other threads can run Python code.
 
-```py
-import random
-import threading
-import time
+Feel free to use this in FastAPI routes or other environments with ThreadPools.
 
-from lab_1806_vec_db import VecDB
-
-# 1. Add `std::thread::sleep(std::time::Duration::from_secs(1));` to VecDBManager::search() before `Ok(table.search(query, k, ef, upper_bound))`.
-# 2. Run `uv sync --reinstall-package lab_1806_vec_db` to reinstall the package.
-# 3. Run `uv run -m examples.test_multi_threads` to test multi-threading search.
-
-"""Sample output:
-0.0s: Before search 1
-0.6s: Before search 2
-1.0s: After search 1
-1.2s: Before search 3
-1.6s: After search 2
-1.8s: Before search 4
-2.2s: After search 3
-2.8s: After search 4
-"""
-
-db = VecDB("tmp/vec_db")
-
-db.create_table_if_not_exists("table1", 1)
-db.build_hnsw_index("table1")
-db.batch_add(
-    "table1",
-    [[random.random()] for _ in range(100)],
-    [{"id": str(i)} for i in range(100)],
-)
-
-count = 0
-start = time.time()
-
-
-def worker():
-    global count
-
-    count += 1
-    id = f"{count}"
-    print(f"{time.time()-start:0.1f}s: Before search {id}")
-    db.search("table1", [random.random()], 1)
-    print(f"{time.time()-start:0.1f}s: After search {id}")
-
-
-threads = []
-for _ in range(4):
-    t = threading.Thread(target=worker)
-    threads.append(t)
-    t.start()
-    time.sleep(0.6)
-
-for t in threads:
-    t.join()
-```
+See also [multi-threading example](./examples/test_multi_threads.py).
 
 ### About auto-saving
 
@@ -162,39 +95,24 @@ cargo test
 # Our GitHub Actions will also run the tests.
 ```
 
-Test the python binding with `test_pyo3.py`.
+### Test Python Bindings
+
+Install Python `>=3.8,<3.12` and [uv](https://github.com/astral-sh/uv).
 
 ```bash
-# Install Python 3.10
-brew install python@3.10
-# or on Windows
-scoop bucket add versions
-scoop install python310
-
-# Install uv.
-# See https://github.com/astral-sh/uv for alternatives.
-pip install uv
-# or on Windows
-scoop install uv
-
 # Run the Python test
 uv sync --reinstall-package lab_1806_vec_db
 uv run -m examples.test_pyo3
 
 # Build the Python Wheel Release
-# This will be automatically run in GitHub Actions.
 uv build
 ```
 
 ### Examples Binaries
 
-See also the Binaries at `src/bin/`, and the Examples at `examples/`.
-
 - `src/bin/convert_fvecs.rs`: Convert the fvecs format to the binary format.
 - `src/bin/gen_ground_truth.rs`: Generate the ground truth for the query.
 - `examples/bench.rs`: The benchmark for index algorithms.
-
-Check the comments at the end of the source files for the usage.
 
 ### Dataset
 
@@ -207,4 +125,4 @@ Download Gist1M dataset from:
 
 Then, you can run the examples to test the database.
 
-Note that pre-built index file may be outdated and failed to load. You can build it yourself.
+Note that pre-built index file may be outdated. You can build it yourself.

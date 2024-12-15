@@ -1,26 +1,8 @@
-from lab_1806_vec_db import VecDB, calc_dist
+from lab_1806_vec_db import VecDB
 
 # uv sync --reinstall-package lab_1806_vec_db
 # uv run -m examples.test_pyo3
 
-# ==== [Test] calc_dist ====
-print("\n[Test] calc_dist")
-a = [0.3, 0.4]
-b = [0.4, 0.3]
-
-# norm_a = sqrt(0.3^2 + 0.4^2) = 0.5
-# norm_b = sqrt(0.4^2 + 0.3^2) = 0.5
-# dot_product = 0.3 * 0.4 + 0.4 * 0.3 = 0.24
-# cosine_dist = 1 - (a dot b) / (|a| * |b|)
-#             = 1 - 0.24 / (0.5 * 0.5) = 0.04
-
-cosine_dist = calc_dist(a, b)
-print(f"{cosine_dist=}")
-assert abs(cosine_dist - 0.04) < 1e-6, "Test failed"
-
-
-# ==== [Test] VecDB ====
-print("\n[Test] VecDB")
 db = VecDB("./tmp/vec_db")
 for key in db.get_all_keys():
     db.delete_table(key)
@@ -37,12 +19,13 @@ db.add("table_1", [0.0, 0.0, 1.0, 1.0], {"content": "d", "type": "oops"})
 assert db.has_hnsw_index("table_1"), "Add operation should not clear HNSW index"
 
 db.delete("table_1", {"type": "oops"})
+assert db.get_len("table_1") == 3, "Test failed"
 assert not db.has_hnsw_index(
     "table_1"
 ), "HNSW index should be cleared when a vector is deleted"
-db.build_hnsw_index("table_1")
-assert db.get_len("table_1") == 3, "Test failed"
 
+db.build_hnsw_index("table_1")
+db.build_pq_table("table_1")
 result = db.search("table_1", [1.0, 0.0, 0.0, 0.0], 3, None, 0.5)
 print(result)
 assert len(result) == 1, "Test failed"
