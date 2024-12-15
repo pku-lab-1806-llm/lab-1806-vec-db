@@ -122,8 +122,8 @@ impl MetadataVecTable {
             bail!("n_bits must be 4 or 8");
         }
         let m = m.unwrap_or(self.dim().div_ceil(3));
-        if m == 0 {
-            bail!("m must be greater than 0");
+        if m == 0 || m > self.dim() {
+            bail!("m must be in 1..=dim");
         }
 
         let config = PQConfig {

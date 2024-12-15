@@ -38,6 +38,10 @@ pub struct PQConfig {
 pub fn pq_groups(dim: usize, m: usize) -> Vec<Range<usize>> {
     assert!(dim > 0, "dim must be greater than 0 in PQTable.");
     assert!(m > 0, "m must be greater than 0 in PQTable.");
+    assert!(
+        dim >= m,
+        "dim must be greater than or equal to m in PQTable."
+    );
     let mut current = 0;
     let mut groups = Vec::with_capacity(m);
     while current < dim {
@@ -315,10 +319,6 @@ mod test {
         let groups = pq_groups(7, 3);
         // 3 + 2 + 2 = 7
         assert_eq!(groups, vec![0..3, 3..5, 5..7]);
-
-        // dim < m
-        let groups = pq_groups(4, 11);
-        assert_eq!(groups, vec![0..1, 1..2, 2..3, 3..4]);
     }
 
     fn pq_table_precise_test_base(dist: DistanceAlgorithm) {
