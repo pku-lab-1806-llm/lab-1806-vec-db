@@ -436,7 +436,7 @@ impl VecDBManager {
     pub fn has_hnsw_index(&self, key: &str) -> Result<bool> {
         Ok(self.table(key)?.has_hnsw_index())
     }
-
+    // TODO: more configurations for PQ table
     pub fn build_pq_table(&self, key: &str, m: usize, train_size: usize) -> Result<()> {
         Ok(self.table(key)?.build_pq_table(m, train_size)?)
     }
@@ -468,6 +468,8 @@ impl VecDBManager {
     ) -> Result<Vec<(BTreeMap<String, String>, f32)>> {
         Ok(self.table(key)?.search(query, k, ef, upper_bound))
     }
+
+    // TODO: Iteration methods
 }
 impl Drop for VecDBManager {
     fn drop(&mut self) {

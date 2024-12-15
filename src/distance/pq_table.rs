@@ -129,7 +129,7 @@ impl<T: Scalar> PQTable<T> {
         let m = config.m;
         assert!(
             vec_set.dim() % m == 0,
-            "dim must be a multiple of m in PQTable."
+            "dim must be a multiple of m in PQTable." // TODO: Capable of handling this case.
         );
         let sub_vec_set = config
             .k_means_size
