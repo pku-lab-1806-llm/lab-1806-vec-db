@@ -7,9 +7,9 @@ use serde::{Deserialize, Serialize};
 /// The configuration of the index algorithm.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IndexAlgorithmConfig {
-    /// Linear search. *Precise but slow.*
+    /// Flat search. *Precise but slow.*
     /// No configuration is required.
-    Linear,
+    Flat,
     /// HNSW (Hierarchical Navigable Small World)
     HNSW(HNSWConfig),
     IVF(IVFConfig),

@@ -12,23 +12,31 @@ use std::{ops::Index, path::Path};
 
 use super::{prelude::*, ResultSet};
 
-/// Linear index for the k-nearest neighbors search.
+/// Flat index for the k-nearest neighbors search.
 /// The distance algorithm is configurable.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LinearIndex<T> {
+pub struct FlatIndex<T> {
     /// The distance algorithm.
     pub(crate) dist: DistanceAlgorithm,
     /// The vector set.
     pub(crate) vec_set: VecSet<T>,
 }
-impl<T: Scalar> Index<usize> for LinearIndex<T> {
+impl<T: Scalar> FlatIndex<T> {
+    pub fn new(dim: usize, dist: DistanceAlgorithm) -> Self {
+        Self {
+            dist,
+            vec_set: VecSet::new(dim, vec![]),
+        }
+    }
+}
+impl<T: Scalar> Index<usize> for FlatIndex<T> {
     type Output = [T];
 
     fn index(&self, index: usize) -> &Self::Output {
         &self.vec_set[index]
     }
 }
-impl<T: Scalar> IndexIter<T> for LinearIndex<T> {
+impl<T: Scalar> IndexIter<T> for FlatIndex<T> {
     fn dim(&self) -> usize {
         self.vec_set.dim()
     }
@@ -37,7 +45,7 @@ impl<T: Scalar> IndexIter<T> for LinearIndex<T> {
     }
 }
 
-impl<T: Scalar> IndexKNN<T> for LinearIndex<T> {
+impl<T: Scalar> IndexKNN<T> for FlatIndex<T> {
     fn knn(&self, query: &[T], k: usize) -> Vec<CandidatePair> {
         let mut result = ResultSet::new(k);
         for (i, v) in self.vec_set.iter().enumerate() {
@@ -48,7 +56,7 @@ impl<T: Scalar> IndexKNN<T> for LinearIndex<T> {
     }
 }
 
-impl<T: Scalar> IndexFromVecSet<T> for LinearIndex<T> {
+impl<T: Scalar> IndexFromVecSet<T> for FlatIndex<T> {
     type Config = ();
 
     fn from_vec_set(
@@ -60,8 +68,8 @@ impl<T: Scalar> IndexFromVecSet<T> for LinearIndex<T> {
         Self { dist, vec_set }
     }
 }
-impl<T: Scalar> IndexSerde for LinearIndex<T> {}
-impl<T: Scalar> IndexSerdeExternalVecSet<T> for LinearIndex<T> {
+impl<T: Scalar> IndexSerde for FlatIndex<T> {}
+impl<T: Scalar> IndexSerdeExternalVecSet<T> for FlatIndex<T> {
     fn save_without_vec_set(self, path: impl AsRef<Path>) -> Result<Self> {
         let mut file = std::fs::File::create(path)?;
         bincode::serialize_into(&mut file, &self.dist)?;
@@ -73,7 +81,7 @@ impl<T: Scalar> IndexSerdeExternalVecSet<T> for LinearIndex<T> {
         Ok(Self { dist, vec_set })
     }
 }
-impl<T: Scalar> IndexPQ<T> for LinearIndex<T> {
+impl<T: Scalar> IndexPQ<T> for FlatIndex<T> {
     fn knn_pq(
         &self,
         query: &[T],
@@ -107,7 +115,7 @@ mod test {
     use super::*;
 
     #[test]
-    pub fn linear_index_test() -> Result<()> {
+    pub fn flat_index_test() -> Result<()> {
         fn clip_msg(s: &str) -> String {
             if s.len() > 100 {
                 format!("{}...", &s[..100])
@@ -128,13 +136,13 @@ mod test {
             vec_set.push(&vec[..clipped_dim]);
         }
 
-        let index = LinearIndex::from_vec_set(vec_set, dist, (), &mut rng);
+        let index = FlatIndex::from_vec_set(vec_set, dist, (), &mut rng);
 
         // Save and load the index. >>>>
-        let path = "data/linear_index.tmp.bin";
+        let path = "data/flat_index.tmp.bin";
         let vec_set = index.save_without_vec_set(path)?.vec_set;
 
-        let index = LinearIndex::<f32>::load_with_external_vec_set(path, vec_set)?;
+        let index = FlatIndex::<f32>::load_with_external_vec_set(path, vec_set)?;
         // <<<< Save and load the index.
 
         let k = 4;

@@ -5,7 +5,7 @@ index_cache = "data/gist_10000_hnsw.local.bin"
 bench_output = "data/bench_10000.local.toml"
 
 [ef.range]
-start = 120
+start = 160
 end = 360
 step = 40
 

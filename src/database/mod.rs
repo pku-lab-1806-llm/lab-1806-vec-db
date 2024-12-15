@@ -1,24 +1,24 @@
 use anyhow::{anyhow, bail, Result};
 use fs2::FileExt;
-use ordered_float::OrderedFloat;
+use metadata_vec_table::MetadataVecTable;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::File,
-    io::BufReader,
     path::{Path, PathBuf},
     sync::{mpsc, Arc, Mutex, MutexGuard, RwLock},
+    time::Duration,
 };
-use thread_save::ThreadSave;
+use thread_save::{ThreadSave, ThreadSavingManager};
 
-use crate::{
-    index_algorithm::{HNSWConfig, HNSWIndex},
-    prelude::*,
-};
+use crate::prelude::*;
 
+pub mod dynamic_index;
+pub mod metadata_vec_table;
 pub mod thread_save;
 
+/// Acquire an exclusive lock on a file.
 pub fn acquire_lock(lock_file: impl AsRef<Path>) -> Result<File> {
     let file = File::options()
         .write(true)
@@ -29,140 +29,100 @@ pub fn acquire_lock(lock_file: impl AsRef<Path>) -> Result<File> {
     Ok(file)
 }
 
+/// Sanitize a key to use in filenames with a length limit of 16 characters.
+/// Allowed characters: [a-zA-Z0-9_-] and Unicode characters.
+/// Disallowed characters: control characters, whitespace, and ASCII characters other than [a-zA-Z0-9_-].
+/// Replace disallowed characters with '_'.
+pub fn sanitize_key(key: &str) -> String {
+    key.chars()
+        .map(|c| match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' => c,
+            _ if c.is_control() || c.is_whitespace() || c.is_ascii() => '_',
+            _ => c,
+        })
+        .take(16)
+        .collect()
+}
+
+/// Compute the SHA-256 hash of the input data and return it as a hexadecimal string.
 pub fn sha256_hex(data: &[u8]) -> String {
     let result = Sha256::digest(data);
     base16ct::lower::encode_string(&result)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MetadataIndex {
-    metadata: Vec<BTreeMap<String, String>>,
-    inner: HNSWIndex<f32>,
-    #[serde(skip, default = "rand::SeedableRng::from_entropy")]
-    rng: rand::rngs::StdRng,
-}
-impl MetadataIndex {
-    /// Create a new index.
-    pub fn new(dim: usize, dist: DistanceAlgorithm, ef_c: Option<usize>) -> Self {
-        let mut config = HNSWConfig::default();
-        if let Some(ef_c) = ef_c {
-            config.ef_construction = ef_c;
-        }
-        let rng = rand::SeedableRng::from_entropy();
-        Self {
-            metadata: Vec::new(),
-            inner: HNSWIndex::new(dim, dist, config),
-            rng,
-        }
-    }
-    pub fn dim(&self) -> usize {
-        self.inner.dim()
-    }
-    pub fn dist(&self) -> DistanceAlgorithm {
-        self.inner.config.dist
-    }
-    pub fn get_row_by_id(&self, id: usize) -> Result<(Vec<f32>, BTreeMap<String, String>)> {
-        if id >= self.len() {
-            bail!("Index out of range");
-        }
-        Ok((self.inner[id].to_vec(), self.metadata[id].clone()))
-    }
-    /// Load an index from a file.
-    pub fn load(file: impl AsRef<Path>) -> Result<Self> {
-        let file = File::open(file)?;
-        let buf_reader = BufReader::new(file);
-        let mut index: Self = bincode::deserialize_from(buf_reader)?;
-        index.inner.init_after_load();
-        Ok(index)
-    }
-    /// Save the index to a file.
-    pub fn save(&self, file: impl AsRef<Path>) -> Result<()> {
-        let file = File::create(file)?;
-        let buf_writer = std::io::BufWriter::new(file);
-        bincode::serialize_into(buf_writer, self)?;
-        Ok(())
-    }
-
-    /// Add a vector with metadata to the index.
-    pub fn add(&mut self, vec: Vec<f32>, metadata: BTreeMap<String, String>) {
-        self.metadata.push(metadata);
-        self.inner.add(&vec, &mut self.rng);
-    }
-
-    /// Add vectors with metadata to the index.
-    pub fn batch_add(
-        &mut self,
-        vec_list: Vec<Vec<f32>>,
-        metadata_list: Vec<BTreeMap<String, String>>,
-    ) {
-        assert_eq!(vec_list.len(), metadata_list.len());
-        self.metadata.extend(metadata_list);
-        let vec_list: Vec<_> = vec_list.iter().map(|v| v.as_slice()).collect();
-        self.inner.batch_add(&vec_list, &mut self.rng);
-    }
-
-    /// Get the total number of vectors.
-    pub fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    /// Search for the nearest vectors to query.
-    ///
-    /// Returns a list of (metadata, distance) pairs.
-    pub fn search(
-        &self,
-        query: &[f32],
-        k: usize,
-        ef: Option<usize>,
-        upper_bound: Option<f32>,
-    ) -> Vec<(BTreeMap<String, String>, f32)> {
-        let results = match ef {
-            Some(ef) => self.inner.knn_with_ef(&query, k, ef),
-            None => self.inner.knn(&query, k),
-        };
-        let upper_bound = upper_bound.unwrap_or(std::f32::INFINITY);
-        results
-            .into_iter()
-            .filter(|p| p.distance() <= upper_bound)
-            .map(|p| (self.metadata[p.index].clone(), p.distance()))
-            .collect()
-    }
-}
-
-impl ThreadSave for RwLock<MetadataIndex> {
-    fn save_to(&self, path: impl AsRef<Path>) {
-        self.read().unwrap().save(path).unwrap();
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VecTableBrief {
-    pub dim: usize,
-    pub len: usize,
-    pub dist: DistanceAlgorithm,
+    pub filename: String,
+}
+impl VecTableBrief {
+    pub fn new(filename: String) -> Self {
+        Self { filename }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VecDBBrief {
+    /// key -> filename
     #[serde(default)]
     tables: BTreeMap<String, VecTableBrief>,
+    #[serde(skip, default)]
+    filename_set: BTreeSet<String>,
 }
 impl VecDBBrief {
     pub fn new() -> Self {
         Self {
             tables: BTreeMap::new(),
+            filename_set: BTreeSet::new(),
         }
     }
-    pub fn insert(&mut self, key: &str, dim: usize, len: usize, dist: DistanceAlgorithm) {
-        self.tables
-            .insert(key.to_string(), VecTableBrief { dim, len, dist });
+    pub fn contains(&self, key: &str) -> bool {
+        self.tables.contains_key(key)
     }
-    pub fn remove(&mut self, key: &str) {
-        self.tables.remove(key);
+    /// Choose a filename for a key. Ensure the filename is unique.
+
+    pub fn insert(&mut self, key: &str) -> String {
+        fn filename_with(base: &str, index: usize) -> String {
+            if index == 0 {
+                format!("{}.db", base)
+            } else {
+                format!("{}_{}.db", base, index)
+            }
+        }
+        fn choose_filename(set: &mut BTreeSet<String>, key: &str) -> String {
+            let base = sanitize_key(key);
+            let mut index = 0;
+            loop {
+                let filename = filename_with(&base, index);
+                if set.insert(filename.clone()) {
+                    return filename;
+                }
+                index += 1;
+            }
+        }
+        let filename = choose_filename(&mut self.filename_set, key);
+        self.tables
+            .insert(key.to_string(), VecTableBrief::new(filename.clone()));
+        filename
+    }
+    pub fn remove(&mut self, key: &str) -> Option<VecTableBrief> {
+        let brief = self.tables.remove(key);
+        if let Some(brief) = &brief {
+            self.filename_set.remove(&brief.filename);
+        }
+        brief
     }
     pub fn load(file: impl AsRef<Path>) -> Result<Self> {
         let content = std::fs::read_to_string(file)?;
-        Ok(toml::from_str(&content)?)
+        let mut brief: Self = toml::from_str(&content)?;
+        brief.filename_set = brief
+            .tables
+            .values()
+            .map(|f| f.filename.to_string())
+            .collect();
+        if brief.tables.len() != brief.filename_set.len() {
+            bail!("Duplicate filenames in the brief");
+        }
+        Ok(brief)
     }
     pub fn save(&self, file: impl AsRef<Path>) -> Result<()> {
         let content = toml::to_string(self)?;
@@ -183,79 +143,97 @@ impl ThreadSave for Mutex<VecDBBrief> {
 /// - Thread-safe. Read and write operations are protected by a RwLock.
 /// - Unique. Only one manager for each table.
 struct VecTableManager {
-    manager: thread_save::ThreadSavingManager<RwLock<MetadataIndex>>,
-    index: Arc<RwLock<MetadataIndex>>,
+    index: ThreadSavingManager<RwLock<MetadataVecTable>>,
     drop_signal_sender: mpsc::Sender<()>,
 }
 impl VecTableManager {
-    fn file_path_of(dir: impl AsRef<Path>, key: &str) -> PathBuf {
-        let hex_key = sha256_hex(key.as_bytes());
-        dir.as_ref().join(format!("{}.db", hex_key))
+    fn thread_saving_duration() -> Duration {
+        Duration::from_secs(60)
     }
-    fn new_manager(
-        file: PathBuf,
-        index: &Arc<RwLock<MetadataIndex>>,
-    ) -> thread_save::ThreadSavingManager<RwLock<MetadataIndex>> {
-        thread_save::ThreadSavingManager::new(
-            index.clone(),
-            file,
-            std::time::Duration::from_secs(30),
-        )
-    }
+    /// Create a new table manager.
     pub fn new(
-        dir: impl AsRef<Path>,
-        key: &str,
+        path: impl AsRef<Path>,
         dim: usize,
         dist: DistanceAlgorithm,
         drop_signal_sender: std::sync::mpsc::Sender<()>,
-        ef_c: Option<usize>,
     ) -> Self {
-        let file = Self::file_path_of(&dir, &key);
-        let index = MetadataIndex::new(dim, dist, ef_c);
-        let index = Arc::new(RwLock::new(index));
-        let manager = Self::new_manager(file, &index);
-        manager.mark_modified();
+        let index = MetadataVecTable::new(dim, dist);
+        let index = ThreadSavingManager::new_rw(index, path, Self::thread_saving_duration(), true);
         Self {
-            manager,
             index,
             drop_signal_sender,
         }
     }
+    /// Load a table manager from a file.
     pub fn load(
-        dir: impl AsRef<Path>,
-        key: &str,
+        path: impl AsRef<Path>,
         drop_signal_sender: std::sync::mpsc::Sender<()>,
     ) -> Result<Self> {
-        let file = Self::file_path_of(&dir, &key);
-        let index = MetadataIndex::load(&file)?;
-        let index = Arc::new(RwLock::new(index));
-        let manager = Self::new_manager(file, &index);
+        let index = MetadataVecTable::load(&path)?;
+        let index =
+            ThreadSavingManager::new_rw(index, &path, Self::thread_saving_duration(), false);
         Ok(Self {
-            manager,
             index,
             drop_signal_sender,
         })
     }
-    pub fn get_row_by_id(&self, id: usize) -> Result<(Vec<f32>, BTreeMap<String, String>)> {
-        self.index.read().unwrap().get_row_by_id(id)
+    /// Get number of vectors in the table.
+    pub fn len(&self) -> usize {
+        self.index.read().len()
+    }
+    /// Get dimension of the vectors in the table.
+    pub fn dim(&self) -> usize {
+        self.index.read().dim()
+    }
+    /// Get the distance algorithm used by the table.
+    pub fn dist(&self) -> DistanceAlgorithm {
+        self.index.read().dist()
     }
     /// Add a vector with metadata to the table.
-    ///
-    /// Signal the manager after the operation.
     pub fn add(&self, vec: Vec<f32>, metadata: BTreeMap<String, String>) {
-        let mut index = self.index.write().unwrap();
-        index.add(vec, metadata);
-        self.manager.mark_modified();
+        self.index.write().add(vec, metadata);
     }
-    /// Add vectors with metadata to the table.
-    ///
-    /// Signal the manager after the operation.
+    /// Add multiple vectors with metadata to the table.
     pub fn batch_add(&self, vec_list: Vec<Vec<f32>>, metadata_list: Vec<BTreeMap<String, String>>) {
-        let mut index = self.index.write().unwrap();
-        index.batch_add(vec_list, metadata_list);
-        self.manager.mark_modified();
+        self.index.write().batch_add(vec_list, metadata_list);
     }
-    /// Search vector in the table.
+    /// Delete vectors with metadata that match the pattern.
+    pub fn delete(&self, pattern: &BTreeMap<String, String>) -> usize {
+        self.index.write().delete(pattern)
+    }
+    /// Build an HNSW index for the table.
+    pub fn build_hnsw_index(&self, ef_construction: Option<usize>) {
+        self.index.write().build_hnsw_index(ef_construction);
+    }
+    /// Clear the HNSW index for the table.
+    pub fn clear_hnsw_index(&self) {
+        self.index.write().clear_hnsw_index();
+    }
+    /// Check if the table has an HNSW index.
+    pub fn has_hnsw_index(&self) -> bool {
+        self.index.read().has_hnsw_index()
+    }
+    /// Build a PQ table for the table.
+    pub fn build_pq_table(
+        &self,
+        train_proportion: Option<f32>,
+        n_bits: Option<usize>,
+        m: Option<usize>,
+    ) -> Result<()> {
+        self.index
+            .write()
+            .build_pq_table(train_proportion, n_bits, m)
+    }
+    /// Clear the PQ table for the table.
+    pub fn clear_pq_table(&self) {
+        self.index.write().clear_pq_table();
+    }
+    /// Check if the table has a PQ table.
+    pub fn has_pq_table(&self) -> bool {
+        self.index.read().has_pq_table()
+    }
+    /// Search for the nearest vectors to a query.
+    /// Return a list of (metadata, distance) pairs.
     pub fn search(
         &self,
         query: &[f32],
@@ -263,14 +241,18 @@ impl VecTableManager {
         ef: Option<usize>,
         upper_bound: Option<f32>,
     ) -> Vec<(BTreeMap<String, String>, f32)> {
-        let index = self.index.read().unwrap();
-        index.search(query, k, ef, upper_bound)
+        self.index.read().search(query, k, ef, upper_bound)
+    }
+
+    /// Extract all data from the table.
+    pub fn extract_data(&self) -> Vec<(Vec<f32>, BTreeMap<String, String>)> {
+        self.index.read().extract_data()
     }
 }
 impl Drop for VecTableManager {
     fn drop(&mut self) {
         // Sync the index to the file before dropping.
-        self.manager.sync_save(true);
+        self.index.sync_save(true);
         // Send the signal to the drop signal receiver.
         self.drop_signal_sender.send(()).unwrap();
     }
@@ -286,66 +268,71 @@ impl Drop for VecTableManager {
 /// Order of mutex lock: brief -> tables -> table_managers (by key)
 pub struct VecDBManager {
     dir: PathBuf,
-    brief: Arc<Mutex<VecDBBrief>>,
-    brief_manager: thread_save::ThreadSavingManager<Mutex<VecDBBrief>>,
+    brief: ThreadSavingManager<Mutex<VecDBBrief>>,
     tables: Mutex<BTreeMap<String, (mpsc::Receiver<()>, Arc<VecTableManager>)>>,
     /// The last field to be dropped.
     #[allow(unused)]
     lock_file: File,
 }
 impl VecDBManager {
-    fn brief_file_path(dir: impl AsRef<Path>) -> PathBuf {
-        dir.as_ref().join("brief.toml")
-    }
+    /// Create a new VecDBManager.
     pub fn new(dir: impl AsRef<Path>) -> Result<Self> {
         let dir = dir.as_ref().to_path_buf();
         if !dir.exists() {
             std::fs::create_dir_all(&dir)?;
         }
-        let brief_file = Self::brief_file_path(&dir);
-        let brief = if brief_file.exists() {
-            VecDBBrief::load(&brief_file)?
+        let lock_file = acquire_lock(dir.join("db.lock"))?;
+        let brief_file = dir.join("brief.toml");
+        let (brief, mark) = if brief_file.exists() {
+            (VecDBBrief::load(&brief_file)?, false)
         } else {
-            VecDBBrief::new()
+            (VecDBBrief::new(), true)
         };
-        let brief = Arc::new(Mutex::new(brief));
-        let brief_manager = thread_save::ThreadSavingManager::new(
-            brief.clone(),
+        let brief = ThreadSavingManager::new_mutex(
+            brief,
             brief_file,
             std::time::Duration::from_secs(5),
+            mark,
         );
-        brief_manager.mark_modified();
-        let lock_file = acquire_lock(dir.join("db.lock"))?;
+        // panic!("brief: {:?}", brief.lock());
         Ok(Self {
             dir,
             brief,
-            brief_manager,
             lock_file,
             tables: Mutex::new(BTreeMap::new()),
         })
     }
+    /// Get locks in the correct order.
     fn get_locks_by_order(
         &self,
     ) -> (
         MutexGuard<'_, VecDBBrief>,
         MutexGuard<'_, BTreeMap<String, (mpsc::Receiver<()>, Arc<VecTableManager>)>>,
     ) {
-        let brief = self.brief.lock().unwrap();
+        let brief = self.brief.lock();
         let tables = self.tables.lock().unwrap();
         (brief, tables)
     }
-    /// Returns a list of table keys.
+    /// Get all table keys.
     pub fn get_all_keys(&self) -> Vec<String> {
         let (brief, _table) = self.get_locks_by_order();
         brief.tables.keys().cloned().collect()
     }
-    /// Returns a list of table keys that are cached.
+    /// Check if a table exists.
+    pub fn contains_key(&self, key: &str) -> bool {
+        let (brief, _table) = self.get_locks_by_order();
+        brief.contains(key)
+    }
+    /// Get all cached table keys.
     pub fn get_cached_tables(&self) -> Vec<String> {
         let (_brief, tables) = self.get_locks_by_order();
         tables.keys().cloned().collect()
     }
-    /// Remove a table from the cache, and wait for all operations to finish.
-    /// Does nothing if the table is not cached.
+    pub fn contains_cached(&self, key: &str) -> bool {
+        let (_brief, tables) = self.get_locks_by_order();
+        tables.contains_key(key)
+    }
+    /// Remove a cached table.
     pub fn remove_cached_table(&self, key: &str) -> Result<()> {
         let (_brief, mut tables) = self.get_locks_by_order();
         if let Some((receiver, table)) = tables.remove(key) {
@@ -355,98 +342,83 @@ impl VecDBManager {
         }
         Ok(())
     }
-    /// Returns bool indicating whether the table is newly created.
+    /// Create a table if it does not exist.
     pub fn create_table_if_not_exists(
         &self,
         key: &str,
         dim: usize,
         dist: DistanceAlgorithm,
-        ef_c: Option<usize>,
     ) -> Result<bool> {
         let (mut brief, mut tables) = self.get_locks_by_order();
         if brief.tables.contains_key(key) {
-            return self
-                .get_table_with_lock(key, &brief, &mut tables)
-                .map(|_| false);
+            return Ok(false);
         }
-        brief.insert(&key, dim, 0, dist);
-        self.brief_manager.mark_modified();
+        let filename = brief.insert(&key);
+        let path = self.dir.join(&filename);
 
         let (sender, receiver) = mpsc::channel();
-        let table = VecTableManager::new(&self.dir, &key, dim, dist, sender, ef_c);
+        let table = VecTableManager::new(path, dim, dist, sender);
         let table = Arc::new(table);
         tables.insert(key.to_string(), (receiver, table));
         Ok(true)
     }
-    /// Delete a table and waits for all operations to finish.
-    /// Returns false if the table does not exist.
-    ///
-    /// Signal the brief manager after the operation.
+    /// Delete a table.
     pub fn delete_table(&self, key: &str) -> Result<bool> {
         let (mut brief, mut tables) = self.get_locks_by_order();
-        if !brief.tables.contains_key(key) {
-            return Ok(false);
-        }
-        brief.remove(key);
-        self.brief_manager.mark_modified();
+        let table_brief = match brief.remove(key) {
+            Some(brief) => brief,
+            None => return Ok(false),
+        };
         if let Some((receiver, table)) = tables.remove(key) {
             // Wait for other threads to finish.
             drop(table);
             receiver.recv().unwrap();
         }
         // Remove the file.
-        let table_file = VecTableManager::file_path_of(&self.dir, key);
-        std::fs::remove_file(table_file)?;
+        let path = self.dir.join(&table_brief.filename);
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
         Ok(true)
     }
-    pub fn get_table_info(&self, key: &str) -> Option<VecTableBrief> {
-        let (brief, _tables) = self.get_locks_by_order();
-        brief.tables.get(key).cloned()
-    }
-    fn get_table_with_lock(
-        &self,
-        key: &str,
-        brief: &MutexGuard<'_, VecDBBrief>,
-        tables: &mut MutexGuard<'_, BTreeMap<String, (mpsc::Receiver<()>, Arc<VecTableManager>)>>,
-    ) -> Result<Arc<VecTableManager>> {
+    /// Get a table with the correct locks.
+    fn table(&self, key: &str) -> Result<Arc<VecTableManager>> {
+        let (brief, mut tables) = self.get_locks_by_order();
         if !brief.tables.contains_key(key) {
             return Err(anyhow!("Table {} not found", key));
         }
         if !tables.contains_key(key) {
             let (sender, receiver) = mpsc::channel();
-            let table = VecTableManager::load(&self.dir, key, sender)?;
+            let filename = &brief.tables[key].filename;
+            let path = self.dir.join(filename);
+            let table = VecTableManager::load(&path, sender)?;
             tables.insert(key.to_string(), (receiver, Arc::new(table)));
         }
         Ok(tables[key].1.clone())
     }
+    pub fn get_len(&self, key: &str) -> Result<usize> {
+        Ok(self.table(key)?.len())
+    }
+    pub fn get_dim(&self, key: &str) -> Result<usize> {
+        Ok(self.table(key)?.dim())
+    }
+    pub fn get_dist(&self, key: &str) -> Result<DistanceAlgorithm> {
+        Ok(self.table(key)?.dist())
+    }
 
     /// Add a vector with metadata to a table.
-    ///
-    /// Signal the brief manager after the operation.
     pub fn add(&self, key: &str, vec: Vec<f32>, metadata: BTreeMap<String, String>) -> Result<()> {
-        let table = {
-            let (mut brief, mut tables) = self.get_locks_by_order();
-            if let Some(info) = brief.tables.get_mut(key) {
-                info.len += 1;
-                self.brief_manager.mark_modified();
-                if vec.len() != info.dim {
-                    bail!(
-                        "Dimension mismatch for table {} ({} != {})",
-                        key,
-                        info.dim,
-                        vec.len()
-                    );
-                }
-            }
-            self.get_table_with_lock(key, &brief, &mut tables)?
-        };
+        let table = self.table(key)?;
+        if vec.len() != table.dim() {
+            bail!("Dimension mismatch for vec");
+        }
         table.add(vec, metadata);
         Ok(())
     }
 
-    /// Add vectors with metadata to a table.
-    ///
-    /// Signal the brief manager after the operation.
+    /// Add multiple vectors with metadata to a table.
     pub fn batch_add(
         &self,
         key: &str,
@@ -456,41 +428,58 @@ impl VecDBManager {
         if vec_list.len() != metadata_list.len() {
             return Err(anyhow!("Length mismatch for vec_list and metadata_list"));
         }
-        let table = {
-            let (mut brief, mut tables) = self.get_locks_by_order();
-            if let Some(info) = brief.tables.get_mut(key) {
-                info.len += vec_list.len();
-                self.brief_manager.mark_modified();
-                if let Some(v) = vec_list.iter().find(|v| v.len() != info.dim) {
-                    bail!(
-                        "Dimension mismatch for table {} ({} != {})",
-                        key,
-                        info.dim,
-                        v.len()
-                    );
-                }
-            }
-            self.get_table_with_lock(key, &brief, &mut tables)?
-        };
+        let table = self.table(key)?;
+        if vec_list.iter().any(|v| v.len() != table.dim()) {
+            bail!("Dimension mismatch for vec_list");
+        }
         table.batch_add(vec_list, metadata_list);
         Ok(())
     }
 
-    pub fn get_row_by_id(
+    /// Build an HNSW index for a table.
+    pub fn build_hnsw_index(&self, key: &str, ef_construction: Option<usize>) -> Result<()> {
+        Ok(self.table(key)?.build_hnsw_index(ef_construction))
+    }
+    /// Clear the HNSW index for a table.
+    pub fn clear_hnsw_index(&self, key: &str) -> Result<()> {
+        Ok(self.table(key)?.clear_hnsw_index())
+    }
+    /// Check if a table has an HNSW index.
+    pub fn has_hnsw_index(&self, key: &str) -> Result<bool> {
+        Ok(self.table(key)?.has_hnsw_index())
+    }
+    /// Build a PQ table for a table.
+    pub fn build_pq_table(
         &self,
         key: &str,
-        id: usize,
-    ) -> Result<(Vec<f32>, BTreeMap<String, String>)> {
-        let table = {
-            let (brief, mut tables) = self.get_locks_by_order();
-            self.get_table_with_lock(key, &brief, &mut tables)?
-        };
-        table.get_row_by_id(id)
+        train_proportion: Option<f32>,
+        n_bits: Option<usize>,
+        m: Option<usize>,
+    ) -> Result<()> {
+        Ok(self
+            .table(key)?
+            .build_pq_table(train_proportion, n_bits, m)?)
+    }
+    /// Clear the PQ table for a table.
+    pub fn clear_pq_table(&self, key: &str) -> Result<()> {
+        Ok(self.table(key)?.clear_pq_table())
+    }
+    /// Check if a table has a PQ table.
+    pub fn has_pq_table(&self, key: &str) -> Result<bool> {
+        Ok(self.table(key)?.has_pq_table())
     }
 
-    /// Search vector in a table.
-    ///
-    /// Returns the results as a tuple of (metadata, distance).
+    /// Delete vectors with metadata that match the pattern.
+    /// Return the number of vectors deleted.
+    pub fn delete(&self, key: &str, pattern: &BTreeMap<String, String>) -> Result<usize> {
+        Ok(self.table(key)?.delete(pattern))
+    }
+
+    /// Search for the nearest vectors to a query.
+    /// Return a list of (metadata, distance) pairs.
+    /// - When only Flat index is available, use the Flat index for search and ignore ef.
+    /// - When HNSW index is available, use the HNSW index for search.
+    /// - When PQ table is available, and ef is specified, use the PQ table for search.
     pub fn search(
         &self,
         key: &str,
@@ -499,74 +488,18 @@ impl VecDBManager {
         ef: Option<usize>,
         upper_bound: Option<f32>,
     ) -> Result<Vec<(BTreeMap<String, String>, f32)>> {
-        let table = {
-            let (brief, mut tables) = self.get_locks_by_order();
-            self.get_table_with_lock(key, &brief, &mut tables)?
-        };
-
-        Ok(table.search(query, k, ef, upper_bound))
+        Ok(self.table(key)?.search(query, k, ef, upper_bound))
     }
 
-    /// Search vector in multiple tables.
-    ///
-    /// Returns the results as a tuple of (table_key, metadata, distance).
-    pub fn join_search(
-        &self,
-        keys: &BTreeSet<String>,
-        query: &[f32],
-        k: usize,
-        ef: Option<usize>,
-        upper_bound: Option<f32>,
-    ) -> Result<Vec<(String, BTreeMap<String, String>, f32)>> {
-        let selected_tables = {
-            let (brief, mut tables) = self.get_locks_by_order();
-            let mut selected_tables = Vec::new();
-            for key in keys {
-                let table = self.get_table_with_lock(key, &brief, &mut tables)?;
-                if let Some(info) = brief.tables.get(key) {
-                    if info.dim != query.len() {
-                        bail!(
-                            "Dimension mismatch for table {} ({} != {})",
-                            key,
-                            info.dim,
-                            query.len()
-                        );
-                    }
-                }
-                selected_tables.push((key.clone(), table));
-            }
-            selected_tables
-        };
-
-        let (sender, receiver) = std::sync::mpsc::channel();
-        let idx_list = (0..selected_tables.len()).collect::<Vec<_>>();
-        std::thread::scope(|s| {
-            for idx in idx_list.iter() {
-                let (key, table) = &selected_tables[*idx];
-                s.spawn(|| {
-                    let results = table.search(query, k, ef, upper_bound);
-                    let results: Vec<(String, BTreeMap<String, String>, f32)> = results
-                        .into_iter()
-                        .map(|(metadata, dist)| (key.clone(), metadata, dist))
-                        .collect();
-                    sender.send(results).unwrap();
-                });
-            }
-        });
-        drop(sender);
-        let mut results = Vec::new();
-        for r in receiver {
-            results.extend(r);
-        }
-        results.sort_by_key(|(_, _, dist)| OrderedFloat(*dist));
-        results.truncate(k);
-        Ok(results)
+    /// Extract all data from a table.
+    pub fn extract_data(&self, key: &str) -> Result<Vec<(Vec<f32>, BTreeMap<String, String>)>> {
+        Ok(self.table(key)?.extract_data())
     }
 }
 impl Drop for VecDBManager {
     fn drop(&mut self) {
         // Sync the brief to the file before dropping.
-        self.brief_manager.sync_save(true);
+        self.brief.sync_save(true);
         // Wait for all the table managers to be dropped.
         let mut tables = self.tables.lock().unwrap();
         while let Some((_, (receiver, table))) = tables.pop_first() {
@@ -587,6 +520,7 @@ mod test {
     fn test_vec_db_manager() -> Result<()> {
         let dir = "./tmp/vec_db";
         let db = VecDBManager::new(dir)?;
+
         for key in db.get_all_keys() {
             db.delete_table(&key)?;
         }
@@ -596,68 +530,57 @@ mod test {
         fn metadata(name: &str) -> BTreeMap<String, String> {
             BTreeMap::from([("name".to_string(), name.to_string())])
         }
-        let (s_a, r_a) = std::sync::mpsc::channel();
-        let (s_c, r_c) = std::sync::mpsc::channel();
         thread::scope(|s| {
             s.spawn(|| {
                 let key_a = "table_a";
-                db.create_table_if_not_exists(key_a, dim, dist, None)
-                    .unwrap();
-                s_a.send(()).unwrap();
+                db.create_table_if_not_exists(key_a, dim, dist).unwrap();
                 db.add(key_a, vec![1.0, 0.0, 0.0, 0.0], metadata("a"))
                     .unwrap();
+                db.build_hnsw_index(key_a, None).unwrap();
                 db.add(key_a, vec![0.0, 1.0, 0.0, 0.0], metadata("b"))
                     .unwrap();
                 db.add(key_a, vec![0.0, 0.0, 1.0, 0.0], metadata("c"))
                     .unwrap();
-                s_a.send(()).unwrap();
             });
             s.spawn(|| {
-                let key_b = "table_b";
-                db.create_table_if_not_exists(key_b, dim, dist, None)
-                    .unwrap();
+                let key_b = "<表:b>"; // key with special characters
+                db.create_table_if_not_exists(key_b, dim, dist).unwrap();
+                db.build_hnsw_index(key_b, None).unwrap();
                 db.batch_add(
                     key_b,
                     vec![
-                        vec![1.0, 0.0, 0.0, 0.1],
+                        vec![0.0, 0.0, 0.0, 0.1],
                         vec![0.0, 1.0, 0.0, 0.1],
                         vec![0.0, 0.0, 1.0, 0.1],
                     ],
                     vec![metadata("a'"), metadata("b'"), metadata("c'")],
                 )
                 .unwrap();
-            });
-            let db_ref = &db;
-            let s_c_ref = &s_c;
-            s.spawn(move || {
-                r_a.recv().unwrap();
-                db_ref.get_table_info("table_a").unwrap();
-                r_a.recv().unwrap();
-                let results = db_ref
-                    .search("table_a", &[0.0, 0.0, 1.0, 0.0], 3, None, Some(0.5))
+                db.delete(key_b, &metadata("a'")).unwrap();
+                db.add(key_b, vec![1.0, 0.0, 0.0, 0.1], metadata("d"))
                     .unwrap();
-                let results: Vec<String> = results
-                    .into_iter()
-                    .map(|(m, _)| m["name"].clone())
-                    .collect();
-                s_c_ref.send(results).unwrap();
             });
         });
-        let c_result = r_c.recv().unwrap();
-        assert_eq!(c_result, vec!["c".to_string()]);
 
-        let results = db.join_search(
-            &BTreeSet::from(["table_a".to_string(), "table_b".to_string()]),
-            &[1.0, 0.0, 0.0, 0.0],
-            2,
-            None,
-            None,
+        assert!(
+            db.create_table_if_not_exists("<表_b>", dim, dist)?,
+            "Cannot create table with similar name"
+        );
+
+        let len_a = db.get_len("table_a")?;
+        db.build_pq_table("table_a", None, None, None)?;
+        let results = db.search(
+            "table_a",
+            &[0.0, 0.0, 1.0, 0.0],
+            len_a,
+            Some(len_a),
+            Some(0.5),
         )?;
-        let results = results
+        let c_results: Vec<String> = results
             .into_iter()
-            .map(|(_, m, _)| m["name"].clone())
-            .collect::<Vec<_>>();
-        assert_eq!(results, vec![String::from("a"), String::from("a'")]);
+            .map(|(m, _)| m["name"].clone())
+            .collect();
+        assert_eq!(c_results, vec!["c".to_string()]);
 
         Ok(())
     }

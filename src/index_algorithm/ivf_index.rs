@@ -157,7 +157,7 @@ impl<T: Scalar> IndexKNNWithEf<T> for IVFIndex<T> {
 mod test {
     use std::fs;
 
-    use crate::{config::VecDataConfig, index_algorithm::LinearIndex};
+    use crate::{config::VecDataConfig, index_algorithm::FlatIndex};
     use anyhow::{Ok, Result};
     use rand::prelude::*;
 
@@ -194,7 +194,7 @@ mod test {
         };
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
 
-        let linear_index = LinearIndex::from_vec_set(vec_set.clone(), dist, (), &mut rng);
+        let flat_index = FlatIndex::from_vec_set(vec_set.clone(), dist, (), &mut rng);
 
         let index = IVFIndex::from_vec_set(vec_set, dist, ivf_config, &mut rng);
 
@@ -220,9 +220,9 @@ mod test {
         );
 
         let result = index.knn(&index[query_index], k);
-        let linear_result = linear_index.knn(&linear_index[query_index], k);
+        let flat_result = flat_index.knn(&flat_index[query_index], k);
 
-        for (res, l_res) in result.iter().zip(linear_result.iter()) {
+        for (res, l_res) in result.iter().zip(flat_result.iter()) {
             println!("Index: {}, Distance: {}", res.index, res.distance);
             println!("Vector: {}", clip_msg(&format!("{:?}", &index[res.index])));
             assert_eq!(res.index, l_res.index, "Index mismatch");

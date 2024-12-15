@@ -1,3 +1,5 @@
+from typing import Literal
+
 def calc_dist(a: list[float], b: list[float], dist: str = "cosine") -> float:
     """
     Calculate the distance between two vectors.
@@ -11,73 +13,6 @@ def calc_dist(a: list[float], b: list[float], dist: str = "cosine") -> float:
         ValueError: If the distance function is invalid.
     """
     ...
-
-class BareVecTable:
-    """
-    Bare Vector Database Table.
-
-    Prefer using VecDB to manage multiple tables.
-    """
-    def __init__(self, dim: int, dist: str = "cosine", ef_c: int | None = None) -> None:
-        """
-        Create a new Table. (Using HNSW internally)
-
-        Args:
-            dim (int): Dimension of the vectors.
-            dist (str): Distance function. See `calc_dist` for details.
-            ef_c (int): ef_construction parameter for HNSW. (default: 200, recommended: 40-200)
-
-        Raises:
-            ValueError: If the distance function is invalid.
-        """
-        ...
-
-    def dim(self) -> int:
-        """Get the dimension of the vectors."""
-        ...
-
-    def dist(self) -> str:
-        """Get the distance algorithm name."""
-        ...
-
-    def __len__(self) -> int:
-        """Get the number of vectors in the index."""
-        ...
-
-    @staticmethod
-    def load(path: str) -> "BareVecTable":
-        """Load an existing index from disk."""
-        ...
-
-    def save(self, path: str) -> None:
-        """Save the index to disk."""
-        ...
-
-    def add(self, vec: list[float], metadata: dict[str, str]):
-        """Add a vector to the index.
-        Use `batch_add` for better performance."""
-        ...
-
-    def batch_add(
-        self, vec_list: list[list[float]], metadata_list: list[dict[str, str]]
-    ):
-        """Add multiple vectors to the index."""
-        ...
-
-    def get_row_by_id(self, id: int) -> tuple[list[float], dict[str, str]]:
-        """Get a vector and metadata by id."""
-        ...
-
-    def search(
-        self,
-        query: list[float],
-        k: int,
-        ef: int | None = None,
-        upper_bound: float | None = None,
-    ) -> list[tuple[dict[str, str], float]]:
-        """Search for the nearest neighbors of a vector.
-        Returns a list of (metadata, distance) pairs."""
-        ...
 
 class VecDB:
     """
@@ -96,7 +31,7 @@ class VecDB:
         ...
 
     def create_table_if_not_exists(
-        self, name: str, dim: int, dist: str = "cosine", ef_c: int | None = None
+        self, key: str, dim: int, dist: str = "cosine"
     ) -> bool:
         """Create a new table if it does not exist.
 
@@ -104,19 +39,22 @@ class VecDB:
             key (str): The table name.
             dim (int): Dimension of the vectors.
             dist (str): Distance function. See `calc_dist` for details.
-            ef_c (int): ef_construction parameter for HNSW. (default: 200, recommended: 40-200)
 
         Raises:
             ValueError: If the distance function is invalid.
         """
         ...
 
-    def get_table_info(self, key: str) -> tuple[int, int, str]:
-        """Get table info.
+    def get_len(self, key: str) -> int:
+        """Get the number of vectors in the table."""
+        ...
 
-        Returns:
-            (dim, len, dist)
-        """
+    def get_dim(self, key: str) -> int:
+        """Get the dimension of the vectors in the table."""
+        ...
+
+    def get_dist(self, key: str) -> str:
+        """Get the distance function of the table."""
         ...
 
     def delete_table(self, key: str) -> bool:
@@ -139,19 +77,19 @@ class VecDB:
         Does nothing if the table is not cached."""
         ...
 
-    def add(self, key: str, vec: list[float], metadata: dict[str, str]):
+    def add(self, key: str, vec: list[float], metadata: dict[str, str]) -> None:
         """Add a vector to the table.
         Use `batch_add` for better performance."""
         ...
 
     def batch_add(
         self, key: str, vec_list: list[list[float]], metadata_list: list[dict[str, str]]
-    ):
+    ) -> None:
         """Add multiple vectors to the table."""
         ...
 
-    def get_row_by_id(self, key: str, id: int) -> tuple[list[float], dict[str, str]]:
-        """Get a vector and metadata by id."""
+    def delete(self, key: str, pattern: dict[str, str]) -> None:
+        """Delete vectors with metadata that match the pattern."""
         ...
 
     def search(
@@ -166,14 +104,42 @@ class VecDB:
         Returns a list of (metadata, distance) pairs."""
         ...
 
-    def join_search(
+    def extract_data(self, key: str) -> list[tuple[list[float], dict[str, str]]]:
+        """Extract all vectors and metadata from the table."""
+        ...
+
+    def build_hnsw_index(self, key: str, ef_construction: int | None = None) -> None:
+        """Build HNSW index for the table."""
+        ...
+
+    def clear_hnsw_index(self, key: str) -> None:
+        """Clear HNSW index for the table."""
+        ...
+
+    def has_hnsw_index(self, key: str) -> bool:
+        """Check if the table has HNSW index."""
+        ...
+
+    def build_pq_table(
         self,
-        key_list: set[str],
-        query: list[float],
-        k: int,
-        ef: int | None = None,
-        upper_bound: float | None = None,
-    ) -> list[tuple[str, dict[str, str], float]]:
-        """Search for the nearest neighbors of a vector in multiple tables.
-        Returns a list of (table_name, metadata, distance) pairs."""
+        key: str,
+        train_proportion: float | None = None,
+        n_bits: Literal[4, 8] | None = None,
+        m: int | None = None,
+    ):
+        """Build PQ table for the table.
+
+        Args:
+            train_proportion: The proportion of vectors used for training. Range: (0.0, 1.0), default is 0.1.
+            n_bits: The number of bits per sub-vector, can be 4 or 8, default is 4.
+            m: The number of sub-vectors, Range: 1..=dim, default is ceil(dim / 3).
+        """
+        ...
+
+    def clear_pq_table(self, key: str) -> None:
+        """Clear PQ table for the table."""
+        ...
+
+    def has_pq_table(self, key: str) -> bool:
+        """Check if the table has PQ table."""
         ...

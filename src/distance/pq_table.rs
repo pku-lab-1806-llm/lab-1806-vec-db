@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{ops::Range, path::Path};
 
 use anyhow::Result;
 use rand::Rng;
@@ -22,8 +22,6 @@ pub struct PQConfig {
     /// Should be 4 or 8. Usually 4.
     pub n_bits: usize,
     /// The number of groups.
-    ///
-    /// Should satisfy `dim % m == 0`. Usually `dim / 4`.
     pub m: usize,
     /// The distance algorithm to use.
     pub dist: DistanceAlgorithm,
@@ -33,6 +31,25 @@ pub struct PQConfig {
     pub k_means_max_iter: usize,
     /// The tolerance for the k-means algorithm.
     pub k_means_tol: f32,
+}
+
+/// Resolve groups for PQ encoding.
+/// For dim % m != 0, use dim.div_ceil(m) group_size at the beginning.
+pub fn pq_groups(dim: usize, m: usize) -> Vec<Range<usize>> {
+    assert!(dim > 0, "dim must be greater than 0 in PQTable.");
+    assert!(m > 0, "m must be greater than 0 in PQTable.");
+    assert!(
+        dim >= m,
+        "dim must be greater than or equal to m in PQTable."
+    );
+    let mut current = 0;
+    let mut groups = Vec::with_capacity(m);
+    while current < dim {
+        let group_size = (dim - current).div_ceil(m - groups.len());
+        groups.push(current..current + group_size);
+        current += group_size;
+    }
+    groups
 }
 
 pub fn split_indices(n_bits: usize, m: usize, v: &[u8]) -> Vec<usize> {
@@ -127,25 +144,20 @@ impl<T: Scalar> PQTable<T> {
             "n_bits must be 4 or 8 in PQTable."
         );
         let m = config.m;
-        assert!(
-            vec_set.dim() % m == 0,
-            "dim must be a multiple of m in PQTable."
-        );
         let sub_vec_set = config
             .k_means_size
             .map(|size| vec_set.random_sample(size, rng));
         let k = 1 << config.n_bits;
         let dim = vec_set.dim();
-        let d = dim / m;
         let mut group_k_means = Vec::with_capacity(m);
         let mut dist_cache = Vec::with_capacity(m * k);
-        for i in 0..m {
+        for selected in pq_groups(dim, m) {
             let k_means_config = KMeansConfig {
                 k,
                 max_iter: config.k_means_max_iter,
                 tol: config.k_means_tol,
                 dist: config.dist,
-                selected: Some(d * i..d * (i + 1)),
+                selected: Some(selected),
             };
             let k_means_vec_set = sub_vec_set.as_ref().unwrap_or(vec_set);
             let k_means = KMeans::from_vec_set(k_means_vec_set, k_means_config, rng);
@@ -184,13 +196,11 @@ impl<T: Scalar> PQTable<T> {
         assert_eq!(v.len(), self.dim);
         let m = self.config.m;
         let k = self.k;
-        let d = self.dim / m;
         let mut lookup = Vec::with_capacity(m * k);
-        for i in 0..m {
+        for (i, r) in pq_groups(self.dim, m).into_iter().enumerate() {
             let k_means = &self.group_k_means[i];
             let centroids = &k_means.centroids;
-            let selected = d * i..d * (i + 1);
-            let vs = &v[selected];
+            let vs = &v[r];
             match self.config.dist {
                 L2Sqr => centroids
                     .iter()
@@ -299,6 +309,18 @@ mod test {
 
     use super::*;
 
+    #[test]
+    fn test_pq_groups() {
+        // dim % m == 0
+        let groups = pq_groups(6, 2);
+        assert_eq!(groups, vec![0..3, 3..6]);
+
+        // dim % m != 0
+        let groups = pq_groups(7, 3);
+        // 3 + 2 + 2 = 7
+        assert_eq!(groups, vec![0..3, 3..5, 5..7]);
+    }
+
     fn pq_table_precise_test_base(dist: DistanceAlgorithm) {
         println!("Distance Algorithm: {:?}", dist);
         // Test the PQ table with num_vec < k, so that the centroids are the same as the vectors.
@@ -353,7 +375,7 @@ mod test {
         let dim = vec_set.dim();
         let pq_config = PQConfig {
             n_bits: 4,
-            m: dim / 4,
+            m: dim.div_ceil(3),
             dist,
             k_means_size: None,
             k_means_max_iter: 20,
@@ -403,7 +425,7 @@ mod test {
 
         let raw_vec_set = VecSet::<f32>::load_with(&config)?;
 
-        let clipped_dim = raw_vec_set.dim().min(12);
+        let clipped_dim = raw_vec_set.dim().min(13);
 
         let mut vec_set = VecSet::with_capacity(clipped_dim, raw_vec_set.len());
         for vec in raw_vec_set.iter() {
