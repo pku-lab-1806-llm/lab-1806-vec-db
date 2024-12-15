@@ -103,16 +103,29 @@ impl MetadataVecTable {
         matches!(self.inner, DynamicIndex::HNSW(_))
     }
     /// Build a PQ table for the table.
-    pub fn build_pq_table(&mut self, m: usize, train_size: usize) -> Result<()> {
+    pub fn build_pq_table(
+        &mut self,
+        train_proportion: Option<f32>,
+        n_bits: Option<usize>,
+        m: Option<usize>,
+    ) -> Result<()> {
         if self.len() == 0 {
             bail!("Cannot build PQ table for an empty table");
-        } else if self.len() < train_size {
-            bail!("Train size is larger than the number of vectors in the table");
-        } else if train_size == 0 {
-            bail!("Train size cannot be zero");
-        } else if self.dim() % m != 0 {
-            bail!("PQ table requires the dimension to be a multiple of m");
         }
+        let proportion = train_proportion.unwrap_or(0.1);
+        if proportion <= 0.0 || proportion >= 1.0 {
+            bail!("Train proportion must be in (0, 1)");
+        }
+        let train_size = (self.len() as f32 * proportion).max(1.0) as usize;
+        let n_bits = n_bits.unwrap_or(4);
+        if n_bits != 4 && n_bits != 8 {
+            bail!("n_bits must be 4 or 8");
+        }
+        let m = m.unwrap_or(self.dim().div_ceil(n_bits));
+        if m == 0 {
+            bail!("m must be greater than 0");
+        }
+
         let config = PQConfig {
             dist: self.dist(),
             n_bits: 4,

@@ -214,8 +214,15 @@ impl VecTableManager {
         self.index.read().has_hnsw_index()
     }
     /// Build a PQ table for the table.
-    pub fn build_pq_table(&self, m: usize, train_size: usize) -> Result<()> {
-        self.index.write().build_pq_table(m, train_size)
+    pub fn build_pq_table(
+        &self,
+        train_proportion: Option<f32>,
+        n_bits: Option<usize>,
+        m: Option<usize>,
+    ) -> Result<()> {
+        self.index
+            .write()
+            .build_pq_table(train_proportion, n_bits, m)
     }
     /// Clear the PQ table for the table.
     pub fn clear_pq_table(&self) {
@@ -436,13 +443,23 @@ impl VecDBManager {
     pub fn has_hnsw_index(&self, key: &str) -> Result<bool> {
         Ok(self.table(key)?.has_hnsw_index())
     }
-    // TODO: more configurations for PQ table
-    pub fn build_pq_table(&self, key: &str, m: usize, train_size: usize) -> Result<()> {
-        Ok(self.table(key)?.build_pq_table(m, train_size)?)
+    /// Build a PQ table for a table.
+    pub fn build_pq_table(
+        &self,
+        key: &str,
+        train_proportion: Option<f32>,
+        n_bits: Option<usize>,
+        m: Option<usize>,
+    ) -> Result<()> {
+        Ok(self
+            .table(key)?
+            .build_pq_table(train_proportion, n_bits, m)?)
     }
+    /// Clear the PQ table for a table.
     pub fn clear_pq_table(&self, key: &str) -> Result<()> {
         Ok(self.table(key)?.clear_pq_table())
     }
+    /// Check if a table has a PQ table.
     pub fn has_pq_table(&self, key: &str) -> Result<bool> {
         Ok(self.table(key)?.has_pq_table())
     }
@@ -543,7 +560,7 @@ mod test {
         );
 
         let len_a = db.get_len("table_a")?;
-        db.build_pq_table("table_a", 2, len_a)?;
+        db.build_pq_table("table_a", None, None, None)?;
         let results = db.search(
             "table_a",
             &[0.0, 0.0, 1.0, 0.0],

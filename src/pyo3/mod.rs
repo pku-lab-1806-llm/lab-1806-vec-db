@@ -247,17 +247,18 @@ pub mod lab_1806_vec_db {
         }
 
         /// Build PQ table for the table.
-        #[pyo3(signature = (key, m, train_size))]
+        #[pyo3(signature = (key, train_proportion=None, n_bits=None, m=None))]
         pub fn build_pq_table(
             &self,
             py: Python,
             key: &str,
-            m: usize,
-            train_size: usize,
+            train_proportion: Option<f32>,
+            n_bits: Option<usize>,
+            m: Option<usize>,
         ) -> PyResult<()> {
             py.allow_threads(|| {
                 self.inner
-                    .build_pq_table(key, m, train_size)
+                    .build_pq_table(key, train_proportion, n_bits, m)
                     .map_err(|e| PyRuntimeError::new_err(e.to_string()))
             })
         }

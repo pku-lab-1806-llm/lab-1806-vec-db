@@ -1,3 +1,5 @@
+from typing import Literal
+
 def calc_dist(a: list[float], b: list[float], dist: str = "cosine") -> float:
     """
     Calculate the distance between two vectors.
@@ -114,7 +116,13 @@ class VecDB:
         """Check if the table has HNSW index."""
         ...
 
-    def build_pq_table(self, key: str, m: int, train_size: int) -> None:
+    def build_pq_table(
+        self,
+        key: str,
+        train_proportion: float | None = None,
+        n_bits: Literal[4, 8] | None = None,
+        m: int | None = None,
+    ):
         """Build PQ table for the table."""
         ...
 
