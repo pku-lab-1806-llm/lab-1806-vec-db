@@ -2,7 +2,6 @@ use anyhow::{anyhow, bail, Result};
 use fs2::FileExt;
 use metadata_vec_table::MetadataVecTable;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::File,
@@ -42,12 +41,6 @@ pub fn sanitize_key(key: &str) -> String {
         })
         .take(16)
         .collect()
-}
-
-/// Compute the SHA-256 hash of the input data and return it as a hexadecimal string.
-pub fn sha256_hex(data: &[u8]) -> String {
-    let result = Sha256::digest(data);
-    base16ct::lower::encode_string(&result)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
