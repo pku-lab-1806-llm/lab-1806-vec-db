@@ -121,8 +121,7 @@ impl MetadataVecTable {
         if n_bits != 4 && n_bits != 8 {
             bail!("n_bits must be 4 or 8");
         }
-        // n_bits = 4, m = dim / 3; n_bits = 8, m = dim / 6
-        let m = m.unwrap_or(self.dim().div_ceil(n_bits / 4 * 3));
+        let m = m.unwrap_or(self.dim().div_ceil(3));
         if m == 0 {
             bail!("m must be greater than 0");
         }

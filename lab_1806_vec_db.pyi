@@ -127,7 +127,13 @@ class VecDB:
         n_bits: Literal[4, 8] | None = None,
         m: int | None = None,
     ):
-        """Build PQ table for the table."""
+        """Build PQ table for the table.
+
+        Args:
+            train_proportion: The proportion of vectors used for training. Range: (0.0, 1.0), default is 0.1.
+            n_bits: The number of bits per sub-vector, can be 4 or 8, default is 4.
+            m: The number of sub-vectors, default is ceil(dim / 3).
+        """
         ...
 
     def clear_pq_table(self, key: str) -> None:
