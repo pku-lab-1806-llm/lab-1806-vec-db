@@ -201,6 +201,16 @@ impl MetadataVecTable {
             .map(|p| (self.metadata[p.index].clone(), p.distance()))
             .collect()
     }
+
+    /// Extract the data from the table.
+    pub fn extract_data(&self) -> Vec<(Vec<f32>, BTreeMap<String, String>)> {
+        self.inner
+            .vec_set()
+            .iter()
+            .zip(self.metadata.iter())
+            .map(|(v, m)| (v.to_vec(), m.clone()))
+            .collect()
+    }
 }
 
 impl ThreadSave for RwLock<MetadataVecTable> {

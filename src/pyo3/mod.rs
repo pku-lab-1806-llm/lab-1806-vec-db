@@ -213,6 +213,19 @@ pub mod lab_1806_vec_db {
             })
         }
 
+        /// Extract data from the table.
+        pub fn extract_data(
+            &self,
+            py: Python,
+            key: &str,
+        ) -> PyResult<Vec<(Vec<f32>, BTreeMap<String, String>)>> {
+            py.allow_threads(|| {
+                self.inner
+                    .extract_data(key)
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            })
+        }
+
         /// Build HNSW index for the table.
         #[pyo3(signature = (key, ef_construction=None))]
         pub fn build_hnsw_index(

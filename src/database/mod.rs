@@ -143,8 +143,8 @@ impl ThreadSave for Mutex<VecDBBrief> {
 /// - Thread-safe. Read and write operations are protected by a RwLock.
 /// - Unique. Only one manager for each table.
 struct VecTableManager {
-    pub(crate) index: ThreadSavingManager<RwLock<MetadataVecTable>>,
-    pub(crate) drop_signal_sender: mpsc::Sender<()>,
+    index: ThreadSavingManager<RwLock<MetadataVecTable>>,
+    drop_signal_sender: mpsc::Sender<()>,
 }
 impl VecTableManager {
     fn thread_saving_duration() -> Duration {
@@ -242,6 +242,11 @@ impl VecTableManager {
         upper_bound: Option<f32>,
     ) -> Vec<(BTreeMap<String, String>, f32)> {
         self.index.read().search(query, k, ef, upper_bound)
+    }
+
+    /// Extract all data from the table.
+    pub fn extract_data(&self) -> Vec<(Vec<f32>, BTreeMap<String, String>)> {
+        self.index.read().extract_data()
     }
 }
 impl Drop for VecTableManager {
@@ -486,7 +491,10 @@ impl VecDBManager {
         Ok(self.table(key)?.search(query, k, ef, upper_bound))
     }
 
-    // TODO: Iteration methods
+    /// Extract all data from a table.
+    pub fn extract_data(&self, key: &str) -> Result<Vec<(Vec<f32>, BTreeMap<String, String>)>> {
+        Ok(self.table(key)?.extract_data())
+    }
 }
 impl Drop for VecDBManager {
     fn drop(&mut self) {

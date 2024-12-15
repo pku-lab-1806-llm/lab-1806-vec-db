@@ -104,6 +104,10 @@ class VecDB:
         Returns a list of (metadata, distance) pairs."""
         ...
 
+    def extract_data(self, key: str) -> list[tuple[list[float], dict[str, str]]]:
+        """Extract all vectors and metadata from the table."""
+        ...
+
     def build_hnsw_index(self, key: str, ef_construction: int | None = None) -> None:
         """Build HNSW index for the table."""
         ...
