@@ -375,7 +375,7 @@ mod test {
         let dim = vec_set.dim();
         let pq_config = PQConfig {
             n_bits: 4,
-            m: dim / 4,
+            m: dim.div_ceil(3),
             dist,
             k_means_size: None,
             k_means_max_iter: 20,
@@ -425,7 +425,7 @@ mod test {
 
         let raw_vec_set = VecSet::<f32>::load_with(&config)?;
 
-        let clipped_dim = raw_vec_set.dim().min(12);
+        let clipped_dim = raw_vec_set.dim().min(13);
 
         let mut vec_set = VecSet::with_capacity(clipped_dim, raw_vec_set.len());
         for vec in raw_vec_set.iter() {
