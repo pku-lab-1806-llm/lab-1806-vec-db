@@ -137,14 +137,6 @@ for t in threads:
     t.join()
 ```
 
-### About low-level APIs
-
-Low-level APIs are also provided. But before using them, make sure you know what you are doing.
-
-`BareVecTable` is a low-level API designed for a single table without auto-saving or multi-threading support.
-
-`calc_dist` is a helper function to calculate the distance between two vectors. It supports "cosine" and "l2sqr", default to "cosine". To make sure smaller is closer, we make `cosine_dist = 1 - cosine_similarity`.
-
 ### About auto-saving
 
 Safe to interrupt the process on Python Level at any time with Exception or KeyboardInterrupt.
