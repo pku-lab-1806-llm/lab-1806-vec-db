@@ -91,7 +91,7 @@ impl<T: Scalar> KMeans<T> {
     /// The number of clusters should be greater than 0.
     /// The selected range should be in the range [0, vec_set.dim()).
     ///
-    /// Call [VecSet::random_select] before this to select a subset of the vectors for the clustering.
+    /// Call [VecSet::random_sample] before this to select a subset of the vectors for the clustering.
     pub fn from_vec_set(vec_set: &VecSet<T>, config: KMeansConfig, rng: &mut impl Rng) -> Self {
         assert!(
             config.k > 0,

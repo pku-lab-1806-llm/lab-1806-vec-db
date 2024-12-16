@@ -287,7 +287,6 @@ impl VecDBManager {
             std::time::Duration::from_secs(5),
             mark,
         );
-        // panic!("brief: {:?}", brief.lock());
         Ok(Self {
             dir,
             brief,
