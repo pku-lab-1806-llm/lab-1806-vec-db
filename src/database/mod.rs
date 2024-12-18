@@ -107,6 +107,17 @@ impl VecDBBrief {
     pub fn load(file: impl AsRef<Path>) -> Result<Self> {
         let content = std::fs::read_to_string(file)?;
         let mut brief: Self = toml::from_str(&content)?;
+        for table in brief.tables.values() {
+            let filename = &table.filename;
+            if !filename.ends_with(".db") {
+                bail!("Filename should end with '.db': {}", filename);
+            } else if filename.contains(|c: char| c == '/' || c == '\\') {
+                bail!(
+                    "Should not contain path separators in filename: {}",
+                    filename
+                );
+            }
+        }
         brief.filename_set = brief
             .tables
             .values()
