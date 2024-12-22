@@ -76,7 +76,7 @@ impl MetadataVecTable {
         self.inner.batch_add(&vec_list, &mut self.rng);
     }
 
-    /// Build an HNSW index for the table.
+    /// Build an HNSW index for the table. Skip when already built.
     pub fn build_hnsw_index(&mut self, ef_construction: Option<usize>) {
         if let DynamicIndex::Flat(flat) = &self.inner {
             let vec_set = &flat.vec_set;
@@ -102,13 +102,16 @@ impl MetadataVecTable {
     pub fn has_hnsw_index(&self) -> bool {
         matches!(self.inner, DynamicIndex::HNSW(_))
     }
-    /// Build a PQ table for the table.
+    /// Build a PQ table for the table. Skip when already built.
     pub fn build_pq_table(
         &mut self,
         train_proportion: Option<f32>,
         n_bits: Option<usize>,
         m: Option<usize>,
     ) -> Result<()> {
+        if self.pq_table.is_some() {
+            return Ok(());
+        }
         if self.len() == 0 {
             bail!("Cannot build PQ table for an empty table");
         }

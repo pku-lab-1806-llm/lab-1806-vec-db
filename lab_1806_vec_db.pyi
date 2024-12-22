@@ -109,7 +109,7 @@ class VecDB:
         ...
 
     def build_hnsw_index(self, key: str, ef_construction: int | None = None) -> None:
-        """Build HNSW index for the table."""
+        """Build HNSW index for the table. Skip when already built."""
         ...
 
     def clear_hnsw_index(self, key: str) -> None:
@@ -127,7 +127,7 @@ class VecDB:
         n_bits: Literal[4, 8] | None = None,
         m: int | None = None,
     ):
-        """Build PQ table for the table.
+        """Build PQ table for the table. Skip when already built.
 
         Args:
             train_proportion: The proportion of vectors used for training. Range: (0.0, 1.0), default is 0.1.

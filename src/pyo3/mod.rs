@@ -226,7 +226,7 @@ pub mod lab_1806_vec_db {
             })
         }
 
-        /// Build HNSW index for the table.
+        /// Build HNSW index for the table. Skip when already built.
         #[pyo3(signature = (key, ef_construction=None))]
         pub fn build_hnsw_index(
             &self,
@@ -259,7 +259,7 @@ pub mod lab_1806_vec_db {
             })
         }
 
-        /// Build PQ table for the table.
+        /// Build PQ table for the table. Skip when already built.
         #[pyo3(signature = (key, train_proportion=None, n_bits=None, m=None))]
         pub fn build_pq_table(
             &self,
