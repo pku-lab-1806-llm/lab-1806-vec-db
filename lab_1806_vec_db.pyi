@@ -68,8 +68,16 @@ class VecDB:
         """Get all table names."""
         ...
 
+    def contains_key(self, key: str) -> bool:
+        """Check if a table exists."""
+        ...
+
     def get_cached_tables(self) -> list[str]:
         """Returns a list of table keys that are cached."""
+        ...
+
+    def contains_cached(self, key: str) -> bool:
+        """Check if a table is cached."""
         ...
 
     def remove_cached_table(self, key: str) -> None:
