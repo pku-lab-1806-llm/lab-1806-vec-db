@@ -1,0 +1,34 @@
+label = "HNSW+PQ m=240"
+dist = "L2Sqr"
+gnd_path = "data/gnd.local.bin"
+index_cache = "data/gist_hnsw.local.bin"
+bench_output = "data/bench_pq.local.toml"
+
+[ef.range]
+start = 240
+end = 600
+step = 60
+
+[algorithm.HNSW]
+max_elements = 1000000
+ef_construction = 200
+
+[PQ]
+pq_cache = "data/gist_pq_240.local.bin"
+dist = "L2Sqr"
+n_bits = 4
+m = 240
+k_means_size = 10000
+k_means_max_iter = 20
+k_means_tol = 1e-6
+
+[base]
+dim = 960
+data_type = "float32"
+data_path = "data/gist.local.bin"
+
+
+[test]
+dim = 960
+data_type = "float32"
+data_path = "data/gist_test.bin"
