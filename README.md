@@ -79,7 +79,7 @@ Safe to interrupt the process on Python Level at any time with Exception or Keyb
 
 See [test_exception.py](./examples/test_exception.py) for an example.
 
-However some platform may have timeout when shutting down, call `db.force_save()` in `@app.on_event("shutdown")` or other similar hooks to ensure the data is saved.
+However some platform may have timeout when shutting down, call `db.force_save()` in lifespan to ensure the data is saved in FastAPI.
 
 ## Development with Rust
 

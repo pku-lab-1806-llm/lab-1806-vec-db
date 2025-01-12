@@ -501,11 +501,11 @@ impl VecDBManager {
 
     /// Sync save the brief and all tables.
     pub fn force_save(&self) {
-        self.brief.sync_save(true);
+        self.brief.sync_save(false);
 
         let tables = self.tables.lock().unwrap();
         for (_, (_, table)) in tables.iter() {
-            table.index.sync_save(true);
+            table.index.sync_save(false);
         }
     }
 }
