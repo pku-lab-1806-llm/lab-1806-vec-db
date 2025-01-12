@@ -293,5 +293,10 @@ pub mod lab_1806_vec_db {
                     .map_err(|e| PyRuntimeError::new_err(e.to_string()))
             })
         }
+
+        /// Force save the database to disk.
+        pub fn force_save(&self, py: Python) {
+            py.allow_threads(|| self.inner.force_save())
+        }
     }
 }
