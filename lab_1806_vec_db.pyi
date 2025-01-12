@@ -151,3 +151,8 @@ class VecDB:
     def has_pq_table(self, key: str) -> bool:
         """Check if the table has PQ table."""
         ...
+
+    def force_save(self) -> None:
+        """Force save the database to disk.
+        You may want to call this in `@app.on_event("shutdown")` of FastAPI."""
+        ...

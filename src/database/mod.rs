@@ -498,6 +498,16 @@ impl VecDBManager {
     pub fn extract_data(&self, key: &str) -> Result<Vec<(Vec<f32>, BTreeMap<String, String>)>> {
         Ok(self.table(key)?.extract_data())
     }
+
+    /// Sync save the brief and all tables.
+    pub fn force_save(&self) {
+        self.brief.sync_save(true);
+
+        let tables = self.tables.lock().unwrap();
+        for (_, (_, table)) in tables.iter() {
+            table.index.sync_save(true);
+        }
+    }
 }
 impl Drop for VecDBManager {
     fn drop(&mut self) {
