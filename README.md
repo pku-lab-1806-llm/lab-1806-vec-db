@@ -46,9 +46,9 @@ assert db.has_hnsw_index("table_1"), "Add operation should not clear HNSW index"
 
 db.delete("table_1", {"type": "oops"})
 assert db.get_len("table_1") == 3, "Test failed"
-assert not db.has_hnsw_index(
-    "table_1"
-), "HNSW index should be cleared when a vector is deleted"
+assert not db.has_hnsw_index("table_1"), (
+    "HNSW index should be cleared when a vector is deleted"
+)
 
 db.build_hnsw_index("table_1")
 db.build_pq_table("table_1")
@@ -56,6 +56,9 @@ result = db.search("table_1", [1.0, 0.0, 0.0, 0.0], 3, None, 0.5)
 print(result)
 assert len(result) == 1, "Test failed"
 assert result[0][0]["content"] == "a", "Test failed"
+
+# Manually call `db.force_save()` when you are using the database in Jupyter Notebook or FastAPI,
+# since the program may not exit normally.
 
 print("Test passed")
 ```

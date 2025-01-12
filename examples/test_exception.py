@@ -46,6 +46,3 @@ elif cmd == "len":
     db.batch_add("table_1", [[0.0], [1.0]], [{"content": "0"}])
 
 # File appears before the program exits in all cases, even with Exception or KeyboardInterrupt
-
-# Manually call `db.force_save()` when you are using the database in Jupyter Notebook or FastAPI,
-# since the program may not exit normally.
