@@ -1,4 +1,4 @@
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, Tuple
 
 def calc_dist(a: List[float], b: List[float], dist: str = "cosine") -> float:
     """
@@ -107,12 +107,12 @@ class VecDB:
         k: int,
         ef: Optional[int] = None,
         upper_bound: Optional[float] = None,
-    ) -> List[tuple[Dict[str, str], float]]:
+    ) -> List[Tuple[Dict[str, str], float]]:
         """Search for the nearest neighbors of a vector.
         Returns a list of (metadata, distance) pairs."""
         ...
 
-    def extract_data(self, key: str) -> List[tuple[List[float], Dict[str, str]]]:
+    def extract_data(self, key: str) -> List[Tuple[List[float], Dict[str, str]]]:
         """Extract all vectors and metadata from the table."""
         ...
 
