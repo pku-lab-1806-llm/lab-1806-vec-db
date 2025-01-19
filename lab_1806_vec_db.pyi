@@ -1,6 +1,6 @@
-from typing import Dict, List, Literal, Optional, Tuple
+from typing import Literal
 
-def calc_dist(a: List[float], b: List[float], dist: str = "cosine") -> float:
+def calc_dist(a: list[float], b: list[float], dist: str = "cosine") -> float:
     """
     Calculate the distance between two vectors.
 
@@ -64,7 +64,7 @@ class VecDB:
         """
         ...
 
-    def get_all_keys(self) -> List[str]:
+    def get_all_keys(self) -> list[str]:
         """Get all table names."""
         ...
 
@@ -72,7 +72,7 @@ class VecDB:
         """Check if a table exists."""
         ...
 
-    def get_cached_tables(self) -> List[str]:
+    def get_cached_tables(self) -> list[str]:
         """Returns a list of table keys that are cached."""
         ...
 
@@ -85,38 +85,38 @@ class VecDB:
         Does nothing if the table is not cached."""
         ...
 
-    def add(self, key: str, vec: List[float], metadata: Dict[str, str]) -> None:
+    def add(self, key: str, vec: list[float], metadata: dict[str, str]) -> None:
         """Add a vector to the table.
         Use `batch_add` for better performance."""
         ...
 
     def batch_add(
-        self, key: str, vec_list: List[List[float]], metadata_list: List[Dict[str, str]]
+        self, key: str, vec_list: list[list[float]], metadata_list: list[dict[str, str]]
     ) -> None:
         """Add multiple vectors to the table."""
         ...
 
-    def delete(self, key: str, pattern: Dict[str, str]) -> None:
+    def delete(self, key: str, pattern: dict[str, str]) -> None:
         """Delete vectors with metadata that match the pattern."""
         ...
 
     def search(
         self,
         key: str,
-        query: List[float],
+        query: list[float],
         k: int,
-        ef: Optional[int] = None,
-        upper_bound: Optional[float] = None,
-    ) -> List[Tuple[Dict[str, str], float]]:
+        ef: int | None = None,
+        upper_bound: float | None = None,
+    ) -> list[tuple[dict[str, str], float]]:
         """Search for the nearest neighbors of a vector.
         Returns a list of (metadata, distance) pairs."""
         ...
 
-    def extract_data(self, key: str) -> List[Tuple[List[float], Dict[str, str]]]:
+    def extract_data(self, key: str) -> list[tuple[list[float], dict[str, str]]]:
         """Extract all vectors and metadata from the table."""
         ...
 
-    def build_hnsw_index(self, key: str, ef_construction: Optional[int] = None) -> None:
+    def build_hnsw_index(self, key: str, ef_construction: int | None = None) -> None:
         """Build HNSW index for the table. Skip when already built."""
         ...
 
@@ -131,9 +131,9 @@ class VecDB:
     def build_pq_table(
         self,
         key: str,
-        train_proportion: Optional[float] = None,
-        n_bits: Optional[Literal[4, 8]] = None,
-        m: Optional[int] = None,
+        train_proportion: float | None = None,
+        n_bits: Literal[4, 8] | None = None,
+        m: int | None = None,
     ) -> None:
         """Build PQ table for the table. Skip when already built.
 

@@ -102,7 +102,7 @@ cargo test
 
 ### Test Python Bindings
 
-Install Python `>=3.8,<3.12` and [uv](https://github.com/astral-sh/uv).
+Install Python `>=3.10,<3.13` and [uv](https://github.com/astral-sh/uv).
 
 ```bash
 # Run the Python test
