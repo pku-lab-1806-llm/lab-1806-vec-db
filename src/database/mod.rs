@@ -28,7 +28,7 @@ pub fn acquire_lock(lock_file: impl AsRef<Path>) -> Result<File> {
     Ok(file)
 }
 
-/// Sanitize a key to use in filenames with a length limit of 16 characters.
+/// Sanitize a key to use in filenames with a length limit of 32 characters.
 /// Allowed characters: [a-zA-Z0-9_-] and Unicode characters.
 /// Disallowed characters: control characters, whitespace, and ASCII characters other than [a-zA-Z0-9_-].
 /// Replace disallowed characters with '_'.
@@ -39,7 +39,7 @@ pub fn sanitize_key(key: &str) -> String {
             _ if c.is_control() || c.is_whitespace() || c.is_ascii() => '_',
             _ => c,
         })
-        .take(16)
+        .take(32)
         .collect()
 }
 
