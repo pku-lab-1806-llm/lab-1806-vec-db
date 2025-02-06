@@ -384,6 +384,7 @@ fn main() -> Result<()> {
     println!("VecSet loaded in {:.2} seconds.", elapsed);
 
     let base_size = base_set.len();
+    let dim = base_set.dim();
 
     let gnd = GroundTruth::load(&bench_config.gnd_path)?;
     let k = gnd[0].knn_indices.len(); // default 10
@@ -431,7 +432,7 @@ fn main() -> Result<()> {
     }
     println!("Finished benchmarking.");
     let (title, out) = if args.multi_threading {
-        let title = format!("Bench ({} elements, multi-threading)", base_size);
+        let title = format!("Bench (N={}, dim={}, multi-threading)", base_size, dim);
         let out = PathBuf::from(bench_output);
         let out = out.with_file_name(format!(
             "t_{}",
@@ -439,7 +440,7 @@ fn main() -> Result<()> {
         ));
         (title, out)
     } else {
-        let title = format!("Bench ({} elements)", base_size);
+        let title = format!("Bench (N={}, dim={})", base_size, dim);
         let out = PathBuf::from(bench_output);
         (title, out)
     };

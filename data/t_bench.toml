@@ -1,4 +1,4 @@
-title = "Bench (1000000 elements, multi-threading)"
+title = "Bench (N=1000000, dim=960, multi-threading)"
 
 [[results]]
 label = "HNSW"
