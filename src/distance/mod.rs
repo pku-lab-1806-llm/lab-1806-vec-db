@@ -48,11 +48,7 @@ pub trait DistanceScalar: BaseScalar {
     }
 
     /// L2 squared distance.
-    fn l2_sqr_distance(a: &[Self], b: &[Self]) -> f32 {
-        let ip_a = Self::dot_product(a, a);
-        let ip_b = Self::dot_product(b, b);
-        Self::l2_sqr_distance_cached(a, b, ip_a, ip_b)
-    }
+    fn l2_sqr_distance(a: &[Self], b: &[Self]) -> f32;
 
     /// L2 squared distance with pre-calculated inner products.
     fn l2_sqr_distance_cached(a: &[Self], b: &[Self], ip_a: f32, ip_b: f32) -> f32 {
@@ -76,12 +72,24 @@ impl DistanceScalar for f32 {
     fn dot_product(a: &[Self], b: &[Self]) -> f32 {
         a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
     }
+    fn l2_sqr_distance(a: &[Self], b: &[Self]) -> f32 {
+        a.iter().zip(b.iter()).map(|(x, y)| (x - y) * (x - y)).sum()
+    }
 }
 impl DistanceScalar for u8 {
     fn dot_product(a: &[Self], b: &[Self]) -> f32 {
         a.iter()
             .zip(b.iter())
             .map(|(x, y)| (*x as f32) * (*y as f32))
+            .sum()
+    }
+    fn l2_sqr_distance(a: &[Self], b: &[Self]) -> f32 {
+        a.iter()
+            .zip(b.iter())
+            .map(|(x, y)| {
+                let diff = (*x as f32) - (*y as f32);
+                diff * diff
+            })
             .sum()
     }
 }
