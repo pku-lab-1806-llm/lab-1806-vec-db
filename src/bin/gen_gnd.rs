@@ -25,6 +25,8 @@ struct Args {
     /// Path to the output ground truth file
     #[clap(short, long, default_value = "data/gnd.local.bin")]
     out: String,
+    #[clap(long, default_value = "L2Sqr")]
+    dist_fn: String,
 }
 fn main() -> Result<()> {
     let args = Args::parse();
@@ -43,7 +45,11 @@ fn main() -> Result<()> {
     let base_set = VecSet::<f32>::load_with(&base_config)?;
     println!("Loaded base set (size: {}).", base_set.len());
 
-    let dist = DistanceAlgorithm::L2Sqr;
+    let dist = match args.dist_fn.as_str() {
+        "L2Sqr" => DistanceAlgorithm::L2Sqr,
+        "Cosine" => DistanceAlgorithm::Cosine,
+        _ => panic!("Unknown distance function: {}", args.dist_fn),
+    };
     let mut rng = rand::rngs::StdRng::seed_from_u64(42);
     let k = 10;
 

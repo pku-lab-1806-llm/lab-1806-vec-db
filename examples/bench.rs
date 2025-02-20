@@ -234,7 +234,7 @@ fn load_or_build_index<T: Scalar>(
         Ok(index)
     } else {
         println!("Index file not found. Building index...");
-        let dist = DistanceAlgorithm::L2Sqr;
+        let dist = config.dist;
 
         let start = std::time::Instant::now();
         let index = match config.algorithm {
