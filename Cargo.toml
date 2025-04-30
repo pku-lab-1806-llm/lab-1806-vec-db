@@ -16,7 +16,7 @@ ordered-float = { version = "4.2.2", features = ["serde"] }
 rand = "0.8.5"
 serde = { version = "1.0.206", features = ["derive"] }
 toml = "0.8.19"
-pyo3 = { version = "0.22.6", features = ["extension-module"], optional = true }
+pyo3 = { version = "0.24.2", features = ["extension-module"], optional = true }
 fs2 = "0.4.3"
 tempfile = "3.13.0"
 rayon = "1.10.0"
@@ -25,3 +25,6 @@ mimalloc = "0.1.46"
 
 [dev-dependencies]
 plotly = "0.10.0"
+
+[features]
+pyo3 = ["dep:pyo3"]
