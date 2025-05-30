@@ -9,13 +9,13 @@ use crate::{
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DynamicIndex {
-    Flat(FlatIndex<f32>),
-    HNSW(HNSWIndex<f32>),
+    Flat(Box<FlatIndex<f32>>),
+    HNSW(Box<HNSWIndex<f32>>),
 }
 impl DynamicIndex {
     /// Create a new OptHNSWIndex with the specified dimension and distance algorithm.
     pub fn new(dim: usize, dist: DistanceAlgorithm) -> Self {
-        Self::Flat(FlatIndex::new(dim, dist))
+        Self::Flat(Box::new(FlatIndex::new(dim, dist)))
     }
     /// Get the VecSet of the index.
     pub fn vec_set(&self) -> &VecSet<f32> {
@@ -27,6 +27,10 @@ impl DynamicIndex {
     /// Get the number of vectors in the index.
     pub fn len(&self) -> usize {
         self.vec_set().len()
+    }
+    /// Check if the index is empty.
+    pub fn is_empty(&self) -> bool {
+        self.vec_set().is_empty()
     }
     /// Get the dimension of the vectors in the index.
     pub fn dim(&self) -> usize {

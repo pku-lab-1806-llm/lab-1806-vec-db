@@ -200,10 +200,10 @@ mod test {
 
         // Save and load the index. >>>>
         let path = "data/ivf_index.tmp.bin";
-        let index = index.save_without_vec_set(&path)?;
+        let index = index.save_without_vec_set(path)?;
         let vec_set = index.vec_set;
 
-        let index = IVFIndex::<f32>::load_with_external_vec_set(&path, vec_set)?;
+        let index = IVFIndex::<f32>::load_with_external_vec_set(path, vec_set)?;
         // <<<< Save and load the index.
 
         for (id, cluster) in index.clusters.iter().enumerate() {

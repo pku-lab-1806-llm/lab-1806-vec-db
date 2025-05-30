@@ -2,7 +2,7 @@ use pyo3::prelude::*;
 
 #[pymodule]
 pub mod lab_1806_vec_db {
-    use crate::database::VecDBManager;
+    use crate::database::{VecDBManager, VecWithMetadata};
     use crate::prelude::*;
     use pyo3::exceptions::{PyRuntimeError, PyValueError};
     use std::collections::BTreeMap;
@@ -212,13 +212,8 @@ pub mod lab_1806_vec_db {
                     .map_err(|e| PyRuntimeError::new_err(e.to_string()))
             })
         }
-
         /// Extract data from the table.
-        pub fn extract_data(
-            &self,
-            py: Python,
-            key: &str,
-        ) -> PyResult<Vec<(Vec<f32>, BTreeMap<String, String>)>> {
+        pub fn extract_data(&self, py: Python, key: &str) -> PyResult<Vec<VecWithMetadata>> {
             py.allow_threads(|| {
                 self.inner
                     .extract_data(key)

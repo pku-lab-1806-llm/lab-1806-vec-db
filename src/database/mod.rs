@@ -22,6 +22,7 @@ pub fn acquire_lock(lock_file: impl AsRef<Path>) -> Result<File> {
     let file = File::options()
         .write(true)
         .create(true)
+        .truncate(true)
         .open(lock_file.as_ref())?;
     file.try_lock_exclusive()
         .map_err(|_| anyhow!("Failed to acquire lock for VecDBManager"))?;
@@ -61,6 +62,12 @@ pub struct VecDBBrief {
     #[serde(skip, default)]
     filename_set: BTreeSet<String>,
 }
+impl Default for VecDBBrief {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VecDBBrief {
     pub fn new() -> Self {
         Self {
@@ -71,8 +78,8 @@ impl VecDBBrief {
     pub fn contains(&self, key: &str) -> bool {
         self.tables.contains_key(key)
     }
-    /// Choose a filename for a key. Ensure the filename is unique.
 
+    /// Choose a filename for a key. Ensure the filename is unique.
     pub fn insert(&mut self, key: &str) -> String {
         fn filename_with(base: &str, index: usize) -> String {
             if index == 0 {
@@ -111,7 +118,7 @@ impl VecDBBrief {
             let filename = &table.filename;
             if !filename.ends_with(".db") {
                 bail!("Filename should end with '.db': {}", filename);
-            } else if filename.contains(|c: char| c == '/' || c == '\\') {
+            } else if filename.contains(['/', '\\']) {
                 bail!(
                     "Should not contain path separators in filename: {}",
                     filename
@@ -262,6 +269,9 @@ impl Drop for VecTableManager {
     }
 }
 
+type RecvTableManager = (mpsc::Receiver<()>, Arc<VecTableManager>);
+pub type VecWithMetadata = (Vec<f32>, BTreeMap<String, String>);
+
 /// A manager for a vector database.
 ///
 /// Ensures:
@@ -273,7 +283,7 @@ impl Drop for VecTableManager {
 pub struct VecDBManager {
     dir: PathBuf,
     brief: ThreadSavingManager<Mutex<VecDBBrief>>,
-    tables: Mutex<BTreeMap<String, (mpsc::Receiver<()>, Arc<VecTableManager>)>>,
+    tables: Mutex<BTreeMap<String, RecvTableManager>>,
     /// The last field to be dropped.
     #[allow(unused)]
     lock_file: File,
@@ -310,7 +320,7 @@ impl VecDBManager {
         &self,
     ) -> (
         MutexGuard<'_, VecDBBrief>,
-        MutexGuard<'_, BTreeMap<String, (mpsc::Receiver<()>, Arc<VecTableManager>)>>,
+        MutexGuard<'_, BTreeMap<String, RecvTableManager>>,
     ) {
         let brief = self.brief.lock();
         let tables = self.tables.lock().unwrap();
@@ -356,7 +366,7 @@ impl VecDBManager {
         if brief.tables.contains_key(key) {
             return Ok(false);
         }
-        let filename = brief.insert(&key);
+        let filename = brief.insert(key);
         let path = self.dir.join(&filename);
 
         let (sender, receiver) = mpsc::channel();
@@ -441,11 +451,13 @@ impl VecDBManager {
 
     /// Build an HNSW index for a table.
     pub fn build_hnsw_index(&self, key: &str, ef_construction: Option<usize>) -> Result<()> {
-        Ok(self.table(key)?.build_hnsw_index(ef_construction))
+        self.table(key)?.build_hnsw_index(ef_construction);
+        Ok(())
     }
     /// Clear the HNSW index for a table.
     pub fn clear_hnsw_index(&self, key: &str) -> Result<()> {
-        Ok(self.table(key)?.clear_hnsw_index())
+        self.table(key)?.clear_hnsw_index();
+        Ok(())
     }
     /// Check if a table has an HNSW index.
     pub fn has_hnsw_index(&self, key: &str) -> Result<bool> {
@@ -459,13 +471,12 @@ impl VecDBManager {
         n_bits: Option<usize>,
         m: Option<usize>,
     ) -> Result<()> {
-        Ok(self
-            .table(key)?
-            .build_pq_table(train_proportion, n_bits, m)?)
+        self.table(key)?.build_pq_table(train_proportion, n_bits, m)
     }
     /// Clear the PQ table for a table.
     pub fn clear_pq_table(&self, key: &str) -> Result<()> {
-        Ok(self.table(key)?.clear_pq_table())
+        self.table(key)?.clear_pq_table();
+        Ok(())
     }
     /// Check if a table has a PQ table.
     pub fn has_pq_table(&self, key: &str) -> Result<bool> {
@@ -495,7 +506,7 @@ impl VecDBManager {
     }
 
     /// Extract all data from a table.
-    pub fn extract_data(&self, key: &str) -> Result<Vec<(Vec<f32>, BTreeMap<String, String>)>> {
+    pub fn extract_data(&self, key: &str) -> Result<Vec<VecWithMetadata>> {
         Ok(self.table(key)?.extract_data())
     }
 

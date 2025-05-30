@@ -43,7 +43,7 @@ fn main() -> Result<()> {
         let dim = u32::from_le_bytes(dim_buf);
         vec_buf.resize((dim as usize) * 4, 0);
         buf_reader.read_exact(&mut vec_buf)?;
-        writer.write(&vec_buf)?;
+        writer.write_all(&vec_buf)?;
         cnt += 1;
     }
     println!("Done! {} vectors written.", cnt);

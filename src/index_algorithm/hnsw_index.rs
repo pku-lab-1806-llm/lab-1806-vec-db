@@ -460,7 +460,7 @@ impl<T: Scalar> HNSWIndex<T> {
         &mut self,
         vec_list: &[&[T]],
         rng: &mut impl Rng,
-        pos_callback: impl Fn(usize) -> (),
+        pos_callback: impl Fn(usize),
     ) -> Vec<usize> {
         let mut cur = 0;
         let n = vec_list.len();

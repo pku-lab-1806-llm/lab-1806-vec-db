@@ -32,6 +32,10 @@ impl MetadataVecTable {
     pub fn len(&self) -> usize {
         self.inner.len()
     }
+    /// Check if the table is empty.
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
     /// Get the dimension of the vectors in the table.
     pub fn dim(&self) -> usize {
         self.inner.dim()
@@ -81,13 +85,15 @@ impl MetadataVecTable {
         if let DynamicIndex::Flat(flat) = &self.inner {
             let vec_set = &flat.vec_set;
             let dist = flat.dist;
-            let mut config = HNSWConfig::default();
-            config.max_elements = vec_set.len();
+            let mut config = HNSWConfig {
+                max_elements: vec_set.len(),
+                ..Default::default()
+            };
             if let Some(ef_construction) = ef_construction {
                 config.ef_construction = ef_construction;
             }
             let hnsw = HNSWIndex::build_on_vec_set(vec_set, dist, config, false, &mut self.rng);
-            self.inner = DynamicIndex::HNSW(hnsw);
+            self.inner = DynamicIndex::HNSW(Box::new(hnsw));
         }
     }
     /// Clear the HNSW index for the table.
@@ -95,7 +101,7 @@ impl MetadataVecTable {
         if let DynamicIndex::HNSW(hnsw) = &self.inner {
             let mut flat = FlatIndex::new(self.inner.dim(), self.inner.dist());
             flat.vec_set = hnsw.vec_set.clone();
-            self.inner = DynamicIndex::Flat(flat);
+            self.inner = DynamicIndex::Flat(Box::new(flat));
         }
     }
     /// Check if the table has an HNSW index.
@@ -112,7 +118,7 @@ impl MetadataVecTable {
         if self.pq_table.is_some() {
             return Ok(());
         }
-        if self.len() == 0 {
+        if self.is_empty() {
             bail!("Cannot build PQ table for an empty table");
         }
         let proportion = train_proportion.unwrap_or(0.1);
@@ -193,11 +199,11 @@ impl MetadataVecTable {
         upper_bound: Option<f32>,
     ) -> Vec<(BTreeMap<String, String>, f32)> {
         let results = match (ef, &self.pq_table) {
-            (Some(ef), Some(pq_table)) => self.inner.knn_pq(&query, k, ef, pq_table),
-            (Some(ef), _) => self.inner.knn_with_ef(&query, k, ef),
-            _ => self.inner.knn(&query, k),
+            (Some(ef), Some(pq_table)) => self.inner.knn_pq(query, k, ef, pq_table),
+            (Some(ef), _) => self.inner.knn_with_ef(query, k, ef),
+            _ => self.inner.knn(query, k),
         };
-        let upper_bound = upper_bound.unwrap_or(std::f32::INFINITY);
+        let upper_bound = upper_bound.unwrap_or(f32::INFINITY);
         results
             .into_iter()
             .filter(|p| p.distance() <= upper_bound)

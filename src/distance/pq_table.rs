@@ -66,7 +66,7 @@ pub fn split_indices(n_bits: usize, m: usize, v: &[u8]) -> Vec<usize> {
 pub fn pq_encode<T: Scalar>(
     m: usize,
     n_bits: usize,
-    group_k_means: &Vec<KMeans<T>>,
+    group_k_means: &[KMeans<T>],
     v: &[T],
 ) -> Vec<u8> {
     match n_bits {
@@ -281,8 +281,8 @@ impl<T: Scalar> DistanceAdapter<[u8], PQLookupTable<'_, T>> for DistanceAlgorith
             }
             8 => {
                 assert_eq!(encoded.len(), m);
-                for i in 0..m {
-                    push_one(i, encoded[i] as usize);
+                for (i, u) in encoded.iter().enumerate().take(m) {
+                    push_one(i, *u as usize);
                 }
             }
             _ => panic!("n_bits must be 4 or 8 in PQTable."),
@@ -382,7 +382,7 @@ mod test {
             k_means_tol: 1e-6,
         };
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let pq_table = PQTable::from_vec_set(&vec_set, pq_config, &mut rng);
+        let pq_table = PQTable::from_vec_set(vec_set, pq_config, &mut rng);
         let encoded_set = &pq_table.encoded_vec_set;
 
         println!("Distance Algorithm: {:?}", dist);

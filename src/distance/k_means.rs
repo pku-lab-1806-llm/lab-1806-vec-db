@@ -43,7 +43,7 @@ pub fn find_nearest_base<T: Scalar>(
     dist: &DistanceAlgorithm,
 ) -> usize {
     assert!(
-        centroids.len() > 0,
+        !centroids.is_empty(),
         "The number of centroids should be greater than 0."
     );
     use crate::index_algorithm::CandidatePair;
@@ -81,7 +81,7 @@ impl<T: Scalar> KMeans<T> {
                 .map(|d| d.sample(rng))
                 .unwrap_or(rng.gen_range(0..n));
 
-            centroids.push(&sel_set[c]);
+            centroids.push(sel_set[c]);
         }
         centroids
     }
@@ -261,7 +261,6 @@ mod test {
         let vec_set = vec_set.random_sample(400, &mut rng);
         let k_means = KMeans::from_vec_set(&vec_set, k_means_config.clone(), &mut rng);
 
-        let k_means = KMeans::<f32>::try_from(k_means)?;
         assert_eq!(k_means.centroids.len(), k_means_config.k);
         for c in k_means.centroids.iter() {
             println!("{}", clip_msg(&format!("{:?}", c)));
