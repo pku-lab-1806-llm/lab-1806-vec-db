@@ -93,7 +93,7 @@ impl MetadataVecTable {
                 config.ef_construction = ef_construction;
             }
             let hnsw = HNSWIndex::build_on_vec_set(vec_set, dist, config, false, &mut self.rng);
-            self.inner = DynamicIndex::HNSW(hnsw);
+            self.inner = DynamicIndex::HNSW(Box::new(hnsw));
         }
     }
     /// Clear the HNSW index for the table.
@@ -101,7 +101,7 @@ impl MetadataVecTable {
         if let DynamicIndex::HNSW(hnsw) = &self.inner {
             let mut flat = FlatIndex::new(self.inner.dim(), self.inner.dist());
             flat.vec_set = hnsw.vec_set.clone();
-            self.inner = DynamicIndex::Flat(flat);
+            self.inner = DynamicIndex::Flat(Box::new(flat));
         }
     }
     /// Check if the table has an HNSW index.
@@ -118,7 +118,7 @@ impl MetadataVecTable {
         if self.pq_table.is_some() {
             return Ok(());
         }
-        if self.len() == 0 {
+        if self.is_empty() {
             bail!("Cannot build PQ table for an empty table");
         }
         let proportion = train_proportion.unwrap_or(0.1);

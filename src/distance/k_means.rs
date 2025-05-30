@@ -43,7 +43,7 @@ pub fn find_nearest_base<T: Scalar>(
     dist: &DistanceAlgorithm,
 ) -> usize {
     assert!(
-        centroids.len() > 0,
+        !centroids.is_empty(),
         "The number of centroids should be greater than 0."
     );
     use crate::index_algorithm::CandidatePair;
