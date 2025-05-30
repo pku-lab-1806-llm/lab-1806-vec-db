@@ -137,6 +137,7 @@ impl AddAssign for AvgRecorder {
         self.count += rhs.count;
     }
 }
+#[allow(clippy::upper_case_acronyms)]
 enum DynamicIndex<T> {
     HNSW(HNSWIndex<T>),
     IVF(IVFIndex<T>),
