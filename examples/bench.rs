@@ -327,7 +327,7 @@ impl ResultList {
         let content = toml::to_string_pretty(self)?;
         let file = std::fs::File::create(path)?;
         let mut writer = std::io::BufWriter::new(file);
-        writer.write(content.as_bytes())?;
+        writer.write_all(content.as_bytes())?;
         Ok(())
     }
     pub fn plot(self, html_path: Option<impl AsRef<Path>>) -> Result<()> {
