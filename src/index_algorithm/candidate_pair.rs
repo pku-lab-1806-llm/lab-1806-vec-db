@@ -148,6 +148,12 @@ pub struct GroundTruth {
     pub rows: Vec<GroundTruthRow>,
 }
 
+impl Default for GroundTruth {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GroundTruth {
     /// Create a new ground truth.
     pub fn new() -> Self {

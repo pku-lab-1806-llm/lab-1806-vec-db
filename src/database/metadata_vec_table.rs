@@ -193,9 +193,9 @@ impl MetadataVecTable {
         upper_bound: Option<f32>,
     ) -> Vec<(BTreeMap<String, String>, f32)> {
         let results = match (ef, &self.pq_table) {
-            (Some(ef), Some(pq_table)) => self.inner.knn_pq(&query, k, ef, pq_table),
-            (Some(ef), _) => self.inner.knn_with_ef(&query, k, ef),
-            _ => self.inner.knn(&query, k),
+            (Some(ef), Some(pq_table)) => self.inner.knn_pq(query, k, ef, pq_table),
+            (Some(ef), _) => self.inner.knn_with_ef(query, k, ef),
+            _ => self.inner.knn(query, k),
         };
         let upper_bound = upper_bound.unwrap_or(std::f32::INFINITY);
         results

@@ -382,7 +382,7 @@ mod test {
             k_means_tol: 1e-6,
         };
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let pq_table = PQTable::from_vec_set(&vec_set, pq_config, &mut rng);
+        let pq_table = PQTable::from_vec_set(vec_set, pq_config, &mut rng);
         let encoded_set = &pq_table.encoded_vec_set;
 
         println!("Distance Algorithm: {:?}", dist);

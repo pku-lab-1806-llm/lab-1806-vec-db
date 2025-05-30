@@ -240,8 +240,8 @@ impl DynamicVecSet {
         let file = &config.data_path;
         use DataType::*;
         let vec_set = match config.data_type {
-            Float32 => Self::Float32(VecSet::load_raw_file(dim, size, &file)?),
-            UInt8 => Self::UInt8(VecSet::load_raw_file(dim, size, &file)?),
+            Float32 => Self::Float32(VecSet::load_raw_file(dim, size, file)?),
+            UInt8 => Self::UInt8(VecSet::load_raw_file(dim, size, file)?),
         };
         Ok(vec_set)
     }

@@ -241,19 +241,19 @@ fn load_or_build_index<T: Scalar>(
             IndexAlgorithmConfig::HNSW(config) => {
                 let index = HNSWIndex::build_on_vec_set(base_set, dist, config, true, rng);
                 println!("Saving index to {}...", path.display());
-                let index = index.save_without_vec_set(&path)?;
+                let index = index.save_without_vec_set(path)?;
                 DynamicIndex::HNSW(index)
             }
             IndexAlgorithmConfig::IVF(config) => {
                 let index = IVFIndex::from_vec_set(base_set, dist, config, rng);
                 println!("Saving index to {}...", path.display());
-                let index = index.save_without_vec_set(&path)?;
+                let index = index.save_without_vec_set(path)?;
                 DynamicIndex::IVF(index)
             }
             IndexAlgorithmConfig::Flat => {
                 let index = FlatIndex::from_vec_set(base_set, dist, (), rng);
                 println!("Saving index to {}...", path.display());
-                let index = index.save_without_vec_set(&path)?;
+                let index = index.save_without_vec_set(path)?;
                 DynamicIndex::Flat(index)
             }
         };

@@ -81,7 +81,7 @@ impl<T: Scalar> KMeans<T> {
                 .map(|d| d.sample(rng))
                 .unwrap_or(rng.gen_range(0..n));
 
-            centroids.push(&sel_set[c]);
+            centroids.push(sel_set[c]);
         }
         centroids
     }

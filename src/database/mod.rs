@@ -61,6 +61,12 @@ pub struct VecDBBrief {
     #[serde(skip, default)]
     filename_set: BTreeSet<String>,
 }
+impl Default for VecDBBrief {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VecDBBrief {
     pub fn new() -> Self {
         Self {
@@ -111,7 +117,7 @@ impl VecDBBrief {
             let filename = &table.filename;
             if !filename.ends_with(".db") {
                 bail!("Filename should end with '.db': {}", filename);
-            } else if filename.contains(|c: char| c == '/' || c == '\\') {
+            } else if filename.contains(['/', '\\']) {
                 bail!(
                     "Should not contain path separators in filename: {}",
                     filename
@@ -356,7 +362,7 @@ impl VecDBManager {
         if brief.tables.contains_key(key) {
             return Ok(false);
         }
-        let filename = brief.insert(&key);
+        let filename = brief.insert(key);
         let path = self.dir.join(&filename);
 
         let (sender, receiver) = mpsc::channel();
@@ -441,11 +447,13 @@ impl VecDBManager {
 
     /// Build an HNSW index for a table.
     pub fn build_hnsw_index(&self, key: &str, ef_construction: Option<usize>) -> Result<()> {
-        Ok(self.table(key)?.build_hnsw_index(ef_construction))
+        self.table(key)?.build_hnsw_index(ef_construction);
+        Ok(())
     }
     /// Clear the HNSW index for a table.
     pub fn clear_hnsw_index(&self, key: &str) -> Result<()> {
-        Ok(self.table(key)?.clear_hnsw_index())
+        self.table(key)?.clear_hnsw_index();
+        Ok(())
     }
     /// Check if a table has an HNSW index.
     pub fn has_hnsw_index(&self, key: &str) -> Result<bool> {
@@ -459,13 +467,14 @@ impl VecDBManager {
         n_bits: Option<usize>,
         m: Option<usize>,
     ) -> Result<()> {
-        Ok(self
+        self
             .table(key)?
-            .build_pq_table(train_proportion, n_bits, m)?)
+            .build_pq_table(train_proportion, n_bits, m)
     }
     /// Clear the PQ table for a table.
     pub fn clear_pq_table(&self, key: &str) -> Result<()> {
-        Ok(self.table(key)?.clear_pq_table())
+        self.table(key)?.clear_pq_table();
+        Ok(())
     }
     /// Check if a table has a PQ table.
     pub fn has_pq_table(&self, key: &str) -> Result<bool> {
