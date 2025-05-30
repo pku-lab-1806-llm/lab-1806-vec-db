@@ -124,7 +124,7 @@ impl GroundTruthRow {
     /// Recall of the result set.
     ///
     /// Correctly recalled / Total number of ground truth.
-    pub fn recall(&self, result: &Vec<CandidatePair>) -> f32 {
+    pub fn recall(&self, result: &[CandidatePair]) -> f32 {
         let pred = result
             .iter()
             .map(|pair| pair.index)
@@ -161,6 +161,9 @@ impl GroundTruth {
     }
     pub fn len(&self) -> usize {
         self.rows.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.rows.is_empty()
     }
     pub fn iter(&self) -> std::slice::Iter<GroundTruthRow> {
         self.rows.iter()

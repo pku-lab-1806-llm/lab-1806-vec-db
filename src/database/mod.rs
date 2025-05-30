@@ -22,6 +22,7 @@ pub fn acquire_lock(lock_file: impl AsRef<Path>) -> Result<File> {
     let file = File::options()
         .write(true)
         .create(true)
+        .truncate(true)
         .open(lock_file.as_ref())?;
     file.try_lock_exclusive()
         .map_err(|_| anyhow!("Failed to acquire lock for VecDBManager"))?;
@@ -77,8 +78,8 @@ impl VecDBBrief {
     pub fn contains(&self, key: &str) -> bool {
         self.tables.contains_key(key)
     }
-    /// Choose a filename for a key. Ensure the filename is unique.
 
+    /// Choose a filename for a key. Ensure the filename is unique.
     pub fn insert(&mut self, key: &str) -> String {
         fn filename_with(base: &str, index: usize) -> String {
             if index == 0 {
@@ -467,9 +468,7 @@ impl VecDBManager {
         n_bits: Option<usize>,
         m: Option<usize>,
     ) -> Result<()> {
-        self
-            .table(key)?
-            .build_pq_table(train_proportion, n_bits, m)
+        self.table(key)?.build_pq_table(train_proportion, n_bits, m)
     }
     /// Clear the PQ table for a table.
     pub fn clear_pq_table(&self, key: &str) -> Result<()> {

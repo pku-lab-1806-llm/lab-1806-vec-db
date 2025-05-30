@@ -28,6 +28,10 @@ impl DynamicIndex {
     pub fn len(&self) -> usize {
         self.vec_set().len()
     }
+    /// Check if the index is empty.
+    pub fn is_empty(&self) -> bool {
+        self.vec_set().is_empty()
+    }
     /// Get the dimension of the vectors in the index.
     pub fn dim(&self) -> usize {
         self.vec_set().dim()

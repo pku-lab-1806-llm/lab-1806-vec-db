@@ -77,6 +77,11 @@ impl<T: Scalar> VecSet<T> {
         self.data.len() / self.dim
     }
 
+    /// Check if the `VecSet` is empty.
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
     /// Set the vector at the specified index.
     pub fn put(&mut self, index: usize, vector: &[T]) {
         assert_eq!(vector.len(), self.dim);

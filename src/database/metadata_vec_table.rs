@@ -32,6 +32,10 @@ impl MetadataVecTable {
     pub fn len(&self) -> usize {
         self.inner.len()
     }
+    /// Check if the table is empty.
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
     /// Get the dimension of the vectors in the table.
     pub fn dim(&self) -> usize {
         self.inner.dim()
@@ -81,8 +85,10 @@ impl MetadataVecTable {
         if let DynamicIndex::Flat(flat) = &self.inner {
             let vec_set = &flat.vec_set;
             let dist = flat.dist;
-            let mut config = HNSWConfig::default();
-            config.max_elements = vec_set.len();
+            let mut config = HNSWConfig {
+                max_elements: vec_set.len(),
+                ..Default::default()
+            };
             if let Some(ef_construction) = ef_construction {
                 config.ef_construction = ef_construction;
             }
@@ -197,7 +203,7 @@ impl MetadataVecTable {
             (Some(ef), _) => self.inner.knn_with_ef(query, k, ef),
             _ => self.inner.knn(query, k),
         };
-        let upper_bound = upper_bound.unwrap_or(std::f32::INFINITY);
+        let upper_bound = upper_bound.unwrap_or(f32::INFINITY);
         results
             .into_iter()
             .filter(|p| p.distance() <= upper_bound)

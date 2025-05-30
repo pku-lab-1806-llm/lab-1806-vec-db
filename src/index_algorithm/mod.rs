@@ -18,15 +18,15 @@ pub mod prelude {
 }
 
 pub mod candidate_pair;
+pub mod flat_index;
 pub mod hnsw_index;
 pub mod ivf_index;
-pub mod flat_index;
 // All Index Algorithms & Candidate Tools
 pub use self::{
     candidate_pair::{CandidatePair, ResultSet},
+    flat_index::FlatIndex,
     hnsw_index::{HNSWConfig, HNSWIndex},
     ivf_index::{IVFConfig, IVFIndex},
-    flat_index::FlatIndex,
 };
 
 /// The trait for index that can be accessed by the index.
@@ -35,6 +35,10 @@ pub use self::{
 pub trait IndexIter<T: Scalar>: Index<usize, Output = [T]> {
     /// Get the number of vectors in the index.
     fn len(&self) -> usize;
+    /// Check if the index is empty.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
     /// Get the dimension of the vectors.
     fn dim(&self) -> usize;
 

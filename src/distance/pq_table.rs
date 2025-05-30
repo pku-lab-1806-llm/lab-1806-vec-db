@@ -66,7 +66,7 @@ pub fn split_indices(n_bits: usize, m: usize, v: &[u8]) -> Vec<usize> {
 pub fn pq_encode<T: Scalar>(
     m: usize,
     n_bits: usize,
-    group_k_means: &Vec<KMeans<T>>,
+    group_k_means: &[KMeans<T>],
     v: &[T],
 ) -> Vec<u8> {
     match n_bits {

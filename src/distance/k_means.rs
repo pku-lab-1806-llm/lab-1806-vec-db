@@ -261,7 +261,6 @@ mod test {
         let vec_set = vec_set.random_sample(400, &mut rng);
         let k_means = KMeans::from_vec_set(&vec_set, k_means_config.clone(), &mut rng);
 
-        let k_means = KMeans::<f32>::try_from(k_means)?;
         assert_eq!(k_means.centroids.len(), k_means_config.k);
         for c in k_means.centroids.iter() {
             println!("{}", clip_msg(&format!("{:?}", c)));
