@@ -281,8 +281,8 @@ impl<T: Scalar> DistanceAdapter<[u8], PQLookupTable<'_, T>> for DistanceAlgorith
             }
             8 => {
                 assert_eq!(encoded.len(), m);
-                for i in 0..m {
-                    push_one(i, encoded[i] as usize);
+                for (i, u) in encoded.iter().enumerate().take(m) {
+                    push_one(i, *u as usize);
                 }
             }
             _ => panic!("n_bits must be 4 or 8 in PQTable."),

@@ -269,6 +269,9 @@ impl Drop for VecTableManager {
     }
 }
 
+type RecvTableManager = (mpsc::Receiver<()>, Arc<VecTableManager>);
+pub type VecWithMetadata = (Vec<f32>, BTreeMap<String, String>);
+
 /// A manager for a vector database.
 ///
 /// Ensures:
@@ -280,7 +283,7 @@ impl Drop for VecTableManager {
 pub struct VecDBManager {
     dir: PathBuf,
     brief: ThreadSavingManager<Mutex<VecDBBrief>>,
-    tables: Mutex<BTreeMap<String, (mpsc::Receiver<()>, Arc<VecTableManager>)>>,
+    tables: Mutex<BTreeMap<String, RecvTableManager>>,
     /// The last field to be dropped.
     #[allow(unused)]
     lock_file: File,
@@ -317,7 +320,7 @@ impl VecDBManager {
         &self,
     ) -> (
         MutexGuard<'_, VecDBBrief>,
-        MutexGuard<'_, BTreeMap<String, (mpsc::Receiver<()>, Arc<VecTableManager>)>>,
+        MutexGuard<'_, BTreeMap<String, RecvTableManager>>,
     ) {
         let brief = self.brief.lock();
         let tables = self.tables.lock().unwrap();
@@ -503,7 +506,7 @@ impl VecDBManager {
     }
 
     /// Extract all data from a table.
-    pub fn extract_data(&self, key: &str) -> Result<Vec<(Vec<f32>, BTreeMap<String, String>)>> {
+    pub fn extract_data(&self, key: &str) -> Result<Vec<VecWithMetadata>> {
         Ok(self.table(key)?.extract_data())
     }
 
