@@ -20,6 +20,7 @@ pyo3 = { version = "0.24.2", features = ["extension-module"], optional = true }
 fs2 = "0.4.3"
 tempfile = "3.13.0"
 rayon = "1.10.0"
+mimalloc = "0.1.46"
 
 
 [dev-dependencies]

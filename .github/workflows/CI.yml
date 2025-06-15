@@ -10,14 +10,14 @@ permissions:
 
 jobs:
   linux:
-    runs-on: ${{ matrix.platform.runner }}
     strategy:
       matrix:
         platform:
           - runner: ubuntu-latest
             target: x86_64
-          - runner: ubuntu-latest
+          - runner: ubuntu-latest-arm64
             target: aarch64
+    runs-on: ${{ matrix.platform.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
