@@ -15,7 +15,7 @@ jobs:
         platform:
           - runner: ubuntu-latest
             target: x86_64
-          - runner: ubuntu-latest-arm64
+          - runner: ubuntu-22.04-arm64
             target: aarch64
     runs-on: ${{ matrix.platform.runner }}
     steps:
