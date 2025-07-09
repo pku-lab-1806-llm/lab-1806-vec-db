@@ -58,6 +58,6 @@ mod tests {
     #[test]
     fn test_load_from_toml_file() {
         let config = VecDataConfig::load_from_toml_file("config/gist_1000.toml").unwrap();
-        println!("{:#?}", config);
+        println!("{config:#?}");
     }
 }

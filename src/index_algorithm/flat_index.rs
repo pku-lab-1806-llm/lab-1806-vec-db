@@ -125,7 +125,7 @@ mod test {
         }
         let file_path = "config/gist_1000.toml";
         let config = VecDataConfig::load_from_toml_file(file_path)?;
-        println!("Loaded config: {:#?}", config);
+        println!("Loaded config: {config:#?}");
         let raw_vec_set = VecSet::<f32>::load_with(&config)?;
         let dist = DistanceAlgorithm::L2Sqr;
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
@@ -148,7 +148,7 @@ mod test {
         let k = 4;
         let query_index = 200;
 
-        println!("Query Index: {}", query_index);
+        println!("Query Index: {query_index}");
         println!(
             "Query Vector: {}",
             clip_msg(&format!("{:?}", &index[query_index]))

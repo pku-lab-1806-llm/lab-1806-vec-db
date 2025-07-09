@@ -190,7 +190,7 @@ fn load_or_build_pq<T: Scalar>(
     };
     let path = Path::new(&pq_cache);
     if path.exists() && !force_rebuild {
-        println!("Trying to load PQTable from {}...", pq_cache);
+        println!("Trying to load PQTable from {pq_cache}...");
         let pq_table = PQTable::load(&path)?;
         println!("PQTable loaded.");
         return Ok(Some(pq_table));
@@ -199,8 +199,8 @@ fn load_or_build_pq<T: Scalar>(
     let start = std::time::Instant::now();
     let pq = PQTable::from_vec_set(base_set, config, rng);
     let elapsed = start.elapsed().as_secs_f32();
-    println!("PQTable built in {:.2} seconds.", elapsed);
-    println!("Saving PQTable to {}...", pq_cache);
+    println!("PQTable built in {elapsed:.2} seconds.");
+    println!("Saving PQTable to {pq_cache}...");
     pq.save(&pq_cache)?;
     println!("PQTable saved.");
     Ok(Some(pq))
@@ -231,7 +231,7 @@ fn load_or_build_index<T: Scalar>(
             }
         };
         let elapsed = start.elapsed().as_secs_f32();
-        println!("Index loaded in {:.2} seconds.", elapsed);
+        println!("Index loaded in {elapsed:.2} seconds.");
         Ok(index)
     } else {
         println!("Index file not found. Building index...");
@@ -259,7 +259,7 @@ fn load_or_build_index<T: Scalar>(
             }
         };
         let elapsed = start.elapsed().as_secs_f32();
-        println!("Index built in {:.2} seconds.", elapsed);
+        println!("Index built in {elapsed:.2} seconds.");
         println!("Index saved.");
         Ok(index)
     }
@@ -288,7 +288,7 @@ impl BenchResult {
         let text = self
             .ef
             .iter()
-            .map(|&ef| format!("ef={}", ef))
+            .map(|&ef| format!("ef={ef}"))
             .collect::<Vec<_>>();
         let throughput = self
             .search_time
@@ -382,7 +382,7 @@ fn main() -> Result<()> {
     let test_set = VecSet::<f32>::load_with(&bench_config.test)?;
     println!("Loaded test set (size: {}).", test_set.len());
     let elapsed = load_start.elapsed().as_secs_f32();
-    println!("VecSet loaded in {:.2} seconds.", elapsed);
+    println!("VecSet loaded in {elapsed:.2} seconds.");
 
     let base_size = base_set.len();
     let dim = base_set.dim();
@@ -401,7 +401,7 @@ fn main() -> Result<()> {
     let mut bench_result = BenchResult::new(label);
 
     for ef in ef.to_vec() {
-        println!("Benchmarking ef: {}...", ef);
+        println!("Benchmarking ef: {ef}...");
         let mut avg_recall = AvgRecorder::new();
 
         let start = std::time::Instant::now();
@@ -426,14 +426,13 @@ fn main() -> Result<()> {
         let recall = avg_recall.avg();
 
         println!(
-            "ef: {}, Average Search Time: {:.2}ms, Average recall: {:.4}",
-            ef, search_time, recall
+            "ef: {ef}, Average Search Time: {search_time:.2}ms, Average recall: {recall:.4}"
         );
         bench_result.push(ef, search_time, recall);
     }
     println!("Finished benchmarking.");
     let (title, out) = if args.multi_threading {
-        let title = format!("Bench (N={}, dim={}, multi-threading)", base_size, dim);
+        let title = format!("Bench (N={base_size}, dim={dim}, multi-threading)");
         let out = PathBuf::from(bench_output);
         let out = out.with_file_name(format!(
             "t_{}",
@@ -441,7 +440,7 @@ fn main() -> Result<()> {
         ));
         (title, out)
     } else {
-        let title = format!("Bench (N={}, dim={})", base_size, dim);
+        let title = format!("Bench (N={base_size}, dim={dim})");
         let out = PathBuf::from(bench_output);
         (title, out)
     };

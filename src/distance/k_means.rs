@@ -215,7 +215,7 @@ mod test {
         assert_eq!(k_means.centroids.len(), config.k);
         for c in k_means.centroids.iter() {
             assert_eq!(c.len(), vec_set.dim());
-            println!("{:?}", c);
+            println!("{c:?}");
         }
     }
 
@@ -234,7 +234,7 @@ mod test {
         assert_eq!(k_means.centroids.len(), config.k);
         for c in k_means.centroids.iter() {
             assert_eq!(c.len(), vec_set.dim());
-            println!("{:?}", c);
+            println!("{c:?}");
         }
     }
 
@@ -263,7 +263,7 @@ mod test {
 
         assert_eq!(k_means.centroids.len(), k_means_config.k);
         for c in k_means.centroids.iter() {
-            println!("{}", clip_msg(&format!("{:?}", c)));
+            println!("{}", clip_msg(&format!("{c:?}")));
         }
 
         let i = 1;

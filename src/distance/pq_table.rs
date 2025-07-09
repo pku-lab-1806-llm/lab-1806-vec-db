@@ -322,7 +322,7 @@ mod test {
     }
 
     fn pq_table_precise_test_base(dist: DistanceAlgorithm) {
-        println!("Distance Algorithm: {:?}", dist);
+        println!("Distance Algorithm: {dist:?}");
         // Test the PQ table with num_vec < k, so that the centroids are the same as the vectors.
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let dim = 8;
@@ -359,7 +359,7 @@ mod test {
                 let e1 = &encoded_set[j];
                 let e_dist = dist.d(e1, &lookup);
 
-                println!("{}<->{}: src={:.6} encoded={:.6}", i, j, src_dist, e_dist);
+                println!("{i}<->{j}: src={src_dist:.6} encoded={e_dist:.6}");
                 assert!((src_dist - e_dist).abs() < 1e-6);
             }
         }
@@ -385,7 +385,7 @@ mod test {
         let pq_table = PQTable::from_vec_set(vec_set, pq_config, &mut rng);
         let encoded_set = &pq_table.encoded_vec_set;
 
-        println!("Distance Algorithm: {:?}", dist);
+        println!("Distance Algorithm: {dist:?}");
         let test_count = 20;
         let mut errors = Vec::new();
         for _ in 0..test_count {
@@ -399,15 +399,14 @@ mod test {
             let expected = dist.d(v0, v1);
             let error = (distance - expected).abs() / expected.max(1.0);
             println!(
-                "Distance: {} / Expected: {} / Error: {}",
-                distance, expected, error
+                "Distance: {distance} / Expected: {expected} / Error: {error}"
             );
             errors.push(error);
         }
         errors.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let i90 = (errors.len() as f32 * 0.9).ceil() as usize - 1;
         let p90 = errors[i90];
-        println!("90% Error: {}", p90);
+        println!("90% Error: {p90}");
         assert!(p90 < 0.2, "90% Error is too large.");
         Ok(())
     }

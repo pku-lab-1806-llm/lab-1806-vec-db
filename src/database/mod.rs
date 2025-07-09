@@ -83,9 +83,9 @@ impl VecDBBrief {
     pub fn insert(&mut self, key: &str) -> String {
         fn filename_with(base: &str, index: usize) -> String {
             if index == 0 {
-                format!("{}.db", base)
+                format!("{base}.db")
             } else {
-                format!("{}_{}.db", base, index)
+                format!("{base}_{index}.db")
             }
         }
         fn choose_filename(set: &mut BTreeSet<String>, key: &str) -> String {
