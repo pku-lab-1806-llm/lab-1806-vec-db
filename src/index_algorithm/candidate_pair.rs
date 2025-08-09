@@ -165,7 +165,7 @@ impl GroundTruth {
     pub fn is_empty(&self) -> bool {
         self.rows.is_empty()
     }
-    pub fn iter(&self) -> std::slice::Iter<GroundTruthRow> {
+    pub fn iter(&self) -> std::slice::Iter<'_, GroundTruthRow> {
         self.rows.iter()
     }
     /// Push a row to the ground truth.
