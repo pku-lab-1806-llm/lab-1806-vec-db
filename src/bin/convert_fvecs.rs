@@ -38,7 +38,7 @@ fn main() -> Result<()> {
     {
         if dim == 0 {
             dim = u32::from_le_bytes(dim_buf);
-            println!("Dimension: {}", dim);
+            println!("Dimension: {dim}");
         }
         let dim = u32::from_le_bytes(dim_buf);
         vec_buf.resize((dim as usize) * 4, 0);
@@ -46,7 +46,7 @@ fn main() -> Result<()> {
         writer.write_all(&vec_buf)?;
         cnt += 1;
     }
-    println!("Done! {} vectors written.", cnt);
+    println!("Done! {cnt} vectors written.");
     Ok(())
 }
 

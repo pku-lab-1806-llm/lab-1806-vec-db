@@ -213,7 +213,7 @@ mod test {
         let k = 6;
         let query_index = 200;
 
-        println!("Query Index: {}", query_index);
+        println!("Query Index: {query_index}");
         println!(
             "Query Vector: {}",
             clip_msg(&format!("{:?}", &index[query_index]))

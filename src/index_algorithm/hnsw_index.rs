@@ -162,10 +162,7 @@ impl<T: Scalar> HNSWIndex<T> {
         let limit = self.get_links_limit(level);
         assert!(
             len <= limit,
-            "links_len[{}][{}] exceeds limit {}.",
-            vec_idx,
-            level,
-            limit
+            "links_len[{vec_idx}][{level}] exceeds limit {limit}."
         );
         len
     }
@@ -725,10 +722,10 @@ mod test {
                 s.to_string()
             }
         }
-        println!("Distance Algorithm: {:?}", dist);
+        println!("Distance Algorithm: {dist:?}");
         let file_path = "config/gist_1000.toml";
         let config = VecDataConfig::load_from_toml_file(file_path)?;
-        println!("Loaded config: {:#?}", config);
+        println!("Loaded config: {config:#?}");
         let raw_vec_set = VecSet::<f32>::load_with(&config)?;
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
 
@@ -767,7 +764,7 @@ mod test {
         let k = 6;
         let query_index = 200;
 
-        println!("Query Index: {}", query_index);
+        println!("Query Index: {query_index}");
         println!(
             "Query Vector: {}",
             clip_msg(&format!("{:?}", &index[query_index]))

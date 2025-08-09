@@ -306,7 +306,7 @@ mod test {
     fn data_type_mismatched_test() {
         let file_path = "config/gist_1000.toml";
         let config = VecDataConfig::load_from_toml_file(file_path).unwrap();
-        println!("Loaded config: {:#?}", config);
+        println!("Loaded config: {config:#?}");
         VecSet::<u8>::load_with(&config).unwrap();
     }
 
@@ -316,7 +316,7 @@ mod test {
 
         let file_path = "config/gist_1000.toml";
         let config = VecDataConfig::load_from_toml_file(file_path).unwrap();
-        println!("Loaded config: {:#?}", config);
+        println!("Loaded config: {config:#?}");
         let vec_set = VecSet::<f32>::load_with(&config)?;
 
         println!("len: {}", vec_set.len());
